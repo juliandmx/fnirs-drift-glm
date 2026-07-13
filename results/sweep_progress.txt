@@ -1,0 +1,6 @@
+Fortschritt: 720/720 (100 %)
+verstrichen : 181.6 min
+ETA (Rest)  :   0.0 min
+median/Fit  : 14.5 s
+letzte Zelle: bspline:8 motion+global (win=368, seed=3)
+(Datei wird nach JEDEM Fit aktualisiert)

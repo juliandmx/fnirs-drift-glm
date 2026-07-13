@@ -1,0 +1,10 @@
+-e git+https://github.com/ibs-lab/cedalion.git@c7cbd53c2e4a7e49917fbf85308f34a243bf6435#egg=cedalion
+matplotlib==3.10.9
+matplotlib-inline @ file:///home/conda/feedstock_root/build_artifacts/matplotlib-inline_1778264321245/work
+numpy @ file:///home/conda/feedstock_root/build_artifacts/numpy_1747544639841/work/dist/numpy-2.2.6-cp311-cp311-linux_x86_64.whl#sha256=d4f76e4f9939f09d6b8021a56dbd088095917d586ead71ad13dbe44bb22d3dfa
+pandas @ file:///home/conda/feedstock_root/build_artifacts/pandas_1764614468005/work
+Pint @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_pint_1773969991/work
+pint-xarray @ file:///home/conda/feedstock_root/build_artifacts/pint-xarray_1734957976699/work
+scipy @ file:///home/conda/feedstock_root/build_artifacts/scipy-split_1739790648951/work/dist/scipy-1.15.2-cp311-cp311-linux_x86_64.whl#sha256=034f74dff07afe60a41ed832856d3d7e1ec1374d115cd88d525ace252f5b36fc
+statsmodels @ file:///home/conda/feedstock_root/build_artifacts/statsmodels_1764982999281/work
+xarray @ file:///home/conda/feedstock_root/build_artifacts/xarray_1749743207754/work
