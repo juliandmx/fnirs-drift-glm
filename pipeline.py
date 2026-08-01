@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from dataclasses import replace as dc_replace
 
 import numpy as np
 import xarray as xr
@@ -122,7 +123,8 @@ def build(
     smooth_T_s: float = 0.0,   # optionale Gamma-Glaettung; NICHT die Stimulusdauer
     window_s: float | None = None,   # Analysefenster [s]; None = volle Aufnahme
     rec=None,                  # vorgeladenes Recording (spart Neuladen im Sweep)
-    pre=None,                  # vorberechnetes preprocess.Preprocessed (s.u.)
+    stage=None,                # vorberechnete preprocess.ODStage (spart int2od im Sweep)
+    dpf: float = 6.0,
     seed: int = 42,
 ) -> Pipeline:
     # build_stim_df nutzt Pythons random-Modul -> seeden fuer Reproduzierbarkeit.
@@ -131,24 +133,27 @@ def build(
     random.seed(seed)
     np.random.seed(seed)
 
-    # Preprocessing nach Betreuungsvorgabe (preprocess.py). Es haengt WEDER vom Fenster
-    # NOCH vom Seed ab -- im Sweep daher einmal je Motion-Stufe berechnen und als `pre`
-    # durchreichen, sonst kostet TDDR bei jedem Build erneut ~2 min.
-    if pre is None:
+    # Erste Haelfte der Kette: Rohamplitude -> OD. Sie haengt weder vom Fenster noch vom
+    # Seed ab und kann im Sweep als `stage` durchgereicht werden.
+    if stage is None:
         if rec is None:
             rec = cedalion.data.get_nn22_resting_state()
-        pre = prep.run(rec, motion_method=motion_method, snr_threshold=snr_threshold,
-                       amp_range=amp_range, sd_range=sd_range)
-    geo3d = pre.geo3d
-    conc = pre.conc
+        stage = prep.to_od_stage(rec)
+    geo3d = stage.geo3d
 
-    # Analysefenster: auf die ersten window_s Sekunden kuerzen (stim_df/dm/activation
-    # bauen danach konsistent auf der gekuerzten Zeitreihe auf).
+    # Analysefenster: auf die ersten window_s Sekunden kuerzen. Das passiert VOR der
+    # Motion Correction, damit Korrektur und Auswertung dieselbe Zeitreihe sehen.
     if window_s is not None:
-        fs = 1.0 / float(np.median(np.diff(conc.time.values)))
+        fs = 1.0 / float(np.median(np.diff(stage.od.time.values)))
         n = int(round(window_s * fs))
-        conc = conc.isel(time=slice(0, n))
+        stage = dc_replace(stage, od=stage.od.isel(time=slice(0, n)),
+                           amp_raw=stage.amp_raw.isel(time=slice(0, n)))
 
+    # Gitter fuer Stimulus/Designmatrix/Blob: Konzentration OHNE Korrektur und OHNE
+    # Pruning -- hier zaehlen nur die Koordinaten (Zeit, Kanaele, Chromophore).
+    conc_grid = prep.to_conc(stage.od, geo3d, dpf)
+
+    conc = conc_grid
     stim_df = synhrf.build_stim_df(
         max_time=conc.time.values[-1] * units.seconds,
         trial_types=["Stim"],
@@ -188,11 +193,40 @@ def build(
         for c in chromo:
             betas_true.loc[:, name, c] = beta_true_map.sel(chromo=c).values
 
+    # Die INTENDIERTE Aktivierung in Konzentration (µM) -- das ist die Ground Truth.
     activation = glm.predict(conc, betas_true, dm_hrf).transpose(*conc.dims)
-    conc_syn = conc + activation
+    # glm.predict reicht source/detector nicht durch; conc2od braucht sie aber fuer die
+    # Kanalabstaende. Vom Konzentrationsgitter uebernehmen.
+    activation = activation.assign_coords(
+        {k: conc[k] for k in ("source", "detector") if k in conc.coords})
+
+    # ... und jetzt der eigentliche Punkt des Umbaus: die Aktivierung wird in die OD
+    # zurueckgerechnet und dort EINGEMISCHT, also VOR der Motion Correction. Dadurch
+    # laeuft die Korrektur ueber Signal und Rauschen -- so wie auf echten Daten. In der
+    # frueheren Fassung wurde erst nach dem kompletten Preprocessing addiert; die
+    # Korrektur konnte die HRF dann per Konstruktion nicht beschaedigen und ein
+    # Verfahren wie TDDR sah kuenstlich gut aus.
+    act_od = prep.to_od_activation(activation, geo3d, stage.od.wavelength, dpf)
+
+    kw = dict(motion_method=motion_method, snr_threshold=snr_threshold,
+              amp_range=amp_range, sd_range=sd_range, dpf=dpf)
+    # Reine Ruhedaten durch dieselbe Kette -> liefert zugleich die Kanalmasken.
+    pre_clean = prep.finish(stage, **kw)
+    # Augmentiert, mit den IDENTISCHEN Masken: die Kanalqualitaet ist eine Eigenschaft
+    # der Messung, nicht des eingemischten Signals. Sonst haetten conc und conc_syn
+    # unterschiedliche Kanalmengen.
+    pre_syn = prep.finish(stage, stage.od + act_od,
+                          masks={k: v for k, v in pre_clean.masks.items()
+                                 if k != "nonpositive"}, **kw)
+
+    conc, conc_syn = pre_clean.conc, pre_syn.conc
+    # Ground Truth und intendierte Aktivierung auf die ueberlebenden Kanaele beschneiden.
+    keep = conc_syn.channel
+    activation = activation.sel(channel=keep)
+    beta_true_map = beta_true_map.sel(channel=keep)
 
     return Pipeline(conc=conc, activation=activation, conc_syn=conc_syn,
                     geo3d=geo3d, dm_hrf=dm_hrf, dm_full=dm_full, stim_df=stim_df,
                     hrf_names=hrf_names, beta_true=beta_true,
                     beta_true_map=beta_true_map, raw_hrf_peak=raw_hrf_peak,
-                    chromo=chromo, aux=pre.aux, pre=pre)
+                    chromo=chromo, aux=pre_syn.aux, pre=pre_syn)

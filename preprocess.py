@@ -283,49 +283,104 @@ def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
     return conc.pint.to("uM").pint.dequantify()
 
 
-def run(
-    rec,
+@dataclass
+class ODStage:
+    """Zwischenstand: Ruhedaten als Optical Density, VOR der Motion Correction.
+
+    Genau hier wird die synthetische Aktivierung eingemischt (`to_od_activation`),
+    damit die Motion Correction anschliessend ueber Signal UND Rauschen laeuft -- so
+    wie auf echten Daten. Wuerde man erst danach einmischen, koennte die Korrektur die
+    HRF per Konstruktion nicht beschaedigen, und ein Verfahren wie TDDR saehe kuenstlich
+    gut aus (gemessen: es daempft das Band 0.01-0.1 Hz, in dem die HRF liegt, auf 54 %).
+    """
+
+    od: xr.DataArray         # (channel, wavelength, time), ungeprunt, unkorrigiert
+    baseline: xr.DataArray
+    amp_raw: xr.DataArray
+    geo3d: object
+    aux: object
+    dropped_nonpositive: list[str]
+
+
+def to_od_stage(rec) -> ODStage:
+    """Rohamplitude -> Optical Density (inkl. Positivitaets-Gate und Baseline)."""
+    # nn22 liefert die Amplitude dimensionslos -> als Volt quantifizieren, damit die
+    # spaeteren Amplitudengrenzen (dunkel/gesaettigt) eine physikalische Einheit haben.
+    amp_raw = rec["amp"].pint.dequantify().pint.quantify("V")
+    amp, dropped_nonpos = gate_positive(amp_raw)
+    od, baseline = to_od(amp)
+    return ODStage(od=od, baseline=baseline, amp_raw=amp_raw, geo3d=rec.geo3d,
+                   aux=rec.aux_ts, dropped_nonpositive=dropped_nonpos)
+
+
+def to_od_activation(activation_conc: xr.DataArray, geo3d, wavelength,
+                     dpf: float = 6.0) -> xr.DataArray:
+    """Konzentrations-Aktivierung [µM] -> Optical Density, zum Einmischen.
+
+    `conc2od` ist die exakte Umkehrung von `od2conc` (beides das modifizierte
+    Beer-Lambert-Gesetz). Dadurch bleibt die Ground Truth in µM definiert und
+    interpretierbar: ohne Motion Correction ergibt der Weg
+    conc -> od -> (nichts) -> conc die Aktivierung exakt zurueck. Weicht sie ab, ist
+    das genau der Eingriff der Korrektur -- und damit die Groesse, die gemessen werden soll.
+
+    Args:
+        activation_conc: (time, channel, chromo) in µM, dequantifiziert.
+        geo3d: Optodengeometrie (fuer die Kanalabstaende).
+        wavelength: Wellenlaengen-Koordinate der Ziel-OD.
+        dpf: Differentieller Pfadlaengenfaktor, identisch zu `to_conc`.
+    """
+    dpf_da = xr.DataArray([dpf] * len(wavelength), dims="wavelength",
+                          coords={"wavelength": wavelength})
+    conc = activation_conc
+    if conc.pint.units is None:
+        conc = conc.pint.quantify("uM")
+    return cedalion.nirs.cw.conc2od(conc, geo3d, dpf_da, spectrum="prahl")
+
+
+def finish(
+    stage: ODStage,
+    od_in: xr.DataArray | None = None,
     *,
     motion_method: str = DEFAULT_MOTION,
     snr_threshold: float = 3.0,
     amp_range: tuple[float, float] = (1e-3, 0.84),
     sd_range: tuple[float, float] = (0.0, 4.5),
     dpf: float = 6.0,
+    masks: dict[str, xr.DataArray] | None = None,
 ) -> Preprocessed:
-    """Fuehrt die Preprocessing-Kette auf einem Recording aus.
+    """Zweite Haelfte der Kette: Motion Correction -> Amplitude -> Masken -> Pruning -> Konzentration.
 
     Args:
-        rec: Cedalion-Recording (z.B. aus `cedalion.data.get_nn22_resting_state()`).
-        motion_method: eines aus `MOTION_METHODS`. `"none"` schaltet die Korrektur ab --
-            gebraucht fuer den A/B-Vergleich gegen die Motion-Regressoren in der
-            Designmatrix (Betreuungshinweis: koennte sich doppeln).
+        stage: Ergebnis von `to_od_stage`.
+        od_in: die zu verarbeitende OD. Default `stage.od` (reine Ruhedaten); fuer die
+            Augmentation wird hier `stage.od + Aktivierung` uebergeben.
+        motion_method: eines aus `MOTION_METHODS`. `"none"` schaltet die Korrektur ab.
         snr_threshold: SNR-Schwelle (Betreuungsvorgabe: 3).
         amp_range: (dunkel, gesaettigt) in Volt (NinjaNIRS-Vorgabe: 1e-3 .. 0.84).
         sd_range: zulaessiger Quell-Detektor-Abstand in cm.
-        dpf: Differentieller Pfadlaengenfaktor fuer die modifizierte Beer-Lambert-Umrechnung.
-
-    Returns:
-        `Preprocessed` mit Konzentration, OD, Baseline und Diagnose-Zwischenstufen.
+        dpf: Differentieller Pfadlaengenfaktor fuer die Beer-Lambert-Umrechnung.
+        masks: vorgegebene Masken statt neu berechneter. Gebraucht, damit die
+            augmentierte und die reine Variante EXAKT dieselben Kanaele behalten --
+            die Kanalqualitaet ist eine Eigenschaft der Messung, nicht des
+            eingemischten Signals.
     """
-    # nn22 liefert die Amplitude dimensionslos -> als Volt quantifizieren, damit die
-    # spaeteren Amplitudengrenzen (dunkel/gesaettigt) eine physikalische Einheit haben.
-    amp_raw = rec["amp"].pint.dequantify().pint.quantify("V")
-
-    amp, dropped_nonpos = gate_positive(amp_raw)
-    od_raw, baseline = to_od(amp)
+    od_raw = stage.od if od_in is None else od_in
+    baseline, dropped_nonpos = stage.baseline, stage.dropped_nonpositive
+    amp_raw = stage.amp_raw
     od = motion_correct(od_raw, motion_method)
     # Zurueck zur Amplitude: dort -- und nur dort -- sind "dunkel" und "gesaettigt"
     # definiert. Die Qualitaetsmasken (Schritt 1.5) setzen auf amp_corr auf.
     amp_corr = to_amp(od, baseline)
 
-    masks = quality_masks(amp_corr, rec.geo3d, snr_threshold=snr_threshold,
-                          amp_range=amp_range, sd_range=sd_range)
+    if masks is None:
+        masks = quality_masks(amp_corr, stage.geo3d, snr_threshold=snr_threshold,
+                              amp_range=amp_range, sd_range=sd_range)
 
     # Erst jetzt verwerfen -- und danach wieder auf OD weiterarbeiten (Vorgabe).
     # amp_raw/amp_corr bleiben ungeprunt: sie dokumentieren die Stufe, AUF der die
     # Masken bestimmt wurden.
     od_pruned, dropped_quality = prune(od, masks)
-    conc = to_conc(od_pruned, rec.geo3d, dpf)
+    conc = to_conc(od_pruned, stage.geo3d, dpf)
     # Die unkorrigierte OD auf dieselben Kanaele beschneiden, sonst vergleicht die
     # Diagnose (band_power_ratio) unterschiedliche Kanalmengen.
     od_raw = od_raw.sel(channel=od_pruned.channel)
@@ -336,13 +391,23 @@ def run(
         amp_raw=amp_raw,
         amp_corr=amp_corr,
         baseline=baseline,
-        geo3d=rec.geo3d,
-        aux=rec.aux_ts,
+        geo3d=stage.geo3d,
+        aux=stage.aux,
         dropped=list(dropped_nonpos) + dropped_quality,
         masks={"nonpositive": dropped_nonpos, **masks},
         motion_method=motion_method,
         od_uncorrected=od_raw,
     )
+
+
+def run(rec, **kwargs) -> Preprocessed:
+    """Komplette Kette auf einem Recording, ohne Augmentation.
+
+    Bequemlichkeits-Wrapper um `to_od_stage` + `finish`. Fuer die Augmentation wird
+    stattdessen `to_od_stage` -> Aktivierung einmischen -> `finish` benutzt, damit die
+    Motion Correction die HRF mit sieht (siehe `ODStage`).
+    """
+    return finish(to_od_stage(rec), **kwargs)
 
 
 if __name__ == "__main__":
