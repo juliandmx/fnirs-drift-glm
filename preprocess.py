@@ -30,6 +30,7 @@ import xarray as xr
 
 import cedalion
 import cedalion.nirs
+import cedalion.sigproc.motion as motion
 
 
 @dataclass
@@ -44,6 +45,8 @@ class Preprocessed:
     aux: object              # rec.aux_ts (Accelerometer/Gyroskop/dark signal)
     dropped: list[str] = field(default_factory=list)   # entfernte Kanaele
     masks: dict = field(default_factory=dict)          # Einzelmasken zur Diagnose
+    motion_method: str = "none"                        # angewandte Motion Correction
+    od_uncorrected: xr.DataArray | None = None         # OD vor der Korrektur (Diagnose)
 
 
 def gate_positive(amp: xr.DataArray) -> tuple[xr.DataArray, list[str]]:
@@ -79,6 +82,79 @@ def to_od(amp: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
     return cedalion.nirs.cw.int2od(amp, return_baseline=True)
 
 
+MOTION_METHODS = ("none", "tddr", "wavelet", "tddr+wavelet")
+
+
+def motion_correct(
+    od: xr.DataArray,
+    method: str = "tddr+wavelet",
+    *,
+    wavelet_iqr: float = 1.5,
+    wavelet_name: str = "db2",
+    wavelet_level: int = 4,
+) -> xr.DataArray:
+    """Motion Correction auf Optical Density.
+
+    Die Betreuungsvorgabe nennt zwei Artefakttypen, die entfernt werden sollen:
+    "scharfer Spike oder ruckartige Verschiebung". Genau darauf zielen die beiden
+    Verfahren, und daher auch ihre Reihenfolge (identisch zu Cedalion NB 25:
+    "apply TDDR first to correct jumps, then apply Wavelet motion artifact correction"):
+
+      * `tddr`    -- Temporal Derivative Distribution Repair: robuste Regression auf der
+                     zeitlichen Ableitung; faengt Baseline-Spruenge / ruckartige
+                     Verschiebungen. Parameterfrei (`motion.tddr(ts)`).
+      * `wavelet` -- verwirft Wavelet-Koeffizienten ausserhalb des IQR-Bandes; faengt
+                     scharfe Spikes. Groesseres `iqr` = drastischere Korrektur;
+                     `iqr < 0` laesst das Signal unveraendert.
+
+    Beide arbeiten laut Cedalion ausdruecklich auf OD, nicht auf Amplitude oder
+    Konzentration ("The correction algorithms operate on optical densities").
+    """
+    if method not in MOTION_METHODS:
+        raise ValueError(f"Unbekannte Motion-Correction: {method!r} "
+                         f"(erlaubt: {MOTION_METHODS})")
+    if method == "none":
+        return od
+    if "tddr" in method:
+        od = motion.tddr(od)
+    if "wavelet" in method:
+        od = motion.wavelet(od, iqr=wavelet_iqr, wavelet=wavelet_name,
+                            level=wavelet_level)
+    return od
+
+
+DRIFT_BANDS = (("Drift   <0.01 Hz", 0.0, 0.01),
+               ("0.01-0.1 Hz     ", 0.01, 0.1),
+               ("0.1-0.5 Hz      ", 0.1, 0.5),
+               ("Kardial >0.5 Hz ", 0.5, np.inf))
+
+
+def band_power_ratio(od_before: xr.DataArray, od_after: xr.DataArray) -> dict:
+    """Leistung je Frequenzband NACH der Korrektur relativ zu VORHER (Median).
+
+    Diagnose fuer die zentrale methodische Frage dieser Arbeit: greift die Motion
+    Correction in das Driftband ein? Ein Verfahren, das unterhalb 0.01 Hz Leistung
+    entfernt, nimmt genau den Anteil weg, den die Driftregressoren modellieren sollen --
+    dann bestimmt die Vorverarbeitung das Ergebnis statt des Driftmodells, und der
+    Familienvergleich wird verfaelscht (Betreuungshinweis 2026-07-11).
+
+    Rueckgabe: {Bandname: Verhaeltnis}, 1.0 = unveraendert.
+    """
+    fs = 1.0 / float(np.median(np.diff(od_before.time.values)))
+    out = {}
+    a0 = np.asarray(od_before.values, float).reshape(-1, od_before.sizes["time"])
+    a1 = np.asarray(od_after.values, float).reshape(-1, od_after.sizes["time"])
+    a0 = a0 - a0.mean(-1, keepdims=True)
+    a1 = a1 - a1.mean(-1, keepdims=True)
+    freq = np.fft.rfftfreq(a0.shape[-1], d=1.0 / fs)
+    P0 = np.abs(np.fft.rfft(a0, axis=-1)) ** 2
+    P1 = np.abs(np.fft.rfft(a1, axis=-1)) ** 2
+    for name, lo, hi in DRIFT_BANDS:
+        m = (freq >= lo) & (freq < hi)
+        out[name] = float(np.median(P1[:, m].sum(-1) / (P0[:, m].sum(-1) + 1e-30)))
+    return out
+
+
 def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
     """Optical Density -> Haemoglobinkonzentration [µM], dequantifiziert."""
     dpf_da = xr.DataArray(
@@ -90,11 +166,14 @@ def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
     return conc.pint.to("uM").pint.dequantify()
 
 
-def run(rec, *, dpf: float = 6.0) -> Preprocessed:
+def run(rec, *, motion_method: str = "tddr+wavelet", dpf: float = 6.0) -> Preprocessed:
     """Fuehrt die Preprocessing-Kette auf einem Recording aus.
 
     Args:
         rec: Cedalion-Recording (z.B. aus `cedalion.data.get_nn22_resting_state()`).
+        motion_method: eines aus `MOTION_METHODS`. `"none"` schaltet die Korrektur ab --
+            gebraucht fuer den A/B-Vergleich gegen die Motion-Regressoren in der
+            Designmatrix (Betreuungshinweis: koennte sich doppeln).
         dpf: Differentieller Pfadlaengenfaktor fuer die modifizierte Beer-Lambert-Umrechnung.
 
     Returns:
@@ -105,7 +184,8 @@ def run(rec, *, dpf: float = 6.0) -> Preprocessed:
     amp_raw = rec["amp"].pint.dequantify().pint.quantify("V")
 
     amp, dropped_nonpos = gate_positive(amp_raw)
-    od, baseline = to_od(amp)
+    od_raw, baseline = to_od(amp)
+    od = motion_correct(od_raw, motion_method)
     conc = to_conc(od, rec.geo3d, dpf)
 
     return Preprocessed(
@@ -117,13 +197,20 @@ def run(rec, *, dpf: float = 6.0) -> Preprocessed:
         aux=rec.aux_ts,
         dropped=list(dropped_nonpos),
         masks={"nonpositive": dropped_nonpos},
+        motion_method=motion_method,
+        od_uncorrected=od_raw,
     )
 
 
 if __name__ == "__main__":
+    import sys
+    import time
+
     import cedalion.data
 
-    P = run(cedalion.data.get_nn22_resting_state())
+    method = sys.argv[1] if len(sys.argv) > 1 else "tddr+wavelet"
+    t0 = time.time()
+    P = run(cedalion.data.get_nn22_resting_state(), motion_method=method)
     bl = np.asarray(P.baseline.pint.dequantify().values, dtype=float)
     print(f"Kanaele roh        : {P.amp_raw.sizes['channel']}")
     print(f"  nicht positiv    : {len(P.masks['nonpositive'])} verworfen "
@@ -134,3 +221,14 @@ if __name__ == "__main__":
           f"max {bl.max():.3e}")
     print(f"OD                 : {dict(P.od.sizes)}")
     print(f"Konzentration [µM] : {dict(P.conc.sizes)}")
+
+    print(f"\nMotion Correction  : {P.motion_method}   ({time.time() - t0:.1f}s gesamt)")
+    if P.od_uncorrected is not None and method != "none":
+        d1 = np.abs(np.diff(np.asarray(P.od_uncorrected.values, float), axis=-1))
+        d2 = np.abs(np.diff(np.asarray(P.od.values, float), axis=-1))
+        print(f"  groesster Sprung : {d1.max():.4f} -> {d2.max():.4f} OD "
+              f"(Spitzen der zeitlichen Ableitung)")
+        print("  Restleistung je Band (100 % = unveraendert):")
+        for name, r in band_power_ratio(P.od_uncorrected, P.od).items():
+            flag = "  <-- Driftband!" if name.startswith("Drift") and r < 0.9 else ""
+            print(f"    {name} {100 * r:6.1f} %{flag}")
