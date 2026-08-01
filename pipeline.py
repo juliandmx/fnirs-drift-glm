@@ -1,7 +1,9 @@
 """Gemeinsame Augmentations-/GLM-Pipeline fuer die Bachelorarbeit.
 
 Laedt Ruhedaten, speist eine HRF mit BEKANNTER Peak-Amplitude ein und baut die
-Designmatrix. Der HRF-Regressor wird auf Peak = 1 normiert -- dadurch ist die
+Designmatrix. Die Vorverarbeitung selbst (Motion Correction, Kanalqualitaet, Pruning)
+liegt in `preprocess.py` -- sie haengt weder vom Analysefenster noch vom Seed ab und
+kann deshalb einmal berechnet und ueber `build(pre=...)` durchgereicht werden. Der HRF-Regressor wird auf Peak = 1 normiert -- dadurch ist die
 Ground-Truth-Amplitude direkt die Peak-Konzentrationsaenderung in µM (realistisch
 ~0.1..1 µM) statt eines uninterpretierbaren Koeffizienten auf einem ungenormten
 Regressor. Injektion und Fit nutzen denselben (normierten) Regressor, sodass die
@@ -25,12 +27,11 @@ import xarray as xr
 
 import cedalion
 import cedalion.data
-import cedalion.nirs
 import cedalion.models.glm as glm
-import cedalion.sigproc.quality as quality
 import cedalion.sim.synthetic_hrf as synhrf
-import cedalion.xrutils as xrutils
 from cedalion import units
+
+import preprocess as prep
 
 
 @dataclass
@@ -48,6 +49,7 @@ class Pipeline:
     raw_hrf_peak: dict[str, float]  # Peak jeder HRF-Spalte VOR der Normierung
     chromo: np.ndarray
     aux: object                  # rec.aux_ts (Accelerometer/Gyroscope, fuer Motion-Regr.)
+    pre: object = None           # preprocess.Preprocessed (verworfene Kanaele, Masken, ...)
 
 
 def _normalize_hrf_to_unit_peak(dm_hrf, hrf_names):
@@ -103,7 +105,10 @@ def _spatial_beta(conc, geo3d, peak_hbo, hbr_ratio, sigma_mm):
 
 def build(
     *,
-    snr_threshold: float = 10.0,
+    motion_method: str = prep.DEFAULT_MOTION,   # Achsenstufe, Begruendung in preprocess
+    snr_threshold: float = 3.0,       # Betreuungsvorgabe (vorher 10)
+    amp_range: tuple[float, float] = (1e-3, 0.84),   # dunkel / gesaettigt [V]
+    sd_range: tuple[float, float] = (0.0, 4.5),      # Quell-Detektor-Abstand [cm]
     drift_order: int = 3,
     beta_true_hbo: float = 0.6,
     hbr_ratio: float = -0.4,
@@ -117,6 +122,7 @@ def build(
     smooth_T_s: float = 0.0,   # optionale Gamma-Glaettung; NICHT die Stimulusdauer
     window_s: float | None = None,   # Analysefenster [s]; None = volle Aufnahme
     rec=None,                  # vorgeladenes Recording (spart Neuladen im Sweep)
+    pre=None,                  # vorberechnetes preprocess.Preprocessed (s.u.)
     seed: int = 42,
 ) -> Pipeline:
     # build_stim_df nutzt Pythons random-Modul -> seeden fuer Reproduzierbarkeit.
@@ -125,20 +131,16 @@ def build(
     random.seed(seed)
     np.random.seed(seed)
 
-    if rec is None:
-        rec = cedalion.data.get_nn22_resting_state()
-    geo3d = rec.geo3d
-    amp = rec["amp"].pint.dequantify().pint.quantify("V")
-
-    _, snr_mask = quality.snr(amp, snr_threshold)
-    amp_sel, _ = xrutils.apply_mask(amp, snr_mask, "drop", "channel")
-
-    od = cedalion.nirs.cw.int2od(amp_sel)
-    dpf = xr.DataArray(
-        [6.0, 6.0], dims="wavelength", coords={"wavelength": amp_sel.wavelength}
-    )
-    conc = cedalion.nirs.cw.od2conc(od, geo3d, dpf, spectrum="prahl")
-    conc = conc.pint.to("uM").pint.dequantify()
+    # Preprocessing nach Betreuungsvorgabe (preprocess.py). Es haengt WEDER vom Fenster
+    # NOCH vom Seed ab -- im Sweep daher einmal je Motion-Stufe berechnen und als `pre`
+    # durchreichen, sonst kostet TDDR bei jedem Build erneut ~2 min.
+    if pre is None:
+        if rec is None:
+            rec = cedalion.data.get_nn22_resting_state()
+        pre = prep.run(rec, motion_method=motion_method, snr_threshold=snr_threshold,
+                       amp_range=amp_range, sd_range=sd_range)
+    geo3d = pre.geo3d
+    conc = pre.conc
 
     # Analysefenster: auf die ersten window_s Sekunden kuerzen (stim_df/dm/activation
     # bauen danach konsistent auf der gekuerzten Zeitreihe auf).
@@ -193,4 +195,4 @@ def build(
                     geo3d=geo3d, dm_hrf=dm_hrf, dm_full=dm_full, stim_df=stim_df,
                     hrf_names=hrf_names, beta_true=beta_true,
                     beta_true_map=beta_true_map, raw_hrf_peak=raw_hrf_peak,
-                    chromo=chromo, aux=rec.aux_ts)
+                    chromo=chromo, aux=pre.aux, pre=pre)

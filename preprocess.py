@@ -87,6 +87,17 @@ def to_od(amp: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
 
 MOTION_METHODS = ("none", "tddr", "wavelet", "tddr+wavelet")
 
+# Default fuer Demos/Tests. Im Sweep ist die Motion Correction eine eigene ACHSE
+# ({"wavelet", "tddr+wavelet"}), der Default entscheidet dort also nichts.
+#
+# Warum "wavelet" und nicht die woertliche Vorgabe "tddr+wavelet": TDDR daempft
+# gemessen das Driftband (<0.01 Hz) auf 55.6 % -- es entfernt fast die Haelfte dessen,
+# was die Driftregressoren modellieren sollen, und kollidiert damit mit dem
+# Betreuungshinweis vom 2026-07-11 (bei Drift-Modellierung nicht hochpassfiltern).
+# Wavelet ist im Driftband neutral (100.0 %) und entfernt trotzdem die Spikes.
+# Nachpruefbar mit `band_power_ratio` bzw. `python preprocess.py tddr+wavelet`.
+DEFAULT_MOTION = "wavelet"
+
 
 def motion_correct(
     od: xr.DataArray,
@@ -242,7 +253,7 @@ def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
 def run(
     rec,
     *,
-    motion_method: str = "tddr+wavelet",
+    motion_method: str = DEFAULT_MOTION,
     snr_threshold: float = 3.0,
     amp_range: tuple[float, float] = (1e-3, 0.84),
     sd_range: tuple[float, float] = (0.0, 4.5),
@@ -307,7 +318,7 @@ if __name__ == "__main__":
 
     import cedalion.data
 
-    method = sys.argv[1] if len(sys.argv) > 1 else "tddr+wavelet"
+    method = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MOTION
     t0 = time.time()
     P = run(cedalion.data.get_nn22_resting_state(), motion_method=method)
     bl = np.asarray(P.baseline.pint.dequantify().values, dtype=float)
