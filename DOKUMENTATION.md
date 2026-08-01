@@ -177,17 +177,81 @@ Lichtfarben (760 und 850 Nanometer).
 *(Cedalion: `cedalion.data.get_nn22_resting_state()`. Aufbau der Daten: Notebook
 `getting_started_io/13`.)*
 
-### Schritt 2 – Schlechte Kanäle aussortieren
-Nicht jeder Kanal misst sauber (schlechter Hautkontakt, Haare). Wir behalten nur Kanäle mit
-gutem **Signal-Rausch-Verhältnis (SNR)**. Es bleiben **544 Kanäle**.
-*(Cedalion: `cedalion.sigproc.quality.snr(...)`; Notebook `signal_quality/21`.)*
+### Schritt 2 – Aufräumen: Bewegung herausrechnen, schlechte Kanäle aussortieren
+Nicht jeder Kanal misst sauber, und die Person bewegt sich. Beides wird hier behandelt – in
+einer **bestimmten Reihenfolge**, die nicht beliebig ist:
+
+1. **Lichtstärke → optische Dichte.** Dabei wird der Ausgangspegel jedes Kanals (die
+   „Baseline", also seine mittlere Helligkeit) **mitgespeichert**. Ohne ihn käme man später
+   nicht zurück, denn die optische Dichte beschreibt nur *Änderungen* gegenüber dem eigenen
+   Mittel, nicht die Helligkeit selbst.
+2. **Bewegungsartefakte herausrechnen.** Sie treten in zwei Formen auf: als **scharfer
+   Ausschlag** (Spike) und als **ruckartige Verschiebung** der Grundlinie. Dafür gibt es zwei
+   Verfahren – *Wavelet* gegen Spikes, *TDDR* gegen Verschiebungen. Sie arbeiten auf der
+   optischen Dichte, nicht auf der Helligkeit.
+3. **Zurück zur Lichtstärke.** Erst hier lässt sich beurteilen, ob ein Kanal **zu dunkel**
+   (kaum Licht, nur Rauschen) oder **gesättigt** ist (Detektor am Anschlag, Signal oben
+   abgeschnitten). Beides sind Helligkeits-Begriffe – in der optischen Dichte sind sie gar
+   nicht definiert. Deshalb der Umweg.
+4. **Kanäle bewerten und aussortieren**, nach drei Kriterien: Signal-Rausch-Verhältnis
+   (Schwelle 3), Helligkeitsfenster (0,001 bis 0,84 Volt), Sender-Empfänger-Abstand.
+5. **Weiterarbeiten auf der optischen Dichte** und erst dann in Konzentrationen umrechnen.
+
+Von **567** Rohkanälen bleiben **520** übrig: 6 fallen weg, weil ihre Lichtstärke stellenweise
+auf null geht (physikalisch unmöglich, unter dem Rauschboden), 41 durch die Qualitätskriterien.
+
+Wie gut ist die Helligkeits-Untergrenze gewählt? Der Datensatz enthält eine **Dunkelmessung**
+(das Gerät misst bei ausgeschaltetem Licht mit) – daraus ergibt sich ein Rauschboden von
+0,0000095 Volt. Die Grenze 0,001 Volt liegt also beim **105-fachen** davon. Und sie liegt in
+einer Lücke: zwischen dem 50- und dem 105-fachen des Rauschbodens fällt **kein einziger**
+weiterer Kanal heraus. Die beiden Gruppen – brauchbare und tote Kanäle – sind also klar
+getrennt, die genaue Lage der Grenze ist unkritisch.
+
+> **Ein Befund, der für diese Arbeit zentral ist:** Die beiden Bewegungs-Verfahren verhalten
+> sich völlig unterschiedlich gegenüber dem **langsamen Driften**, um das es in dieser Arbeit
+> geht. *Wavelet* lässt es unangetastet (100 % bleiben übrig). *TDDR* dagegen entfernt
+> **fast die Hälfte davon** (nur 55,6 % bleiben) – es wirkt unterhalb von 0,5 Hz wie ein
+> breiter Dämpfer. Damit würde ein Teil des Driftens schon vor der Auswertung verschwinden,
+> und die Driftregressoren hätten weniger zu tun, als sie eigentlich sollten. Weil das die
+> Kernfrage der Arbeit berührt, wird die Wahl des Verfahrens **nicht** festgelegt, sondern
+> als eigene Vergleichsachse mitgeführt (Kapitel 5).
+>
+> **Und es trifft nicht nur das Driften, sondern die Hirnantwort selbst.** Die eingemischte
+> HRF liegt im Bereich um 0,03 Hz – genau dort, wo TDDR dämpft. Gemessen kommt von der
+> eingemischten Höhe nur noch **70 %** an (HbO wie HbR); bei *Wavelet* sind es 100 %.
+> Damit unterschätzt TDDR die gesuchte Größe systematisch um rund 30 %.
+>
+> Warum das trotzdem zunächst wie eine Verbesserung *aussieht*: Ohne Bewegungskorrektur wird
+> HbO ohnehin um **50 % überschätzt** (Schätzung 0,596 statt 0,397 – die Driftregressoren
+> ziehen systemische Störungen in die Hirnantwort hinein). Die 30 % Dämpfung von TDDR heben
+> einen Teil dieser Überschätzung zufällig wieder auf, der Fehler sinkt auf +0,059. Das ist
+> aber **kein besseres Schätzen, sondern das Verrechnen zweier Fehler**. Sichtbar wird das an
+> **HbR**: dort gibt es keine Überschätzung, gegen die sich etwas verrechnen könnte – und
+> prompt verschlechtert TDDR den Fehler von +0,018 auf +0,071. Dieselbe Dämpfung, aber ohne
+> den Gegenfehler.
+>
+> *(Zahlen aus `compare_preprocessing.py`, 3 Wiederholungen, Fenster 180 s, 20 aktivste
+> Kanäle → `results/preprocessing_comparison.csv`. Der Vergleich läuft auf einer gemeinsamen
+> Kanalbasis; deshalb sind „alte" und „neue" Kette ohne Bewegungskorrektur identisch – die
+> Umstellung ändert nicht die Schätzung auf einem Kanal, sondern welche Kanäle eingehen.)*
+>
+> **Wichtig für die Aussagekraft:** Damit das überhaupt messbar ist, wird die künstliche
+> Hirnantwort seit dem Umbau **vor** der Bewegungskorrektur eingemischt (in die optische
+> Dichte), nicht danach. Sonst könnte die Korrektur die Antwort gar nicht erreichen – sie
+> dürfte nur das Rauschen putzen und sähe künstlich gut aus. Auf echten Daten steckt die
+> Hirnantwort ebenfalls im Signal, wenn korrigiert wird.
+
+*(Cedalion: `cedalion.nirs.cw.int2od(..., return_baseline=True)` / `od2int(...)`,
+`cedalion.sigproc.motion.tddr(...)` / `wavelet(...)`, `cedalion.sigproc.quality.snr / mean_amp /
+sd_dist / prune_ch`. Notebooks `signal_quality/21`, `signal_quality/22`, Tutorial `3`.
+Umgesetzt in `preprocess.py`; die Reihenfolge entspricht der Betreuungsvorgabe und zugleich
+der von Cedalion empfohlenen Kette.)*
 
 ### Schritt 3 – Licht in Blutkonzentrationen umrechnen
-Das Gerät misst Lichtstärken. Über zwei feste physikalische Umrechnungen werden daraus die
-Konzentrationsänderungen von **HbO** und **HbR** je Kanal (in Mikromol, µM):
-- Lichtstärke → **optische Dichte** (wie stark das Licht abgeschwächt wurde).
-- optische Dichte → **Konzentration** (modifiziertes Beer-Lambert-Gesetz).
-*(Cedalion: `cedalion.nirs.cw.int2od(...)` und `od2conc(...)`.)*
+Aus der optischen Dichte werden die Konzentrationsänderungen von **HbO** und **HbR** je Kanal
+(in Mikromol, µM) – über das **modifizierte Beer-Lambert-Gesetz**. Das ist eine feste
+physikalische Umrechnung ohne freie Entscheidungen.
+*(Cedalion: `cedalion.nirs.cw.od2conc(...)`.)*
 
 ### Schritt 4 – Eine künstliche Hirnaktivität mit bekannter Stärke einmischen
 Das ist der Trick, mit dem wir eine **Grundwahrheit** erzeugen. Wir nehmen die
@@ -204,10 +268,16 @@ HbO), weiter entfernte Kanäle immer weniger (glockenförmiger Abfall, „Gauß-
 dieselbe Form, aber mit umgekehrtem Vorzeichen und 40 % der Höhe (die inverse HbO/HbR-Beziehung).
 
 *(Cedalion-Bezug: Idee und Bausteine aus Notebook `augmentation/62` und Tutorial `7`. Dort
-wird der Fleck über ein Kopfmodell auf die Kanäle projiziert. Da für den Ruhedatensatz kein
-solches Kopfmodell vorliegt, definieren wir den Fleck **direkt im Kanal-Raum** über die
-Kanalpositionen – eine bewusste, saubere Vereinfachung. Funktion `_spatial_beta` in
-`pipeline.py`.)*
+wird der Fleck zuerst auf der Hirnoberfläche erzeugt und dann über ein Kopfmodell auf die
+Kanäle projiziert. Wir definieren ihn stattdessen **direkt im Kanal-Raum** über die
+Kanalpositionen – das entspricht der Betreuungsvorgabe („künstliche Aktivierung nicht im
+Bildraum einfügen, sondern im Kanalraum, um realistischer zu sein"): eingemischt wird genau
+dort, wo Ruhedaten und Aktivierung zusammengeführt werden, ohne den Umweg über ein
+Vorwärtsmodell und dessen eigene Näherungen. Funktion `_spatial_beta` in `pipeline.py`.
+Ein Kopfmodell **läge durchaus vor** – `cedalion.data.get_precomputed_sensitivity(
+"nn22_resting", "colin27")` liefert die fertige Sensitivitätsmatrix für genau diesen
+Datensatz –, es wird für die Einmischung aber bewusst nicht verwendet. Für den Vergleich
+**im Bildraum** (Kapitel 9) kommt es dann zum Einsatz.)*
 
 ### Schritt 5 – Die Designmatrix (das „Rezept") zusammenstellen
 Jetzt legen wir die „Zutaten" fest, mit denen das GLM das Signal erklären soll:
@@ -283,8 +353,7 @@ Variiert werden vier Achsen:
    (ein „Gesamtsignal"-Regressor als Ersatz für systemische Störungen) und beides kombiniert.
    *(Hinweis: Echte „Short-Channel"-Regression – ein Standardtrick mit sehr kurzen
    Messkanälen – ist mit diesem Datensatz nicht möglich, weil er keine solchen kurzen Kanäle
-   enthält. Der Global-Regressor ist der passende Ersatz; die echte Variante kommt mit den
-   späteren DOT-Daten.)*
+   enthält. Der Global-Regressor ist der passende Ersatz.)*
 4. **Zufalls-Wiederholungen (Seeds):** Die künstlichen Reize werden zu leicht anderen
    Zeitpunkten platziert (mehrere Wiederholungen). Erst der Vergleich **über diese
    Wiederholungen** liefert eine echte Bias-/Varianz-Aussage (nicht der Vergleich über Kanäle).
@@ -339,7 +408,7 @@ bewertbar) und demonstriert damit die komplette Inferenz-Pipeline für die reale
 
 Die Studie lief in drei Ausbaustufen. **v1** mischte die Aktivität überall gleich stark ein
 (räumlich „flach") – das führte zu einem Trugschluss beim Global-Regressor und wurde in **v2**
-durch den räumlichen Blob (Kapitel 4, Schritt 4) behoben. **v3** ist die vollständige
+durch den räumlichen Blob behoben. **v3** ist die vollständige
 Simulationsstudie: 15 Driftfamilien (inkl. B-Splines) × 3 Fenster (90/180/368 s) ×
 4 Konstellationen × 4 Wiederholungen (720 Auswertungen) plus die beiden Zusatz-Analysen. Die
 folgenden Zahlen stammen aus **v3**. Alle Tabellen dazu: `results/tables.md`.
