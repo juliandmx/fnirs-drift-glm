@@ -1,4 +1,4 @@
--e git+https://github.com/ibs-lab/cedalion.git@c7cbd53c2e4a7e49917fbf85308f34a243bf6435#egg=cedalion
+-e git+https://github.com/ibs-lab/cedalion.git@a7eb625312d15c54f294c1fb9017e43c3a419d7d#egg=cedalion
 matplotlib==3.10.9
 matplotlib-inline @ file:///home/conda/feedstock_root/build_artifacts/matplotlib-inline_1778264321245/work
 numpy @ file:///home/conda/feedstock_root/build_artifacts/numpy_1747544639841/work/dist/numpy-2.2.6-cp311-cp311-linux_x86_64.whl#sha256=d4f76e4f9939f09d6b8021a56dbd088095917d586ead71ad13dbe44bb22d3dfa
