@@ -189,6 +189,39 @@ def quality_masks(
     return {"snr": snr_mask, "mean_amp": amp_mask, "sd_dist": sd_mask}
 
 
+def dark_noise_floor(aux, key: str = "dark signal") -> float | None:
+    """Robuster Rauschboden des Detektors aus der Dunkelmessung [V], oder None.
+
+    nn22 fuehrt eine Dunkelmessung als Aux-Zeitreihe mit (Schreibweise mit LEERZEICHEN:
+    "dark signal", nicht "dark_signal"), mit 1134 Spuren = 567 Kanaele x 2 Wellenlaengen.
+    Die Werte streuen um Null -- es ist eine RAUSCH-Referenz, kein Pegel. Deshalb wird
+    die Streuung ausgewertet und nicht der Mittelwert; robust ueber MAD, damit einzelne
+    defekte Detektoren den Wert nicht anheben.
+
+    Nutzen: die Untergrenze fuer "dunkel" (Vorgabe 1e-3 V) laesst sich damit datengetrieben
+    einordnen statt als Faustwert. Auf nn22 ergibt sich ein Rauschboden von ~9.5e-06 V,
+    die Vorgabe entspricht also dem ~105-fachen davon -- und liegt in einer Luecke: von
+    50x bis 105x Rauschboden faellt kein einziger weiterer Kanal heraus. Die Schwelle
+    trennt somit zwei klar getrennte Populationen und ist unempfindlich gegen ihre genaue
+    Lage.
+
+    Die Zuordnung der Aux-Spuren zu (Kanal, Wellenlaenge) ist NICHT belegt -- es gibt
+    keine aux_channel-Koordinate. Der Wert wird daher nur aggregiert verwendet.
+    """
+    if aux is None or key not in aux:
+        return None
+    d = aux[key]
+    try:
+        d = d.pint.dequantify()
+    except Exception:
+        pass
+    v = np.asarray(d.values, dtype=float)
+    ax = list(d.dims).index("time")
+    mad = 1.4826 * np.nanmedian(np.abs(v - np.nanmedian(v, axis=ax, keepdims=True)),
+                                axis=ax)
+    return float(np.nanmedian(mad))
+
+
 def prune(ts: xr.DataArray, masks: dict[str, xr.DataArray]) -> tuple[xr.DataArray, list[str]]:
     """Wendet die kombinierten Qualitaetsmasken an und VERWIRFT die Kanaele.
 
@@ -359,6 +392,17 @@ if __name__ == "__main__":
         for name, r in band_power_ratio(P.od_uncorrected, P.od).items():
             flag = "  <-- Driftband!" if name.startswith("Drift") and r < 0.9 else ""
             print(f"    {name} {100 * r:6.1f} %{flag}")
+
+    nf = dark_noise_floor(P.aux)
+    if nf is not None:
+        mp = P.amp_raw.mean("time").pint.dequantify().values.ravel()
+        print(f"\nDunkelmessung      : Rauschboden {nf:.3e} V (robust, MAD)")
+        print(f"  Untergrenze 1e-3 V entspricht dem {1e-3 / nf:.0f}-fachen; "
+              f"Mediansignal dem {np.median(mp) / nf:.0f}-fachen")
+        counts = {k: int((mp < k * nf).sum()) for k in (10, 20, 50, 100)}
+        print("  Messungen unter k x Rauschboden: "
+              + ", ".join(f"{k}x:{v}" for k, v in counts.items())
+              + f"  (Vorgabe: {int((mp < 1e-3).sum())})")
 
     print("\nQualitaetsmasken auf der korrigierten Amplitude (CLEAN = True):")
     n_ch = P.amp_corr.sizes["channel"]
