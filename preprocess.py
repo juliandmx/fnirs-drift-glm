@@ -178,6 +178,24 @@ def quality_masks(
     return {"snr": snr_mask, "mean_amp": amp_mask, "sd_dist": sd_mask}
 
 
+def prune(ts: xr.DataArray, masks: dict[str, xr.DataArray]) -> tuple[xr.DataArray, list[str]]:
+    """Wendet die kombinierten Qualitaetsmasken an und VERWIRFT die Kanaele.
+
+    Cedalions `prune_ch(ts, masks, "all")` verknuepft die Masken mit `&` und ruft
+    intern `apply_mask(..., "drop", dim_collapse="channel")` auf: ein Kanal faellt
+    heraus, sobald er in IRGENDEINER uebrigen Dimension (hier: einer der beiden
+    Wellenlaengen) als TAINTED markiert ist.
+
+    Verworfen wird bewusst, nicht auf NaN gesetzt: NaN wuerde sich durch AR-IRLS und
+    spaeter durch die Image Reconstruction fortpflanzen, und deren Kanalauswahl erwartet
+    ohnehin eine Teilmenge ("y may contain less channels then W due to pruning").
+
+    Angewandt wird auf OD -- entsprechend der Vorgabe "dann wieder mit od weiterarbeiten".
+    """
+    ts_pruned, dropped = quality.prune_ch(ts, list(masks.values()), "all")
+    return ts_pruned, [str(c) for c in np.atleast_1d(dropped)]
+
+
 DRIFT_BANDS = (("Drift   <0.01 Hz", 0.0, 0.01),
                ("0.01-0.1 Hz     ", 0.01, 0.1),
                ("0.1-0.5 Hz      ", 0.1, 0.5),
@@ -258,17 +276,25 @@ def run(
 
     masks = quality_masks(amp_corr, rec.geo3d, snr_threshold=snr_threshold,
                           amp_range=amp_range, sd_range=sd_range)
-    conc = to_conc(od, rec.geo3d, dpf)
+
+    # Erst jetzt verwerfen -- und danach wieder auf OD weiterarbeiten (Vorgabe).
+    # amp_raw/amp_corr bleiben ungeprunt: sie dokumentieren die Stufe, AUF der die
+    # Masken bestimmt wurden.
+    od_pruned, dropped_quality = prune(od, masks)
+    conc = to_conc(od_pruned, rec.geo3d, dpf)
+    # Die unkorrigierte OD auf dieselben Kanaele beschneiden, sonst vergleicht die
+    # Diagnose (band_power_ratio) unterschiedliche Kanalmengen.
+    od_raw = od_raw.sel(channel=od_pruned.channel)
 
     return Preprocessed(
         conc=conc,
-        od=od,
+        od=od_pruned,
         amp_raw=amp_raw,
         amp_corr=amp_corr,
         baseline=baseline,
         geo3d=rec.geo3d,
         aux=rec.aux_ts,
-        dropped=list(dropped_nonpos),
+        dropped=list(dropped_nonpos) + dropped_quality,
         masks={"nonpositive": dropped_nonpos, **masks},
         motion_method=motion_method,
         od_uncorrected=od_raw,
@@ -336,3 +362,10 @@ if __name__ == "__main__":
               f"({n_ch - int(keep.sum())} verworfen)")
     print(f"  {'kombiniert':9s}: {int(keep_all.sum()):4d} / {n_ch} behalten "
           f"({n_ch - int(keep_all.sum())} verworfen)")
+
+    print(f"\nErgebnis der Kette : {P.amp_raw.sizes['channel']} roh -> "
+          f"{P.conc.sizes['channel']} verwertbar  "
+          f"({len(P.dropped)} verworfen: {len(P.masks['nonpositive'])} nicht positiv, "
+          f"{len(P.dropped) - len(P.masks['nonpositive'])} Qualitaet)")
+    print(f"OD nach Pruning    : {dict(P.od.sizes)}")
+    print(f"Konzentration      : {dict(P.conc.sizes)}")
