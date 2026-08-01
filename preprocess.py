@@ -31,6 +31,8 @@ import xarray as xr
 import cedalion
 import cedalion.nirs
 import cedalion.sigproc.motion as motion
+import cedalion.sigproc.quality as quality
+from cedalion import units
 
 
 @dataclass
@@ -40,6 +42,7 @@ class Preprocessed:
     conc: xr.DataArray       # (time, channel, chromo) [µM], dequantifiziert
     od: xr.DataArray         # Optical Density, Stand nach Korrektur/Pruning
     amp_raw: xr.DataArray    # Rohamplitude [V], wie eingelesen (quantifiziert)
+    amp_corr: xr.DataArray   # Amplitude NACH Motion Correction [V] -- Basis der Masken
     baseline: xr.DataArray   # mittlere Rohamplitude (channel, wavelength) [V]
     geo3d: object            # Optodengeometrie (LabeledPoints)
     aux: object              # rec.aux_ts (Accelerometer/Gyroskop/dark signal)
@@ -123,6 +126,58 @@ def motion_correct(
     return od
 
 
+def to_amp(od: xr.DataArray, baseline: xr.DataArray) -> xr.DataArray:
+    """Optical Density -> Amplitude, mit der beim Hinweg gemerkten Baseline.
+
+    Das ist der Kern der Betreuungsvorgabe "erst motion correction, dann zu amplitude
+    umwandeln und dann schlechte channels markieren": korrigiert wird auf OD, bewertet
+    wird auf der Amplitude. `od2int(od, baseline)` = `baseline * exp(-od)` ist die exakte
+    Umkehrung von `int2od` -- ohne die Baseline waere der Rueckweg nicht eindeutig, weil
+    OD nur relative Aenderungen gegenueber dem eigenen Mittel kodiert.
+
+    Wichtig: die Baseline stammt aus der UNKORRIGIERTEN Amplitude. Die zurueckgerechnete
+    Amplitude traegt also die Motion-Korrektur, behaelt aber das urspruengliche
+    Helligkeitsniveau -- genau das, worauf "dunkel" und "gesaettigt" sich beziehen.
+    """
+    return cedalion.nirs.cw.od2int(od, baseline)
+
+
+def quality_masks(
+    amp: xr.DataArray,
+    geo3d,
+    *,
+    snr_threshold: float = 3.0,
+    amp_range: tuple[float, float] = (1e-3, 0.84),
+    sd_range: tuple[float, float] = (0.0, 4.5),
+) -> dict[str, xr.DataArray]:
+    """Qualitaetsmasken auf der (korrigierten) Amplitude. CLEAN = True.
+
+    Die drei Kriterien adressieren verschiedene Defekte und ersetzen einander nicht:
+
+      * `snr`      -- Verhaeltnis Mittelwert/Streuung ueber die Zeit. Faengt verrauschte
+                      Kanaele. Betreuungsvorgabe: Schwelle 3 (bisher 10). Der neue Wert
+                      ist PERMISSIVER; die eigentliche Arbeit macht jetzt `mean_amp`.
+      * `mean_amp` -- mittlere Amplitude innerhalb eines Fensters. Faengt DUNKLE (zu wenig
+                      Licht, Rauschen dominiert) und GESAETTIGTE Kanaele (Detektor am
+                      Anschlag, Signal geklippt). Vorgabe: NinjaNIRS-Grenzen
+                      1e-3 .. 0.84 V. Basiert auf Homer3 `hmR_PruneChannels.m`.
+      * `sd_dist`  -- Quell-Detektor-Abstand innerhalb eines Bereichs.
+
+    Gesaettigte Kanaele sind besonders heimtueckisch: durch das Klippen wirken sie
+    RAUSCHARM, weshalb varianzbasierte Metriken sie nicht erkennen (Cedalion NB 24:
+    "the metric cannot account for saturation"). Bei der Image Reconstruction bekommen
+    sie deshalb maximales Gewicht in der Pseudoinversen und schmieren ihren Fehler ueber
+    ihr gesamtes Sensitivitaetsprofil -- daher die Betreuungsvorgabe, sie spaetestens
+    dort zwingend zu entfernen.
+    """
+    _, snr_mask = quality.snr(amp, snr_threshold)
+    _, amp_mask = quality.mean_amp(amp, (amp_range[0] * units.V,
+                                         amp_range[1] * units.V))
+    _, sd_mask = quality.sd_dist(amp, geo3d, (sd_range[0] * units.cm,
+                                              sd_range[1] * units.cm))
+    return {"snr": snr_mask, "mean_amp": amp_mask, "sd_dist": sd_mask}
+
+
 DRIFT_BANDS = (("Drift   <0.01 Hz", 0.0, 0.01),
                ("0.01-0.1 Hz     ", 0.01, 0.1),
                ("0.1-0.5 Hz      ", 0.1, 0.5),
@@ -166,7 +221,15 @@ def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
     return conc.pint.to("uM").pint.dequantify()
 
 
-def run(rec, *, motion_method: str = "tddr+wavelet", dpf: float = 6.0) -> Preprocessed:
+def run(
+    rec,
+    *,
+    motion_method: str = "tddr+wavelet",
+    snr_threshold: float = 3.0,
+    amp_range: tuple[float, float] = (1e-3, 0.84),
+    sd_range: tuple[float, float] = (0.0, 4.5),
+    dpf: float = 6.0,
+) -> Preprocessed:
     """Fuehrt die Preprocessing-Kette auf einem Recording aus.
 
     Args:
@@ -174,6 +237,9 @@ def run(rec, *, motion_method: str = "tddr+wavelet", dpf: float = 6.0) -> Prepro
         motion_method: eines aus `MOTION_METHODS`. `"none"` schaltet die Korrektur ab --
             gebraucht fuer den A/B-Vergleich gegen die Motion-Regressoren in der
             Designmatrix (Betreuungshinweis: koennte sich doppeln).
+        snr_threshold: SNR-Schwelle (Betreuungsvorgabe: 3).
+        amp_range: (dunkel, gesaettigt) in Volt (NinjaNIRS-Vorgabe: 1e-3 .. 0.84).
+        sd_range: zulaessiger Quell-Detektor-Abstand in cm.
         dpf: Differentieller Pfadlaengenfaktor fuer die modifizierte Beer-Lambert-Umrechnung.
 
     Returns:
@@ -186,17 +252,24 @@ def run(rec, *, motion_method: str = "tddr+wavelet", dpf: float = 6.0) -> Prepro
     amp, dropped_nonpos = gate_positive(amp_raw)
     od_raw, baseline = to_od(amp)
     od = motion_correct(od_raw, motion_method)
+    # Zurueck zur Amplitude: dort -- und nur dort -- sind "dunkel" und "gesaettigt"
+    # definiert. Die Qualitaetsmasken (Schritt 1.5) setzen auf amp_corr auf.
+    amp_corr = to_amp(od, baseline)
+
+    masks = quality_masks(amp_corr, rec.geo3d, snr_threshold=snr_threshold,
+                          amp_range=amp_range, sd_range=sd_range)
     conc = to_conc(od, rec.geo3d, dpf)
 
     return Preprocessed(
         conc=conc,
         od=od,
         amp_raw=amp_raw,
+        amp_corr=amp_corr,
         baseline=baseline,
         geo3d=rec.geo3d,
         aux=rec.aux_ts,
         dropped=list(dropped_nonpos),
-        masks={"nonpositive": dropped_nonpos},
+        masks={"nonpositive": dropped_nonpos, **masks},
         motion_method=motion_method,
         od_uncorrected=od_raw,
     )
@@ -222,6 +295,23 @@ if __name__ == "__main__":
     print(f"OD                 : {dict(P.od.sizes)}")
     print(f"Konzentration [µM] : {dict(P.conc.sizes)}")
 
+    # Rueckweg-Kontrolle: ohne Korrektur muss od2int(int2od(amp)) == amp gelten.
+    # Damit ist belegt, dass die Baseline den Rueckweg exakt traegt.
+    amp_in = gate_positive(P.amp_raw)[0].pint.dequantify().values
+    amp_out = P.amp_corr.pint.dequantify().values
+    rel = np.abs(amp_out - amp_in) / np.abs(amp_in)
+    hi, med = float(np.nanmax(rel)), float(np.nanmedian(rel))
+    if hi < 1e-9:
+        print(f"\nRueckweg OD->Amp   : max. rel. Abweichung {hi:.2e} -- exakt "
+              f"(Baseline traegt den Rueckweg verlustfrei)")
+    else:
+        # Erwartet, sobald korrigiert wurde: die Abweichung IST die Korrektur.
+        # Im Amplitudenraum wirkt sie exponentiell (amp = baseline * exp(-od)),
+        # eine OD-Aenderung von d entspricht dem Faktor exp(d) -- das Maximum wird
+        # daher von einzelnen Spikes in dunklen Kanaelen dominiert.
+        print(f"\nRueckweg OD->Amp   : median {100 * med:.2f} %, max {hi:.2e} "
+              f"(entspricht {np.log(hi + 1):.1f} OD) -- das ist die Korrektur selbst")
+
     print(f"\nMotion Correction  : {P.motion_method}   ({time.time() - t0:.1f}s gesamt)")
     if P.od_uncorrected is not None and method != "none":
         d1 = np.abs(np.diff(np.asarray(P.od_uncorrected.values, float), axis=-1))
@@ -232,3 +322,17 @@ if __name__ == "__main__":
         for name, r in band_power_ratio(P.od_uncorrected, P.od).items():
             flag = "  <-- Driftband!" if name.startswith("Drift") and r < 0.9 else ""
             print(f"    {name} {100 * r:6.1f} %{flag}")
+
+    print("\nQualitaetsmasken auf der korrigierten Amplitude (CLEAN = True):")
+    n_ch = P.amp_corr.sizes["channel"]
+    keep_all = None
+    for key in ("snr", "mean_amp", "sd_dist"):
+        m = P.masks[key]
+        # ein Kanal ueberlebt nur, wenn er in ALLEN uebrigen Dims (z.B. beide
+        # Wellenlaengen) sauber ist -- dieselbe Logik wie in xrutils.apply_mask.
+        keep = m.all(dim=[d for d in m.dims if d != "channel"])
+        keep_all = keep if keep_all is None else (keep_all & keep)
+        print(f"  {key:9s}: {int(keep.sum()):4d} / {n_ch} behalten "
+              f"({n_ch - int(keep.sum())} verworfen)")
+    print(f"  {'kombiniert':9s}: {int(keep_all.sum()):4d} / {n_ch} behalten "
+          f"({n_ch - int(keep_all.sum())} verworfen)")
