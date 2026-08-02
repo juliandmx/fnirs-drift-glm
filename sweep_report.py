@@ -96,23 +96,42 @@ def _write_tables(df):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    df = pd.read_csv(RES / "sweep_summary.csv")
+    df_all = pd.read_csv(RES / "sweep_summary.csv")
+    # Seit v4 ist die Motion Correction eine eigene Achse. Die Familien-/Konstellations-
+    # Abbildungen zeigen EINE Stufe (die erste, per Konvention die driftneutrale
+    # "wavelet"), damit sie nicht ueber zwei Vorverarbeitungen hinweg mitteln. Die
+    # Motion-Achse selbst bekommt eine eigene Abbildung.
+    if "motion" not in df_all.columns:
+        df_all = df_all.assign(motion="n/a")
+    motions = list(dict.fromkeys(df_all.motion))
+    ref_motion = motions[0]
+    df = df_all[df_all.motion == ref_motion].copy()
+    if len(motions) > 1:
+        print(f"Motion-Achse: {motions} -> Abb. 10-13 zeigen '{ref_motion}'")
     wins = sorted(df.window_s.unique())
     fams = _order(df)
     colors = [_color(f) for f in fams]
     x = np.arange(len(fams))
 
     # ---- Abb. 10: RMSE je Familie x Fenster, Konstellation baseline ----
-    fig, axes = plt.subplots(2, len(wins), figsize=(6 * len(wins), 8), sharex=True)
+    # Gemeinsame y-Skala je Chromophor-Zeile (Betreuungsvorgabe "ueber alle bilder
+    # gleiche skala"): nur so ist der Effekt der FENSTERLAENGE ablesbar -- bei
+    # teilbildweiser Autoskalierung sehen 90 s und 368 s gleich schlecht aus, obwohl
+    # sich der Fehler halbiert. HbO und HbR bekommen getrennte Skalen, weil sie sich um
+    # etwa das Fuenffache unterscheiden und HbR sonst zu einer flachen Linie wuerde.
+    fig, axes = plt.subplots(2, len(wins), figsize=(6 * len(wins), 8),
+                             sharex=True, sharey="row")
     for i, ch in enumerate(["HbO", "HbR"]):
+        row = df[(df.chromo == ch) & (df.constellation == "baseline")]
+        ymax = float(row.rmse_med.max()) * 1.08
         for j, w in enumerate(wins):
             ax = axes[i, j]
-            d = df[(df.chromo == ch) & (df.window_s == w) & (df.constellation == "baseline")]
-            d = d.set_index("family").loc[fams]
+            d = row[row.window_s == w].set_index("family").loc[fams]
             ax.bar(x, d.rmse_med.values, color=colors)
             best = d.rmse_med.idxmin()
             ax.set_title(f"{ch} | Fenster {w:g}s | baseline  (best: {best})")
             ax.set_ylabel("RMSE_med [µM]")
+            ax.set_ylim(0, ymax)
             ax.grid(axis="y", alpha=0.3)
     axes[-1, 0].set_xticks(x); axes[-1, 0].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
     if len(wins) > 1:
@@ -169,6 +188,42 @@ def main():
         ax.grid(axis="y", alpha=0.3); ax.legend()
     fig.suptitle("HbO/HbR-Plausibilität: rückgewonnenes Amplituden-Ratio (Ziel −0.4)")
     fig.tight_layout(); fig.savefig(OUT / "13_sweep_plausibility.png", dpi=130); plt.close(fig)
+
+    # ---- Abb. 14: Motion-Achse -- Bias UND RMSE, getrennt nach Chromophor ----
+    # Eigene Abbildung, weil hier der RMSE allein in die Irre führt: TDDR dämpft die
+    # eingemischte HRF auf ~70 % und kompensiert damit zufällig die systemisch bedingte
+    # HbO-Überschätzung. Der RMSE sinkt, obwohl nicht besser geschätzt wird. Sichtbar
+    # wird das erst am Bias — und daran, dass HbR (ohne Überschätzung) sich verschlechtert.
+    if len(motions) > 1:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+        width = 0.8 / len(motions)
+        for i, ch in enumerate(["HbO", "HbR"]):
+            ax = axes[i]
+            for k, mm in enumerate(motions):
+                d = df_all[(df_all.chromo == ch) & (df_all.motion == mm)
+                           & (df_all.constellation == "baseline")]
+                g = d.groupby("family")[["bias_med", "rmse_med"]].mean()
+                g = g.reindex([f for f in fams if f in g.index])
+                pos = np.arange(len(g)) + (k - (len(motions) - 1) / 2) * width
+                ax.bar(pos, g.bias_med.values, width=width * 0.92,
+                       label=f"{mm} · Bias", alpha=0.85)
+                ax.plot(pos, g.rmse_med.values, "k_", markersize=7,
+                        label="RMSE" if k == 0 else None)
+            truth = float(df_all[df_all.chromo == ch].beta_true_peak.iloc[0])
+            ax.axhline(0, color="k", lw=0.8)
+            ax.set_title(f"{ch} | baseline | Wahrheit {truth:+.3f} µM")
+            ax.set_ylabel("Bias_med [µM]  (Striche: RMSE_med)")
+            ax.set_xticks(np.arange(len(g)))
+            ax.set_xticklabels(g.index, rotation=60, ha="right", fontsize=8)
+            ax.grid(axis="y", alpha=0.3)
+            ax.legend(fontsize=8)
+        fig.suptitle("Motion Correction als Achse: Bias verrät, was der RMSE verdeckt")
+        fig.tight_layout(); fig.savefig(OUT / "14_sweep_motion_axis.png", dpi=130)
+        plt.close(fig)
+
+        print("\n=== Motion-Achse (Mittel über Familien × Fenster × Konstellationen) ===")
+        print(df_all.groupby(["chromo", "motion"])[["bias_med", "rmse_med"]].mean()
+              .to_string(float_format=lambda v: f"{v:+.4f}"))
 
     # ---- Text-Zusammenfassung ----
     print("=== Ranking nach RMSE_med (Mittel über baseline+motion, je chromo × Fenster) ===")
