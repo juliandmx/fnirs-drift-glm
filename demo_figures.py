@@ -151,16 +151,22 @@ def main():
         diff = recovered_hrf.sel(chromo=c) - P.activation.sel(chromo=c)
         rel_shape = (np.sqrt((diff ** 2).mean("time")) / np.abs(gt)).where(active)  # (b)
         rb, rs = rel_beta * 100.0, rel_shape * 100.0
-        vlo, vhi = _sym_lim(rb.values)
+        # Feste Farbgrenzen bei +/-100 % (Betreuungsvorgabe "bei rel scalp plot: limit auf
+        # 100% setzen") statt perzentilbasiert. Zwei Gruende: 100 % ist eine
+        # interpretierbare Marke -- der Fehler ist so gross wie die gesuchte Groesse
+        # selbst --, und feste Grenzen machen die Teilbilder untereinander und ueber Laeufe
+        # hinweg vergleichbar. Werte darueber werden gesaettigt dargestellt und im Titel
+        # ausgewiesen, damit die Saettigung nicht unbemerkt bleibt.
+        n_clip = int((np.abs(rb.values) > 100.0).sum())
+        clip_note = f"  ({n_clip} Kanal/Kanaele > 100 %)" if n_clip else ""
         cedalion.vis.anatomy.scalp_plot(
             P.conc, P.geo3d, rb, ax[0, j],
-            vmin=vlo, vmax=vhi, cmap="RdBu_r", min_dist=1.5 * cedalion.units.cm,
-            title=f"{c}: rel. β-Peak-Fehler", cb_label="(β̂−GT)/GT [%]",
+            vmin=-100.0, vmax=100.0, cmap="RdBu_r", min_dist=1.5 * cedalion.units.cm,
+            title=f"{c}: rel. β-Peak-Fehler{clip_note}", cb_label="(β̂−GT)/GT [%]",
         )
         cedalion.vis.anatomy.scalp_plot(
             P.conc, P.geo3d, rs, ax[1, j],
-            vmin=0.0, vmax=float(np.nanpercentile(rs.values, 98.0)),
-            cmap="YlOrRd", min_dist=1.5 * cedalion.units.cm,
+            vmin=0.0, vmax=100.0, cmap="YlOrRd", min_dist=1.5 * cedalion.units.cm,
             title=f"{c}: rel. Formfehler", cb_label="RMSE_t(HRF)/Peak [%]",
         )
         print(f"  {c}: median |rel. β-Fehler| = "
