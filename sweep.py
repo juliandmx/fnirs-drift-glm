@@ -58,6 +58,7 @@ PILOT = dict(   # klein, aber testet JEDEN Code-Pfad (alle Familien-Typen + Kons
     constellations=["baseline", "motion", "global", "motion+global",
                     "short_avg", "short_maxcorr", "short_closest"],
     seeds=[0],
+    motion_methods=["wavelet", "tddr+wavelet"],
     n_channels=20,
     noise_model="ar_irls",
     ar_order=30,
@@ -71,6 +72,7 @@ FULL = dict(
     windows=[90.0, 180.0, 368.0],
     constellations=["baseline", "motion", "global", "motion+global"],
     seeds=list(range(8)),
+    motion_methods=["wavelet"],
     n_channels=20,
     noise_model="ar_irls",
     ar_order=30,
@@ -83,6 +85,7 @@ QUICK = dict(
     windows=[90.0, 180.0],
     constellations=FULL["constellations"],
     seeds=list(range(6)),
+    motion_methods=["wavelet"],
     n_channels=20,
     noise_model="ar_irls",
     ar_order=30,
@@ -94,6 +97,30 @@ V3 = dict(
     windows=[90.0, 180.0, 368.0],
     constellations=["baseline", "motion", "global", "motion+global"],
     seeds=list(range(4)),
+    motion_methods=["wavelet"],
+    n_channels=20,
+    noise_model="ar_irls",
+    ar_order=30,
+)
+
+# v4 (Nachtlauf, ~8-9 h): wie v3, aber mit ECHTER Short-Channel-Regression statt nur dem
+# Global-Mean-Surrogat, und mit der Motion Correction als eigener Achse.
+#
+# Warum die Motion-Achse: TDDR daempft das Driftband auf 55.6 % UND die eingemischte HRF
+# auf 70 %, Wavelet laesst beides unangetastet. Weil beide Verfahren aus der
+# Betreuungsvorgabe stammen, wird nicht stillschweigend eines gewaehlt, sondern der
+# Unterschied beziffert. Gekreuzt mit der Konstellation "motion" (Motion-REGRESSOREN in
+# der Designmatrix) beantwortet das zugleich die Frage, ob sich beides doppelt.
+#
+# Konstellationen: baseline / motion / global (Surrogat, fuer Anschluss an v3) /
+# short_avg + short_maxcorr (echte Short-Channel-Regression, Betreuungsvorgabe).
+# 15 Familien x 3 Fenster x 5 Konstellationen x 2 Motion x 4 Seeds = 1800 Fits.
+V4 = dict(
+    families=FULL["families"] + ["bspline:5", "bspline:8"],
+    windows=[90.0, 180.0, 368.0],
+    constellations=["baseline", "motion", "global", "short_avg", "short_maxcorr"],
+    seeds=list(range(4)),
+    motion_methods=["wavelet", "tddr+wavelet"],
     n_channels=20,
     noise_model="ar_irls",
     ar_order=30,
@@ -218,26 +245,42 @@ def run(cfg: dict):
     beta_true_map = None        # per-Kanal Ground-Truth (channel, chromo) auf Fit-Subset
     timings = []
     n_cells = (len(cfg["families"]) * len(cfg["windows"])
-               * len(cfg["constellations"]) * len(cfg["seeds"]))
+               * len(cfg["constellations"]) * len(cfg["seeds"])
+               * len(cfg["motion_methods"]))
     done = 0
     print(f"Sweep: {n_cells} Zellen | Schaetzer={cfg['noise_model']} | "
-          f"n_channels={cfg['n_channels']}", flush=True)
+          f"n_channels={cfg['n_channels']} | "
+          f"Motion={'/'.join(cfg['motion_methods'])}", flush=True)
 
-    for win in cfg["windows"]:
+    ref_channels = None     # feste Fit-Kanaele, auf der ersten Zelle bestimmt
+    for mc in cfg["motion_methods"]:
+      for win in cfg["windows"]:
         for seed in cfg["seeds"]:
-            P = pl.build(window_s=win, stage=stage, seed=seed)
+            P = pl.build(window_s=win, stage=stage, motion_method=mc, seed=seed)
             beta_true = P.beta_true
             # Analysiert wird NUR ueber die langen Kanaele (Betreuungsvorgabe): die
             # kurzen dienen als Regressor, nicht als Messgroesse. Sie haben ohnehin
             # keine injizierte Aktivierung (pipeline.inject_long_only).
             ts_long, ts_short = sc.split(P.conc_syn, P.geo3d)
-            # Fit-Subset = die N staerkst-aktivierten LANGEN Kanaele (Blob-Kern).
             bt_long = P.beta_true_map.sel(channel=ts_long.channel)
-            w_hbo = np.abs(bt_long.sel(chromo="HbO").values)
-            idx = np.sort(np.argsort(-w_hbo)[:cfg["n_channels"]])
+            if ref_channels is None:
+                # Fit-Subset = die N staerkst-aktivierten LANGEN Kanaele (Blob-Kern).
+                # EINMAL bestimmt und danach per Label festgehalten: die Kanalmasken
+                # werden nach der Motion Correction berechnet und koennen daher je
+                # Motion-Stufe leicht abweichen. Ohne feste Referenz wuerden die
+                # Achsen unterschiedliche Kanalmengen vergleichen.
+                w_hbo = np.abs(bt_long.sel(chromo="HbO").values)
+                order = np.argsort(-w_hbo)[:cfg["n_channels"]]
+                ref_channels = [str(c) for c in bt_long.channel.values[np.sort(order)]]
+            have = set(str(c) for c in ts_long.channel.values)
+            use = [c for c in ref_channels if c in have]
+            if len(use) < len(ref_channels):
+                print(f"  ! {len(ref_channels) - len(use)} Referenzkanaele fehlen bei "
+                      f"{mc}/win={win:g}/seed={seed} -- Schnittmenge bei der "
+                      f"Aggregation", flush=True)
+            ts_base = ts_long.sel(channel=use)
             if beta_true_map is None:   # Blob ist fix -> einmal auf Fit-Subset erfassen
-                beta_true_map = bt_long.isel(channel=idx)
-            ts_base = ts_long.isel(channel=idx)
+                beta_true_map = bt_long.sel(channel=use)
             parts = {
                 "motion": motion_dm(P.aux, P.conc),
                 "global": glm.design_matrix.global_mean_regressor(P.conc_syn),
@@ -261,13 +304,13 @@ def run(cfg: dict):
                     betas = glm.fit(ts_fam, dm, noise_model=cfg["noise_model"],
                                     ar_order=cfg["ar_order"], max_jobs=-1).sm.params
                     dt = time.time() - tc
-                    raw[(family, win, con)][seed] = betas.sel(regressor=HRF_REG)
+                    raw[(family, win, con, mc)][seed] = betas.sel(regressor=HRF_REG)
                     timings.append(dt)
                     done += 1
-                    print(f"[{done}/{n_cells}] win={win:g} seed={seed} "
+                    print(f"[{done}/{n_cells}] {mc:13s} win={win:g} seed={seed} "
                           f"{family:13s} {con:14s} {dt:5.1f}s", flush=True)
                     _write_progress(done, n_cells, t0, timings,
-                                    f"{family} {con} (win={win:g}, seed={seed})")
+                                    f"{family} {con} ({mc}, win={win:g}, seed={seed})")
 
     _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, time.time() - t0)
 
@@ -275,25 +318,40 @@ def run(cfg: dict):
 def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     fams, wins = cfg["families"], cfg["windows"]
     cons, seeds = cfg["constellations"], cfg["seeds"]
+    mcs = cfg["motion_methods"]
     sample = next(iter(raw.values()))[seeds[0]]
-    chans = sample.channel.values
     chrom = [str(c) for c in sample.chromo.values]
 
-    # 6D-Rohwert-Array beta_hat(family, window, constellation, seed, channel, chromo)
-    arr = np.full((len(fams), len(wins), len(cons), len(seeds),
+    # Kanal-Schnittmenge ueber ALLE Zellen: die Masken werden nach der Motion Correction
+    # bestimmt und koennen je Stufe minimal abweichen. Verglichen wird nur, was ueberall
+    # vorhanden ist -- sonst mischt sich ein Kanalauswahl-Effekt in den Achsenvergleich.
+    common = None
+    for by_seed in raw.values():
+        for da in by_seed.values():
+            s = {str(c) for c in da.channel.values}
+            common = s if common is None else (common & s)
+    chans = [str(c) for c in sample.channel.values if str(c) in common]
+    if len(chans) < sample.sizes["channel"]:
+        print(f"     Hinweis: {sample.sizes['channel'] - len(chans)} Kanaele nicht in "
+              f"allen Zellen vorhanden -> auf {len(chans)} gemeinsame beschraenkt")
+
+    # 7D-Rohwert-Array beta_hat(family, window, constellation, motion, seed, channel, chromo)
+    arr = np.full((len(fams), len(wins), len(cons), len(mcs), len(seeds),
                    len(chans), len(chrom)), np.nan)
-    for (f, w, c), by_seed in raw.items():
-        fi, wi, ci = fams.index(f), wins.index(w), cons.index(c)
+    for (f, w, c, m), by_seed in raw.items():
+        fi, wi, ci, mi = fams.index(f), wins.index(w), cons.index(c), mcs.index(m)
         for si, s in enumerate(seeds):
-            arr[fi, wi, ci, si] = by_seed[s].transpose("channel", "chromo").values
+            arr[fi, wi, ci, mi, si] = (
+                by_seed[s].sel(channel=chans).transpose("channel", "chromo").values)
     bhat = xr.DataArray(
-        arr, dims=("family", "window_s", "constellation", "seed", "channel", "chromo"),
-        coords=dict(family=fams, window_s=wins, constellation=cons,
+        arr, dims=("family", "window_s", "constellation", "motion", "seed",
+                   "channel", "chromo"),
+        coords=dict(family=fams, window_s=wins, constellation=cons, motion=mcs,
                     seed=seeds, channel=chans, chromo=chrom))
 
     # per-Kanal Ground-Truth (raeumlicher Blob), auf bhat-Koordinaten ausgerichtet
     bt = xr.DataArray(
-        beta_true_map.transpose("channel", "chromo").values,
+        beta_true_map.sel(channel=chans).transpose("channel", "chromo").values,
         dims=("channel", "chromo"), coords={"channel": chans, "chromo": chrom})
     mean_seed = bhat.mean("seed")
     bias = mean_seed - bt
@@ -311,28 +369,30 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     for f in fams:
         for w in wins:
             for c in cons:
-                mo = mean_seed.sel(family=f, window_s=w, constellation=c, chromo="HbO")
-                mr = mean_seed.sel(family=f, window_s=w, constellation=c, chromo="HbR")
-                corr = float(np.corrcoef(mo.values, mr.values)[0, 1])
-                peak = abs(beta_true["HbO"])
-                m = np.abs(mo.values) > 0.1 * peak       # nur aktive Kanaele (nahe Blob)
-                ratio = (float(np.nanmedian(mr.values[m] / mo.values[m]))
-                         if m.any() else float("nan"))
-                for ch in chrom:
-                    b = bias.sel(family=f, window_s=w, constellation=c, chromo=ch)
-                    v = var.sel(family=f, window_s=w, constellation=c, chromo=ch)
-                    r = rmse.sel(family=f, window_s=w, constellation=c, chromo=ch)
-                    recs.append(dict(
-                        family=f, window_s=w, constellation=c, chromo=ch,
-                        n_seeds=len(seeds), n_channels=len(chans),
-                        beta_true_peak=beta_true[ch],
-                        bias_med=float(b.median()),
-                        absbias_med=float(np.abs(b).median()),
-                        var_med=float(v.median()),
-                        rmse_med=float(r.median()),
-                        rmse_mean=float(r.mean()),
-                        hbo_hbr_corr=corr, hbr_hbo_ratio_med=ratio,
-                    ))
+                for m in mcs:
+                    sel = dict(family=f, window_s=w, constellation=c, motion=m)
+                    mo = mean_seed.sel(**sel, chromo="HbO")
+                    mr = mean_seed.sel(**sel, chromo="HbR")
+                    corr = float(np.corrcoef(mo.values, mr.values)[0, 1])
+                    peak = abs(beta_true["HbO"])
+                    m_act = np.abs(mo.values) > 0.1 * peak   # nur aktive Kanaele
+                    ratio = (float(np.nanmedian(mr.values[m_act] / mo.values[m_act]))
+                             if m_act.any() else float("nan"))
+                    for ch in chrom:
+                        b = bias.sel(**sel, chromo=ch)
+                        v = var.sel(**sel, chromo=ch)
+                        r = rmse.sel(**sel, chromo=ch)
+                        recs.append(dict(
+                            family=f, window_s=w, constellation=c, motion=m, chromo=ch,
+                            n_seeds=len(seeds), n_channels=len(chans),
+                            beta_true_peak=beta_true[ch],
+                            bias_med=float(b.median()),
+                            absbias_med=float(np.abs(b).median()),
+                            var_med=float(v.median()),
+                            rmse_med=float(r.median()),
+                            rmse_mean=float(r.mean()),
+                            hbo_hbr_corr=corr, hbr_hbo_ratio_med=ratio,
+                        ))
     df = pd.DataFrame(recs).sort_values(["chromo", "window_s", "rmse_med"])
     df.to_csv(RESULTS / "sweep_summary.csv", index=False)
 
@@ -349,10 +409,16 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     print(f"     -> {RESULTS/'sweep_per_channel.nc'}")
     print("\nBeste Familie je (Fenster, chromo) nach RMSE_med:")
     best = df.loc[df.groupby(["chromo", "window_s"])["rmse_med"].idxmin()]
-    print(best[["chromo", "window_s", "family", "constellation",
+    print(best[["chromo", "window_s", "family", "constellation", "motion",
                 "rmse_med", "absbias_med", "var_med"]].to_string(index=False))
+    # Bias getrennt nach Chromophor: TDDR daempft die HRF und kann so eine
+    # Ueberschaetzung zufaellig kompensieren -- am RMSE allein nicht erkennbar.
+    print("\nMotion-Achse (Mittel ueber Familien/Fenster/Konstellationen):")
+    print(df.groupby(["chromo", "motion"])[["bias_med", "rmse_med"]].mean()
+            .to_string(float_format=lambda x: f"{x:+.4f}"))
 
 
 if __name__ == "__main__":
     preset = sys.argv[1] if len(sys.argv) > 1 else "pilot"
-    run({"pilot": PILOT, "quick": QUICK, "full": FULL, "v3": V3}[preset])
+    run({"pilot": PILOT, "quick": QUICK, "full": FULL,
+         "v3": V3, "v4": V4}[preset])
