@@ -45,6 +45,8 @@ import cedalion.models.glm as glm
 from cedalion import units
 
 import pipeline as pl
+import preprocess as prep
+import shortchannel as sc
 
 RESULTS = Path(__file__).parent / "results"
 HRF_REG = "HRF Stim"
@@ -53,7 +55,8 @@ HRF_REG = "HRF Stim"
 PILOT = dict(   # klein, aber testet JEDEN Code-Pfad (alle Familien-Typen + Konstellationen)
     families=["poly:3", "dct:0.01", "legendre:3", "bspline:5", "none", "butter:0.01"],
     windows=[90.0],
-    constellations=["baseline", "motion", "global", "motion+global"],
+    constellations=["baseline", "motion", "global", "motion+global",
+                    "short_avg", "short_maxcorr", "short_closest"],
     seeds=[0],
     n_channels=20,
     noise_model="ar_irls",
@@ -170,13 +173,21 @@ def motion_dm(aux, conc):
     return glm.design_matrix.DesignMatrix(common=da)
 
 
-def constellation_dm(name, motion, glob):
-    """Zusatz-DesignMatrix fuer eine Konstellation (None fuer baseline)."""
+def constellation_dm(name, parts: dict):
+    """Zusatz-DesignMatrix fuer eine Konstellation (None fuer baseline).
+
+    `name` ist ein mit "+" verbundener Ausdruck aus den Schluesseln von `parts`, z.B.
+    "motion", "global", "short_avg", "motion+global". "baseline" bedeutet: nichts dazu.
+    Fehlende Bausteine (z.B. keine Short-Channels im Datensatz) werden uebersprungen.
+    """
     dm = None
-    if "motion" in name and motion is not None:
-        dm = motion
-    if "global" in name and glob is not None:
-        dm = glob if dm is None else dm & glob
+    for key in str(name).split("+"):
+        if key == "baseline":
+            continue
+        part = parts.get(key)
+        if part is None:
+            continue
+        dm = part if dm is None else dm & part
     return dm
 
 
@@ -199,6 +210,9 @@ def run(cfg: dict):
     RESULTS.mkdir(exist_ok=True)
     t0 = time.time()
     rec = cedalion.data.get_nn22_resting_state()   # einmal laden
+    # Erste Haelfte der Preprocessing-Kette (Rohamplitude -> OD) haengt weder vom
+    # Fenster noch vom Seed ab -> einmal berechnen und durchreichen.
+    stage = prep.to_od_stage(rec)
     raw = defaultdict(dict)     # (fam, win, con) -> {seed: bhat (channel, chromo)}
     beta_true = None            # Peak-Referenz (Blob-Max) je chromo
     beta_true_map = None        # per-Kanal Ground-Truth (channel, chromo) auf Fit-Subset
@@ -211,17 +225,27 @@ def run(cfg: dict):
 
     for win in cfg["windows"]:
         for seed in cfg["seeds"]:
-            P = pl.build(window_s=win, rec=rec, seed=seed)
+            P = pl.build(window_s=win, stage=stage, seed=seed)
             beta_true = P.beta_true
-            # Fit-Subset = die N staerkst-aktivierten Kanaele (nur dort ist ueberhaupt
-            # eine HRF zu schaetzen; bei flacher Injektion sind es beliebige N).
-            w_hbo = np.abs(P.beta_true_map.sel(chromo="HbO").values)
+            # Analysiert wird NUR ueber die langen Kanaele (Betreuungsvorgabe): die
+            # kurzen dienen als Regressor, nicht als Messgroesse. Sie haben ohnehin
+            # keine injizierte Aktivierung (pipeline.inject_long_only).
+            ts_long, ts_short = sc.split(P.conc_syn, P.geo3d)
+            # Fit-Subset = die N staerkst-aktivierten LANGEN Kanaele (Blob-Kern).
+            bt_long = P.beta_true_map.sel(channel=ts_long.channel)
+            w_hbo = np.abs(bt_long.sel(chromo="HbO").values)
             idx = np.sort(np.argsort(-w_hbo)[:cfg["n_channels"]])
             if beta_true_map is None:   # Blob ist fix -> einmal auf Fit-Subset erfassen
-                beta_true_map = P.beta_true_map.isel(channel=idx)
-            ts_base = P.conc_syn.isel(channel=idx)
-            motion = motion_dm(P.aux, P.conc)
-            glob = glm.design_matrix.global_mean_regressor(P.conc_syn)
+                beta_true_map = bt_long.isel(channel=idx)
+            ts_base = ts_long.isel(channel=idx)
+            parts = {
+                "motion": motion_dm(P.aux, P.conc),
+                "global": glm.design_matrix.global_mean_regressor(P.conc_syn),
+            }
+            # Short-Channel-Regressoren: nur bauen, was die Konfiguration braucht.
+            for v in sc.VARIANTS:
+                if any(v in str(c) for c in cfg["constellations"]):
+                    parts[v] = sc.short_dm(v, ts_base, ts_short, P.geo3d)
             for family in cfg["families"]:
                 dm_drift, butter = drift_dm(family, P.conc)
                 ts_fam = ts_base
@@ -229,7 +253,7 @@ def run(cfg: dict):
                     ts_fam = ts_base.cd.freq_filter(
                         butter * units.Hz, 0 * units.Hz, 4)
                 for con in cfg["constellations"]:
-                    extra = constellation_dm(con, motion, glob)
+                    extra = constellation_dm(con, parts)
                     dm = P.dm_hrf & dm_drift
                     if extra is not None:
                         dm = dm & extra
