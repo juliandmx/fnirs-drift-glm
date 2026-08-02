@@ -26,7 +26,8 @@
       "baseline",
       "motion",
       "global",
-      "motion+global"
+      "short_avg",
+      "short_maxcorr"
     ],
     "seeds": [
       0,
@@ -34,15 +35,19 @@
       2,
       3
     ],
+    "motion_methods": [
+      "wavelet",
+      "tddr+wavelet"
+    ],
     "n_channels": 20,
     "noise_model": "ar_irls",
     "ar_order": 30
   },
-  "n_cells": 720,
-  "wall_s": 10898.8,
+  "n_cells": 1800,
+  "wall_s": 27129.9,
   "cell_time_s": {
-    "min": 9.32,
-    "median": 14.5,
-    "max": 67.96
+    "min": 7.81,
+    "median": 12.77,
+    "max": 109.57
   }
 }
