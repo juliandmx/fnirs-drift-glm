@@ -156,21 +156,29 @@ def main():
     fig.tight_layout(); fig.savefig(OUT / "11_sweep_bias_var.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 12: Konstellations-Effekt (RMSE je Familie x Konstellation) ----
-    cons = ["baseline", "motion", "global", "motion+global"]
+    # Konstellationen aus den Daten nehmen, nicht hartkodiert: das Raster aendert sich
+    # zwischen den Sweep-Versionen (v4 ersetzt "motion+global" durch die echten
+    # Short-Channel-Varianten).
+    order = ["baseline", "motion", "global", "motion+global",
+             "short_avg", "short_maxcorr", "short_closest"]
+    present = list(df.constellation.unique())
+    cons = [c for c in order if c in present] + [c for c in present if c not in order]
     fig, axes = plt.subplots(2, 1, figsize=(13, 9), sharex=True)
-    width = 0.2
+    width = 0.8 / max(len(cons), 1)
     for i, ch in enumerate(["HbO", "HbR"]):
         ax = axes[i]
         for k, con in enumerate(cons):
             d = df[(df.chromo == ch) & (df.window_s == w) & (df.constellation == con)]
-            d = d.set_index("family").loc[fams]
-            ax.bar(x + (k - 1.5) * width, d.rmse_med.values, width=width, label=con)
+            d = d.set_index("family").reindex(fams)
+            ax.bar(x + (k - (len(cons) - 1) / 2) * width, d.rmse_med.values,
+                   width=width * 0.92, label=con)
         ax.set_title(f"{ch} | Fenster {w:g}s")
-        ax.set_ylabel("RMSE_med [µM]"); ax.grid(axis="y", alpha=0.3); ax.legend(ncol=4)
+        ax.set_ylabel("RMSE_med [µM]"); ax.grid(axis="y", alpha=0.3)
+        ax.legend(ncol=min(len(cons), 5), fontsize=8)
     axes[-1].set_xticks(x); axes[-1].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-    fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: systemischer "
-                 "Global-Regressor senkt den HbO-RMSE deutlich\n(entfernt geteilte "
-                 "Physiologie im fokalen Aktivierungscluster); Motion ~ohne Wirkung")
+    fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: ein systemischer "
+                 "Regressor (Short-Channel oder Global) senkt den HbO-Fehler deutlich;\n"
+                 "Motion-Regressoren bleiben ~ohne Wirkung")
     fig.tight_layout(); fig.savefig(OUT / "12_sweep_constellation_effect.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 13: HbO/HbR-Plausibilitaet (rueckgew. Ratio) ----
