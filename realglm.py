@@ -61,6 +61,27 @@ FAMILIES = ["none", "poly:1", "poly:2", "poly:3", "poly:5",
             "dct:0.005", "dct:0.01", "dct:0.02",
             "legendre:1", "legendre:3", "bspline:5", "bspline:8",
             "butter:0.01", "bandpass:0.01-0.5"]
+
+#: Familien, die mit AR-IRLS NICHT auswertbar sind -- gemessen, nicht vermutet.
+#:
+#: Jeder TIEFPASS laesst beta auf ~1e-05 kollabieren (fuenf Groessenordnungen zu klein),
+#: waehrend derselbe Datensatz mit OLS normale Werte liefert und ein reiner HOCHPASS
+#: (butter:0.01) mit AR-IRLS problemlos laeuft. Ursache ist die Prewhitening-Stufe:
+#: AR-IRLS schaetzt ein AR-Modell des Rauschens und wendet dessen Inverse an. Ein
+#: Tiefpass bei 0.5 Hz entfernt bei fs=3.906 Hz rund drei Viertel des Spektrums
+#: (0.5 Hz = 0.256 x Nyquist); das Residuum hat oberhalb davon praktisch keine Leistung
+#: mehr, und der Whitening-Filter muesste dort unendlich verstaerken. Uebrig bleibt
+#: numerisches Rauschen -- der HRF-Anteil verschwindet mit.
+#:
+#: Konsequenz fuer die Arbeit: **Tiefpassfilterung und AR-IRLS schliessen einander aus.**
+#: Der Tiefpass aus der Betreuungsvorgabe ist daher nur mit OLS auswertbar. Die
+#: betroffenen Zellen werden im Report ausgewiesen und nicht in Ranglisten gemischt.
+AR_IRLS_INCOMPATIBLE = ("lowpass:", "bandpass:")
+
+
+def is_degenerate(family: str, noise_model: str) -> bool:
+    """True, wenn diese Kombination nicht auswertbar ist (s. AR_IRLS_INCOMPATIBLE)."""
+    return noise_model == "ar_irls" and family.startswith(AR_IRLS_INCOMPATIBLE)
 CONSTELLATIONS = ["baseline", "global"]
 NOISE_MODELS = ["ar_irls", "ols"]
 MOTION_METHOD = "wavelet"      # driftneutral, s. preprocess.DEFAULT_MOTION
