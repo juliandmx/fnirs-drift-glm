@@ -288,24 +288,56 @@ eine Nacht.
 
 ---
 
-### TAG 3 — Reale Tetris-DOT-Daten + Sweep-Erweiterungen
+### TAG 3 — Reale Daten (Stufe 2) + Sweep-Erweiterungen
 
-*Deckt die neuen Daten (Stufe 2), B12, B13.*
+*Deckt die realen Daten, B12, B13.*
 
-> **Hier brauche ich die Tetris-Daten.** Wenn du sie mir schon an Tag 1 gibst, ziehe ich das
-> Inventar (3.1) vorweg — das kostet nichts und entschärft Überraschungen beim Format.
+> **DATENSATZ GEÄNDERT (2026-08-04).** Es gibt **keine Tetris-Daten** (vom Autor bestätigt).
+> Stufe 2 läuft auf: Khan, Nazeer & Mirtaheri (2026), *„Open access individual finger movement
+> dataset with fNIRS"*, Front. Hum. Neurosci., doi:10.3389/fnhum.2026.1747655.
+> Daten: figshare (privater Freigabelink), Format **SNIRF**.
+
+| | Realer Datensatz | Simulation (nn22) |
+|---|---|---|
+| Aufgabe | Einzelfinger-Tapping rechts, 10 s Block / 10 s Ruhe, 3 Wiederholungen | synthetische HRF, 10 s Block |
+| Kanäle | **48** (16 Quellen × 16 Detektoren) | 567 → 520 |
+| Abstand | **einheitlich 3 cm** | 15,8–42,3 mm |
+| Abtastrate | 3,9063 Hz (S25: 10,17 Hz) | 8,99 Hz |
+| Dauer | 350 s | 368 s |
+| Aux | nur Trigger | Accelerometer, Gyroskop, dark signal |
+| Probanden | **25** | 1 |
+
+**Was dadurch entfällt:** ohne Short-Separation-Kanäle sind `short_avg`/`short_maxcorr` hier
+nicht anwendbar — sie bleiben ein **Simulationsbefund** und werden in der Arbeit als solcher
+benannt. Ohne Bewegungs-Aux entfällt auch die Konstellation `motion`. Auf realen Daten bleiben
+**`baseline` und `global`**; die Motion-Correction-Achse (wavelet / tddr+wavelet) bleibt anwendbar.
+
+**Was dazukommt:** **25 Probanden** statt einem → erstmals Gruppenstatistik statt Einzelfall.
+Und der Datensatz liegt in zwei Fassungen vor, `*_TRIM` (roh) und `*_TRIM_CC_filtered` — letztere
+von den Autoren mit **Butterworth-Hochpass 0,01 Hz und Tiefpass 0,5 Hz** vorverarbeitet, also
+exakt dem Filter-Arm aus B13. Das ist eine geschenkte Referenz. **Für den Familienvergleich
+ausschließlich die rohe Fassung verwenden** — die gefilterte hat den Drift bereits entfernt.
 
 | # | Schritt | Commit-Message |
 |---|---|---|
-| 3.1 | Daten einlesen, Inventar: Montage, Kanalzahl, Distanzverteilung, Wellenlängen, aux, Events (Tetris/Ruhe) | `daten: Loader und Inventar fuer die realen Tetris-DOT-Daten` |
-| 3.2 | Preprocessing-Kette anwenden; **Amplitudengrenzen prüfen** — 0,84/1e-3 sind NinjaNIRS-spezifisch und gelten evtl. nicht für dieses Gerät | `daten: Preprocessing-Kette auf die Tetris-Daten angewandt` |
-| 3.3 | Short-Channels der realen Montage bestimmen, Threshold begründen | `daten: Short-Channel-Erkennung auf der Tetris-Montage` |
-| 3.4 | GLM Tetris vs. Ruhe je Driftfamilie; Signifikanz + Benjamini-Hochberg-FDR über alle Kanäle (`detection.py` wiederverwenden) | `real: GLM Tetris gegen Ruhe mit FDR-Korrektur ueber alle Kanaele` |
+| 3.1 | Loader + Inventar (`realdata.py`), Abgleich der Paper-Angaben gegen die Dateien | `daten: Loader und Inventar fuer den Finger-Tapping-Datensatz` |
+| 3.2 | Preprocessing-Kette anwenden; **Amplitudengrenzen datengetrieben** — 1e-3/0,84 V sind NinjaNIRS-spezifisch und gelten für das NIRScout nicht; ohne Dunkelmessung per Perzentil geschätzt | `daten: Preprocessing-Kette auf die realen Daten angewandt` |
+| 3.3 | Stim-Events → Designmatrix: fünf Finger als Trial-Typen bzw. zusammengefasst „Tapping vs. Ruhe" | `real: Designmatrix aus den Stimulus-Events` |
+| 3.4 | GLM je Driftfamilie über alle Probanden; Signifikanz + Benjamini-Hochberg-FDR (`detection.py` wiederverwenden), **Gruppenebene über die 25 Probanden** | `real: GLM je Driftfamilie mit FDR-Korrektur ueber Kanaele und Probanden` |
 | 3.5 | Sweep-Achse `noise_model` ∈ {`ar_irls`, `ols`} | `sweep: OLS als zweites Rauschmodell aufgenommen` |
-| 3.6 | Filter-Arm **am Ende** des Sweeps: Hochpass 0,01 Hz / Tiefpass 0,5 Hz im **Konzentrationsraum**, als *Alternative* zu Driftregressoren (nicht zusätzlich) | `sweep: Filter-Arm mit Hochpass 0,01 Hz und Tiefpass 0,5 Hz` |
+| 3.6 | Filter-Arm: Hochpass 0,01 Hz / Tiefpass 0,5 Hz im Konzentrationsraum als *Alternative* zu Driftregressoren; zusätzlich Abgleich gegen die von den Autoren gefilterte Fassung | `sweep: Filter-Arm mit Hochpass 0,01 Hz und Tiefpass 0,5 Hz` |
 
-**Nachtlauf 3:** Driftfamilien-Sweep auf den realen Tetris-Daten (volles Raster) + der neue
+**Nachtlauf 3:** Driftfamilien-Sweep auf den realen Daten über alle 25 Probanden + der neue
 Filter-/OLS-Arm auf den Simulationsdaten.
+
+> **NEUE ANFORDERUNG (Betreuung, 2026-08-04): GLM im Kanalraum vs. Bildraum vergleichen** —
+> für den augmentierten **und** den realen Datensatz. Begründung: um Aktivität bestimmten
+> Hirnregionen zuzuordnen, muss man in den Bildraum, und das ist ein inverses Problem. Für
+> jetzt bleibt der Fokus auf **Pipeline-Aufbau und Kanalraum**; der Bildraum-Vergleich wird
+> im nächsten Betreuungsgespräch im Detail besprochen. Referenz ist Tutorial-Notebook
+> `examples/tutorial/5_image_reconstruction.ipynb` — es deckt ausdrücklich **auch sparse
+> Montagen** ab (nicht nur High-Density-DOT), was für die 48-Kanal-Montage bei 3 cm die
+> relevante Variante ist. Siehe Abschnitt 1.8 für die API (`cedalion.dot.ImageRecon`).
 
 ---
 
