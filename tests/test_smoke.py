@@ -43,12 +43,31 @@ def test_drift_family_dispatch():
         "none": "Drift ",
     }
     for fam, prefix in checks.items():
-        dm, butter = sweep.drift_dm(fam, conc)
-        assert butter is None
+        dm, filt = sweep.drift_dm(fam, conc)
+        assert filt is None
         assert any(str(r).startswith(prefix) for r in dm.common.regressor.values)
-    # Butterworth: kein Drift-Regressor, aber Cutoff zurueckgegeben
-    dm, butter = sweep.drift_dm("butter:0.01", conc)
-    assert butter == pytest.approx(0.01)
+
+
+def test_filter_families_return_cutoffs_and_no_drift():
+    """Filter-Familien sind ALTERNATIVEN: nur Offset, dafuer Filtergrenzen.
+
+    Cedalions freq_filter-Konvention: fmax=0 -> Hochpass, fmin=0 -> Tiefpass,
+    beides gesetzt -> Bandpass. Die Familien duerfen keine Driftregressoren liefern,
+    sonst waere gefiltert UND modelliert (Betreuungsvorgabe: entweder/oder).
+    """
+    import sweep
+    conc = _fake_conc()
+    expected = {
+        "butter:0.01": (0.01, 0.0),          # Hochpass
+        "lowpass:0.5": (0.0, 0.5),           # Tiefpass
+        "bandpass:0.01-0.5": (0.01, 0.5),    # Bandpass
+    }
+    for fam, want in expected.items():
+        dm, filt = sweep.drift_dm(fam, conc)
+        assert filt == pytest.approx(want)
+        # nur der Offset (drift_order=0) -> genau ein Drift-Regressor
+        drifts = [r for r in dm.common.regressor.values if str(r).startswith("Drift")]
+        assert len(drifts) == 1
 
 
 # --------------------------------------------------- Integration (laedt Daten)

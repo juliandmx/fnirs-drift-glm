@@ -53,14 +53,14 @@ HRF_REG = "HRF Stim"
 
 
 PILOT = dict(   # klein, aber testet JEDEN Code-Pfad (alle Familien-Typen + Konstellationen)
-    families=["poly:3", "dct:0.01", "legendre:3", "bspline:5", "none", "butter:0.01"],
+    families=["poly:3", "dct:0.01", "legendre:3", "bspline:5", "none",
+              "butter:0.01", "lowpass:0.5", "bandpass:0.01-0.5"],
     windows=[90.0],
-    constellations=["baseline", "motion", "global", "motion+global",
-                    "short_avg", "short_maxcorr", "short_closest"],
+    constellations=["baseline", "motion", "global", "short_avg"],
     seeds=[0],
     motion_methods=["wavelet", "tddr+wavelet"],
     n_channels=20,
-    noise_model="ar_irls",
+    noise_models=["ar_irls", "ols"],
     ar_order=30,
 )
 
@@ -74,7 +74,7 @@ FULL = dict(
     seeds=list(range(8)),
     motion_methods=["wavelet"],
     n_channels=20,
-    noise_model="ar_irls",
+    noise_models=["ar_irls"],
     ar_order=30,
 )
 
@@ -87,7 +87,7 @@ QUICK = dict(
     seeds=list(range(6)),
     motion_methods=["wavelet"],
     n_channels=20,
-    noise_model="ar_irls",
+    noise_models=["ar_irls"],
     ar_order=30,
 )
 
@@ -99,7 +99,7 @@ V3 = dict(
     seeds=list(range(4)),
     motion_methods=["wavelet"],
     n_channels=20,
-    noise_model="ar_irls",
+    noise_models=["ar_irls"],
     ar_order=30,
 )
 
@@ -122,29 +122,64 @@ V4 = dict(
     seeds=list(range(4)),
     motion_methods=["wavelet", "tddr+wavelet"],
     n_channels=20,
-    noise_model="ar_irls",
+    noise_models=["ar_irls"],
+    ar_order=30,
+)
+
+# v5 (Nachtlauf): v4 plus die beiden restlichen Betreuungspunkte --
+#   * Filter-Arm vollstaendig: Hochpass 0.01 (butter), Tiefpass 0.5, und beides als
+#     Bandpass. Alle drei OHNE Driftregressoren (Alternative, nicht Ergaenzung), im
+#     Konzentrationsraum. Der Bandpass entspricht genau der Vorverarbeitung, die die
+#     Autoren des realen Datensatzes angewandt haben -- damit direkt anschlussfaehig.
+#   * OLS als zweites Rauschmodell neben AR-IRLS. Kostet wenig, weil OLS um ein
+#     Vielfaches schneller ist als AR-IRLS.
+# 17 Familien x 3 Fenster x 5 Konstellationen x 2 Motion x 2 Rauschmodelle x 4 Seeds
+# = 4080 Fits; davon die Haelfte OLS (billig).
+V5 = dict(
+    families=FULL["families"] + ["bspline:5", "bspline:8",
+                                 "lowpass:0.5", "bandpass:0.01-0.5"],
+    windows=[90.0, 180.0, 368.0],
+    constellations=["baseline", "motion", "global", "short_avg", "short_maxcorr"],
+    seeds=list(range(4)),
+    motion_methods=["wavelet", "tddr+wavelet"],
+    n_channels=20,
+    noise_models=["ar_irls", "ols"],
     ar_order=30,
 )
 
 
 def drift_dm(family: str, conc):
-    """(DesignMatrix inkl. Offset, butter_cutoff|None) fuer eine Driftfamilie."""
+    """(DesignMatrix inkl. Offset, filter|None) fuer eine Driftfamilie.
+
+    `filter` ist None oder ein Paar `(fmin, fmax)` in Hz fuer `freq_filter`. Cedalions
+    Konvention dort: `fmax=0` -> Hochpass bei fmin, `fmin=0` -> Tiefpass bei fmax,
+    beides gesetzt -> Bandpass.
+
+    Die Filter-Familien sind Vorverarbeitungs-ALTERNATIVEN und bekommen deshalb KEINE
+    Driftregressoren, nur den Offset (Betreuungsvorgabe: "entweder Driftregressor oder
+    Highpassfilter"). Angewandt wird im Konzentrationsraum, ebenfalls laut Vorgabe.
+    """
     fam, _, param = family.partition(":")
     dmx = glm.design_matrix
+    offset_only = lambda: dmx.drift_regressors(conc, drift_order=0)   # noqa: E731
     if fam == "poly":
         return dmx.drift_regressors(conc, drift_order=int(param)), None
     if fam == "legendre":
         return dmx.drift_legendre_regressors(conc, order=int(param)), None
     if fam == "dct":
         dm = dmx.drift_cosine_regressors(conc, fmax=float(param) * units.Hz)
-        return dm & dmx.drift_regressors(conc, drift_order=0), None   # + Offset
+        return dm & offset_only(), None                               # + Offset
     if fam == "bspline":
         return _bspline_dm(conc, int(param)), None    # enthaelt Offset (Zerlegung d. Eins)
     if fam == "none":
-        return dmx.drift_regressors(conc, drift_order=0), None        # nur Offset
-    if fam == "butter":
-        # Vorverarbeitungs-Alternative: Hochpass, KEINE Driftregressoren (nur Offset)
-        return dmx.drift_regressors(conc, drift_order=0), float(param)
+        return offset_only(), None                                    # nur Offset
+    if fam == "butter":              # Hochpass, z.B. butter:0.01
+        return offset_only(), (float(param), 0.0)
+    if fam == "lowpass":             # Tiefpass allein, z.B. lowpass:0.5
+        return offset_only(), (0.0, float(param))
+    if fam == "bandpass":            # z.B. bandpass:0.01-0.5
+        lo, _, hi = param.partition("-")
+        return offset_only(), (float(lo), float(hi))
     raise ValueError(f"Unbekannte Driftfamilie: {family}")
 
 
@@ -246,9 +281,9 @@ def run(cfg: dict):
     timings = []
     n_cells = (len(cfg["families"]) * len(cfg["windows"])
                * len(cfg["constellations"]) * len(cfg["seeds"])
-               * len(cfg["motion_methods"]))
+               * len(cfg["motion_methods"]) * len(cfg["noise_models"]))
     done = 0
-    print(f"Sweep: {n_cells} Zellen | Schaetzer={cfg['noise_model']} | "
+    print(f"Sweep: {n_cells} Zellen | Schaetzer={'/'.join(cfg['noise_models'])} | "
           f"n_channels={cfg['n_channels']} | "
           f"Motion={'/'.join(cfg['motion_methods'])}", flush=True)
 
@@ -290,27 +325,34 @@ def run(cfg: dict):
                 if any(v in str(c) for c in cfg["constellations"]):
                     parts[v] = sc.short_dm(v, ts_base, ts_short, P.geo3d)
             for family in cfg["families"]:
-                dm_drift, butter = drift_dm(family, P.conc)
+                dm_drift, filt = drift_dm(family, P.conc)
                 ts_fam = ts_base
-                if butter is not None:
+                if filt is not None:
+                    # Filter-Alternative: im KONZENTRATIONSRAUM, nach der Augmentation
+                    # (Betreuungsvorgabe). ts_base ist bereits Konzentration.
                     ts_fam = ts_base.cd.freq_filter(
-                        butter * units.Hz, 0 * units.Hz, 4)
+                        filt[0] * units.Hz, filt[1] * units.Hz, 4)
                 for con in cfg["constellations"]:
                     extra = constellation_dm(con, parts)
                     dm = P.dm_hrf & dm_drift
                     if extra is not None:
                         dm = dm & extra
-                    tc = time.time()
-                    betas = glm.fit(ts_fam, dm, noise_model=cfg["noise_model"],
-                                    ar_order=cfg["ar_order"], max_jobs=-1).sm.params
-                    dt = time.time() - tc
-                    raw[(family, win, con, mc)][seed] = betas.sel(regressor=HRF_REG)
-                    timings.append(dt)
-                    done += 1
-                    print(f"[{done}/{n_cells}] {mc:13s} win={win:g} seed={seed} "
-                          f"{family:13s} {con:14s} {dt:5.1f}s", flush=True)
-                    _write_progress(done, n_cells, t0, timings,
-                                    f"{family} {con} ({mc}, win={win:g}, seed={seed})")
+                    for nm in cfg["noise_models"]:
+                        tc = time.time()
+                        betas = glm.fit(ts_fam, dm, noise_model=nm,
+                                        ar_order=cfg["ar_order"],
+                                        max_jobs=-1).sm.params
+                        dt = time.time() - tc
+                        raw[(family, win, con, mc, nm)][seed] = \
+                            betas.sel(regressor=HRF_REG)
+                        timings.append(dt)
+                        done += 1
+                        print(f"[{done}/{n_cells}] {mc:13s} {nm:7s} win={win:g} "
+                              f"seed={seed} {family:15s} {con:14s} {dt:5.1f}s",
+                              flush=True)
+                        _write_progress(done, n_cells, t0, timings,
+                                        f"{family} {con} ({mc}/{nm}, win={win:g}, "
+                                        f"seed={seed})")
 
     _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, time.time() - t0)
 
@@ -318,7 +360,7 @@ def run(cfg: dict):
 def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     fams, wins = cfg["families"], cfg["windows"]
     cons, seeds = cfg["constellations"], cfg["seeds"]
-    mcs = cfg["motion_methods"]
+    mcs, nms = cfg["motion_methods"], cfg["noise_models"]
     sample = next(iter(raw.values()))[seeds[0]]
     chrom = [str(c) for c in sample.chromo.values]
 
@@ -335,19 +377,20 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
         print(f"     Hinweis: {sample.sizes['channel'] - len(chans)} Kanaele nicht in "
               f"allen Zellen vorhanden -> auf {len(chans)} gemeinsame beschraenkt")
 
-    # 7D-Rohwert-Array beta_hat(family, window, constellation, motion, seed, channel, chromo)
-    arr = np.full((len(fams), len(wins), len(cons), len(mcs), len(seeds),
+    # 8D-Rohwerte beta_hat(family, window, constellation, motion, noise_model,
+    #                      seed, channel, chromo)
+    arr = np.full((len(fams), len(wins), len(cons), len(mcs), len(nms), len(seeds),
                    len(chans), len(chrom)), np.nan)
-    for (f, w, c, m), by_seed in raw.items():
-        fi, wi, ci, mi = fams.index(f), wins.index(w), cons.index(c), mcs.index(m)
+    for (f, w, c, m, n), by_seed in raw.items():
+        idx = (fams.index(f), wins.index(w), cons.index(c), mcs.index(m), nms.index(n))
         for si, s in enumerate(seeds):
-            arr[fi, wi, ci, mi, si] = (
+            arr[idx + (si,)] = (
                 by_seed[s].sel(channel=chans).transpose("channel", "chromo").values)
     bhat = xr.DataArray(
-        arr, dims=("family", "window_s", "constellation", "motion", "seed",
-                   "channel", "chromo"),
+        arr, dims=("family", "window_s", "constellation", "motion", "noise_model",
+                   "seed", "channel", "chromo"),
         coords=dict(family=fams, window_s=wins, constellation=cons, motion=mcs,
-                    seed=seeds, channel=chans, chromo=chrom))
+                    noise_model=nms, seed=seeds, channel=chans, chromo=chrom))
 
     # per-Kanal Ground-Truth (raeumlicher Blob), auf bhat-Koordinaten ausgerichtet
     bt = xr.DataArray(
@@ -370,7 +413,9 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
         for w in wins:
             for c in cons:
                 for m in mcs:
-                    sel = dict(family=f, window_s=w, constellation=c, motion=m)
+                  for n in nms:
+                    sel = dict(family=f, window_s=w, constellation=c,
+                               motion=m, noise_model=n)
                     mo = mean_seed.sel(**sel, chromo="HbO")
                     mr = mean_seed.sel(**sel, chromo="HbR")
                     corr = float(np.corrcoef(mo.values, mr.values)[0, 1])
@@ -383,7 +428,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                         v = var.sel(**sel, chromo=ch)
                         r = rmse.sel(**sel, chromo=ch)
                         recs.append(dict(
-                            family=f, window_s=w, constellation=c, motion=m, chromo=ch,
+                            family=f, window_s=w, constellation=c, motion=m,
+                            noise_model=n, chromo=ch,
                             n_seeds=len(seeds), n_channels=len(chans),
                             beta_true_peak=beta_true[ch],
                             bias_med=float(b.median()),
@@ -421,4 +467,4 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
 if __name__ == "__main__":
     preset = sys.argv[1] if len(sys.argv) > 1 else "pilot"
     run({"pilot": PILOT, "quick": QUICK, "full": FULL,
-         "v3": V3, "v4": V4}[preset])
+         "v3": V3, "v4": V4, "v5": V5}[preset])
