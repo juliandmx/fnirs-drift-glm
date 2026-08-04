@@ -342,27 +342,48 @@ Ein einzelner Durchlauf beantwortet die Forschungsfrage noch nicht. Dafür wiede
 die Schritte 4–7 **systematisch für alle Kombinationen** von Einflussgrößen. Das erledigt
 `sweep.py`. „Sweep" heißt sinngemäß „alles einmal durchfahren".
 
-Variiert werden vier Achsen:
+Variiert werden sechs Achsen:
 1. **Driftregressor-Familie** (die Hauptfrage): 15 Varianten – Polynom Ordnung 1–5, DCT mit
    3 Grenzfrequenzen, Legendre Ordnung 1/3/5, **B-Splines** (5 und 8 Knoten), „kein Drift",
-   Butterworth-Hochpass.
+   Butterworth-Hochpass. Dazu als Filter-Alternativen Tiefpass 0,5 Hz und Bandpass
+   0,01–0,5 Hz.
 2. **Fensterlänge:** Wie lang ist der ausgewertete Zeitausschnitt? (90 s, 180 s und 368 s =
    die ganze Aufnahme.) Kürzere Fenster sind schwieriger.
 3. **Konstellation:** Welche *weiteren* Zutaten sind im Rezept? – `baseline` (nur HRF+Drift),
-   `+motion` (Bewegungssignale aus dem eingebauten Beschleunigungssensor), `+global`
-   (ein „Gesamtsignal"-Regressor als Ersatz für systemische Störungen) und beides kombiniert.
-   *(Hinweis: Echte „Short-Channel"-Regression – ein Standardtrick mit sehr kurzen
-   Messkanälen – ist mit diesem Datensatz nicht möglich, weil er keine solchen kurzen Kanäle
-   enthält. Der Global-Regressor ist der passende Ersatz.)*
-4. **Zufalls-Wiederholungen (Seeds):** Die künstlichen Reize werden zu leicht anderen
+   `motion` (Bewegungssignale aus dem eingebauten Beschleunigungssensor), `global`
+   (ein „Gesamtsignal"-Regressor als Ersatz für systemische Störungen) sowie **echte
+   Short-Channel-Regression** in zwei Varianten: `short_avg` (Mittel aller kurzen Kanäle)
+   und `short_maxcorr` (je langem Kanal der am stärksten mit ihm korrelierende kurze).
+4. **Bewegungskorrektur:** `wavelet` oder `tddr+wavelet`. Warum das eine eigene Achse ist,
+   steht im Kasten in Kapitel 4, Schritt 2 – kurz: die beiden Verfahren gehen völlig
+   unterschiedlich mit dem Driften *und* mit der Hirnantwort um.
+5. **Schätzverfahren:** `ar_irls` (das Standardverfahren dieser Arbeit) und `ols` (das
+   einfache Verfahren ohne Rauschmodell). AR-IRLS ist rund 50-mal langsamer, die Achse
+   kostet also fast nichts.
+6. **Zufalls-Wiederholungen (Seeds):** Die künstlichen Reize werden zu leicht anderen
    Zeitpunkten platziert (mehrere Wiederholungen). Erst der Vergleich **über diese
    Wiederholungen** liefert eine echte Bias-/Varianz-Aussage (nicht der Vergleich über Kanäle).
 
-Das ergibt in der Vollversion (v3) 15 × 3 × 4 × 4 = **720 Auswertungen**. Jede dauert mit
-AR-IRLS ~12–37 Sekunden (je nach Fensterlänge) auf einem ausgewählten Satz der am stärksten
-aktivierten Kanäle; der ganze Durchlauf ~3 Stunden. Ergebnisse landen in `results/`
-(Tabelle `sweep_summary.csv`, Rohdaten `sweep_per_channel.nc`), Abbildungen und
-Markdown-Tabellen erzeugt `sweep_report.py`.
+Das ergibt in der Hauptversion (v4) 15 × 3 × 5 × 2 × 4 = **1800 Auswertungen** in 7,5 Stunden.
+Ergebnisse landen in `results/` (Tabelle `sweep_summary.csv`, Rohdaten
+`sweep_per_channel.nc`), Abbildungen und Markdown-Tabellen erzeugt `sweep_report.py`.
+
+**Zu den kurzen Kanälen.** Ein Kanal mit kleinem Abstand zwischen Sender und Empfänger hat
+eine flache „Lichtbanane": sein Licht erreicht das Gehirn gar nicht und misst nur Kopfhaut
+und Schädel – also **systemische Störungen ohne Hirnsignal**. Nimmt man ihn als Regressor
+auf, lässt sich dieser Anteil aus den langen Kanälen herausrechnen; ausgewertet wird dann
+nur über die langen. Der Ruhedatensatz hat keine echten Short-Separation-Kanäle (< 10 mm),
+aber bei einer Grenze von **1,8 cm** fallen 37 der 520 Kanäle in die kurze Gruppe
+(15,8–17,8 mm). Genau diese Grenze war die Vorgabe aus dem Betreuungsgespräch; dasselbe
+Vorgehen nutzt das Cedalion-Workshop-Notebook 36 mit 22,5 mm. **Als Einschränkung zu nennen:**
+15,8–17,8 mm sehen noch etwas Kortex, der Regressor entfernt also potenziell auch echtes
+Signal. Die Grenze ist außerdem nicht unempfindlich – bei 1,9 cm wären es schon 114 Kanäle.
+
+Damit der Vergleich fair ist, wird die künstliche Aktivität **nicht in die kurzen Kanäle
+eingemischt** (sie sehen ja kein Gehirn). Ohne diese Vorsichtsmaßnahme enthielte der
+Short-Channel-Regressor die Hirnantwort selbst und würde sie aus den langen Kanälen
+herausrechnen – gemessen bekämen die kurzen Kanäle sonst bis zu 0,54 µM der eingemischten
+0,60 µM ab.
 
 > **Wichtiger methodischer Hinweis (aus dem Betreuungsgespräch):** Bei Auswertungen *mit*
 > Driftregressoren wird das Signal **nicht** hochpassgefiltert – ein Hochpassfilter würde
@@ -406,40 +427,65 @@ bewertbar) und demonstriert damit die komplette Inferenz-Pipeline für die reale
 
 ## 6. Was bisher herausgekommen ist
 
-Die Studie lief in drei Ausbaustufen. **v1** mischte die Aktivität überall gleich stark ein
-(räumlich „flach") – das führte zu einem Trugschluss beim Global-Regressor und wurde in **v2**
-durch den räumlichen Blob behoben. **v3** ist die vollständige
-Simulationsstudie: 15 Driftfamilien (inkl. B-Splines) × 3 Fenster (90/180/368 s) ×
-4 Konstellationen × 4 Wiederholungen (720 Auswertungen) plus die beiden Zusatz-Analysen. Die
-folgenden Zahlen stammen aus **v3**. Alle Tabellen dazu: `results/tables.md`.
+### Teil A – Simulation (bekannte Wahrheit)
+
+Die Simulationsstudie lief in vier Ausbaustufen. **v1** mischte die Aktivität überall gleich
+stark ein (räumlich „flach") – das führte zu einem Trugschluss beim Global-Regressor und wurde
+in **v2** durch den räumlichen Blob behoben. **v3** ergänzte B-Splines, lange Fenster und die
+beiden Zusatz-Analysen. **v4** ist der aktuelle Stand: 15 Driftfamilien × 3 Fenster ×
+5 Konstellationen (jetzt mit echter Short-Channel-Regression) × 2 Bewegungskorrekturen ×
+4 Wiederholungen = **1800 Auswertungen** in 7,5 Stunden. Die folgenden Zahlen stammen aus
+**v4**. Alle Tabellen dazu: `results/tables.md`.
 
 **Ergebnis 1 – Systemische Störungen sind der größte Hebel (für HbO).**
-Ein **Global-Regressor** halbiert den HbO-Gesamtfehler (RMSE im Mittel **0,32 → 0,18 µM**) und
-verringert eine systematische **Überschätzung**. Grund: Benachbarte aktive Kanäle teilen sich
-systemische Körpersignale (z. B. Blutdruckwellen); ein reines Drift-Modell zieht diese teils
-fälschlich in die Hirnaktivität. → **Der systemische Regressor wirkt sich stärker aus als die
-Wahl der Driftfamilie.** (Bewegungsregressoren aus dem Beschleunigungssensor: praktisch ohne
-Wirkung – erwartet, da die *synthetische* HRF nicht mit echter Bewegung koppelt.)
+Ohne systemischen Regressor wird HbO deutlich **überschätzt** (Bias +0,104 µM auf eine
+Wahrheit von 0,600 µM bei 90-s-Fenstern sogar +0,570). Ein systemischer Regressor bringt das
+weitgehend in Ordnung. Grund: Benachbarte aktive Kanäle teilen sich systemische Körpersignale
+(z. B. Blutdruckwellen); ein reines Drift-Modell zieht diese teils fälschlich in die
+Hirnaktivität. → **Der systemische Regressor wirkt sich stärker aus als die Wahl der
+Driftfamilie.** Bewegungs*regressoren* aus dem Beschleunigungssensor bleiben dagegen praktisch
+ohne Wirkung – erwartet, da die *synthetische* HRF nicht mit echter Bewegung koppelt.
 
-**Ergebnis 2 – HbR ist unempfindlicher als HbO.** Der HbR-Fehler (~0,06 µM) ändert sich über
+**Ergebnis 1b – Short-Channel-Regression schlägt den Global-Regressor, auch wenn die Zahlen
+zunächst das Gegenteil sagen.** Rein nach Bias sieht `global` besser aus (+0,021 gegen +0,056
+bei `short_avg`). Das ist aber kein Vorteil, sondern eine Verrechnung zweier Fehler: der
+Global-Regressor mittelt über **alle** Kanäle, also auch über die aktivierten, und enthält
+dadurch im Mittel **0,040 µM der eingemischten Hirnantwort** – die kurzen Kanäle enthalten
+konstruktionsbedingt **0,000 µM**. Der Unterschied im Bias beträgt 0,035 µM, der Hirnsignal-
+Anteil des Global-Regressors 0,040 µM: er „gewinnt", indem er einen Teil des Gesuchten
+wegrechnet. **`short_avg` ist der methodisch saubere Regressor.**
+
+**Ergebnis 2 – HbR ist unempfindlicher als HbO.** Der HbR-Fehler (~0,07 µM) ändert sich über
 alle Konstellationen kaum – HbR ist weniger von systemischen Störungen betroffen (physiologisch
 plausibel, eigenständiges Ergebnis).
 
-**Ergebnis 3 – Die Fensterlänge dominiert.** HbO-RMSE (baseline): **90 s ≈ 0,56 → 180 s ≈ 0,27
-→ 368 s ≈ 0,12 µM** – die ganze Aufnahme ist ~4,5-mal genauer als ein 90-s-Fenster. Mehr Daten
-(und mehr Reize im Fenster) → stabilere Schätzung.
+**Ergebnis 3 – Die Fensterlänge dominiert.** HbO-RMSE (baseline, Wavelet): **90 s ≈ 0,30 →
+180 s ≈ 0,21 → 368 s ≈ 0,09 µM** – die ganze Aufnahme ist rund dreimal genauer als ein
+90-s-Fenster. Mehr Daten (und mehr Reize im Fenster) → stabilere Schätzung.
 
 **Ergebnis 4 – Familienwahl: kontextabhängig, insgesamt moderat.**
 - **Lange Fenster (368 s):** Alle Driftregressor-Familien rücken eng zusammen (HbO-RMSE
-  0,116–0,126) und schlagen deutlich „kein Drift" (0,145) und Butterworth (0,140). → *Dass*
-  ein Drift-Modell da ist, zählt; *welche* Familie, kaum. Bestwert: DCT ~0,02 Hz.
-- **Kurze Fenster (90 s):** Hier gewinnt die Filter-Alternative (Butterworth) bzw. niedrige
-  Ordnung; **sehr hohe Ordnungen überanpassen** (erklären echte Aktivität weg).
-- **B-Splines** liegen gleichauf mit Polynom/Legendre/DCT – kein Vor-, kein Nachteil.
+  0,119–0,125). → *Dass* ein Drift-Modell da ist, zählt; *welche* Familie, kaum.
+- **Kurze Fenster (90 s):** Hier trennen sich die Familien; **sehr hohe Ordnungen überanpassen**
+  (B-Spline mit 8 Knoten fällt auf 0,619 gegenüber 0,49–0,52 der übrigen).
+- **B-Splines** liegen ansonsten gleichauf mit Polynom/Legendre/DCT – kein Vor-, kein Nachteil.
 
-**Ergebnis 5 – Plausibilität.** Das zurückgewonnene HbR/HbO-Verhältnis liegt bei ~−0,25
-(eingemischt −0,4); die Abweichung Richtung 0 spiegelt die HbO-Überschätzung und bessert sich
-mit dem Global-Regressor.
+**Ergebnis 4b – Die Bewegungskorrektur ist wichtiger als die Driftfamilie, und sie ist eine
+Falle.** TDDR halbiert den HbO-Fehler (RMSE 0,136 gegen 0,199) und beseitigt scheinbar den
+Bias (−0,040 gegen +0,070). Das ist aber wieder keine bessere Schätzung, sondern die
+Verrechnung zweier Fehler: TDDR **dämpft die eingemischte Hirnantwort auf 70 %** ihrer Höhe,
+und diese Dämpfung hebt die systemisch bedingte Überschätzung zufällig auf. Sichtbar wird das
+an **HbR**, wo es keine Überschätzung zu kompensieren gibt – dort verschlechtert TDDR den
+Fehler von +0,020 auf +0,057, also von 8 % auf 24 % Betragsunterschätzung. Über alle
+Driftfamilien hinweg ist der Bias praktisch identisch; der Sprung kommt allein von der
+Vorverarbeitung (Abb. 14).
+
+**Konsequenz für die Auswertung:** Bias **getrennt nach HbO und HbR** betrachten, nicht nur
+den RMSE. Wer nur den RMSE ansieht, hält TDDR für das bessere Verfahren.
+
+**Ergebnis 5 – Plausibilität.** Das zurückgewonnene HbR/HbO-Verhältnis liegt bei −0,25 bis
+−0,34 (eingemischt −0,4); es bessert sich mit systemischem Regressor und mit längerem Fenster
+(368 s: −0,342) und verschlechtert sich leicht mit TDDR – konsistent mit dessen HbR-Dämpfung.
 
 **Ergebnis 6 – Die Form der HRF wird treu zurückgewonnen (Zusatz-Analyse 1).** Mit der
 flexiblen Formvorlage ist die **Form-Treue hoch (~0,87–0,91) und über die Driftfamilien
@@ -453,12 +499,70 @@ DCT 0,01 ≈ Polynom 3 ≈ Legendre 3 ≈ B-Spline 5), „kein Drift" hat die h�
 (wenige Falsch-Positive), aber die niedrigste **Sensitivität** (verpasst echte Aktivierungen).
 Die Inferenz-Pipeline (Signifikanz + FDR) steht damit bereit für die realen Daten.
 
-**Nutzungsempfehlung (Stand Simulation):** (1) In fokalen Aktivierungsregionen einen
-**systemischen/Global-Regressor** verwenden – der größte Genauigkeits-Hebel für HbO.
-(2) Möglichst **lange Auswertefenster**. (3) Beim Drift ist **irgendein** moderates Modell
-wichtig (DCT ~0,01–0,02 Hz oder Polynom/Legendre niedriger–mittlerer Ordnung robust); sehr
-hohe Ordnungen bei kurzen Fenstern meiden. (4) Für die Aktivierungs-*Detektion* lohnt ein
-moderates Drift-Modell (bessere Sensitivität) gegenüber „gar kein Drift".
+### Teil B – Reale Daten (keine Wahrheit bekannt)
+
+Stufe 2 der Arbeit läuft auf einem öffentlichen Finger-Tapping-Datensatz (Khan, Nazeer &
+Mirtaheri 2026): **25 Probanden**, 69 Aufnahmen, 48 Kanäle, Einzelfinger-Tapping der rechten
+Hand, 10 s Block gegen 10 s Ruhe, 15 Tapping-Blöcke je Aufnahme. Ausgewertet wurden
+14 Driftfamilien × 2 Konstellationen × 2 Schätzverfahren über alle Aufnahmen =
+**3864 Auswertungen** in 3,6 Stunden (`realglm.py`).
+
+**Der entscheidende Unterschied:** Hier gibt es **keine Ground Truth**. Der Fehler gegen die
+Wahrheit, an dem in der Simulation alles hing, existiert nicht. Stattdessen drei Kriterien,
+die ohne Wahrheit auskommen – und eines davon trägt die Hauptlast:
+
+> **Reproduzierbarkeit.** Die Probanden haben je 2–3 Durchgänge. Die Korrelation der
+> β-Karten zwischen den Durchgängen **eines** Probanden misst, wie stabil eine Driftfamilie
+> schätzt. Eine Familie, die Rauschen als Aktivierung modelliert, ist zwischen Durchgängen
+> inkonsistent. Über 74 Durchgangspaare gemittelt ist das ein belastbares Gütemaß.
+
+**Ergebnis 6 – Den Drift zu modellieren schlägt ihn wegzufiltern.** Der Butterworth-Hochpass
+ist die **schlechteste** Option (Reproduzierbarkeit 0,443 mit AR-IRLS) – schlechter als *gar
+kein* Driftmodell (0,494). Das bestätigt den methodischen Hinweis aus dem Betreuungsgespräch
+jetzt an echten Daten statt nur als Argument.
+
+**Ergebnis 7 – DCT mit ~0,02 Hz ist die stabilste Familie**, und zwar unabhängig vom
+Schätzverfahren (0,566 mit AR-IRLS, 0,564 mit OLS). Danach DCT 0,01 (0,545/0,547) und
+B-Spline 8 (0,535/0,535). Die Simulation hatte DCT ~0,01–0,02 Hz ebenfalls vorn – die beiden
+Stufen der Arbeit stützen sich gegenseitig.
+
+**Ergebnis 8 – Das Driftmodell zählt bei OLS mehr als bei AR-IRLS.** Spannweite der
+Reproduzierbarkeit über die Familien: **0,200 bei OLS gegen 0,123 bei AR-IRLS**. AR-IRLS
+fängt einen Teil der niederfrequenten Struktur über sein Rauschmodell ab und ist dadurch
+robuster gegen eine schlechte Driftwahl. Bei OLS trägt allein die Designmatrix – dort bricht
+`poly:3` auf 0,440 ein, während `dct:0.02` bei 0,564 bleibt.
+
+**Ergebnis 9 – Tiefpassfilterung und AR-IRLS schließen einander aus.** Mit einem Tiefpass bei
+0,5 Hz kollabiert die Schätzung auf **1e-05 µM**, fünf Größenordnungen zu klein; mit OLS
+liefert derselbe Datensatz normale Werte, und ein reiner Hochpass läuft mit AR-IRLS
+problemlos. Ursache ist die Prewhitening-Stufe: AR-IRLS schätzt ein Rauschmodell und wendet
+dessen Inverse an. Bei 3,906 Hz Abtastrate entfernt ein Tiefpass bei 0,5 Hz rund **drei
+Viertel des Spektrums** (0,5 Hz = 0,256 × Nyquist); oberhalb davon hat das Residuum keine
+Leistung mehr, der Whitening-Filter müsste dort unendlich verstärken. Übrig bleibt
+numerisches Rauschen. **Das ist kein Rechenfehler, sondern eine Eigenschaft der Kombination**
+– und sie hängt an der Abtastrate: auf dem 9-Hz-Ruhedatensatz läge 0,5 Hz bei 0,51 × Nyquist
+und wäre weit unkritischer.
+
+**Ergebnis 10 – Plausibilität auf realen Daten.** HbO und HbR sind mit **−0,88** deutlich
+antikorreliert, das Signal ist also physiologisch. Das HbR/HbO-Verhältnis liegt bei −0,18
+(baseline) und verbessert sich mit dem systemischen Regressor auf −0,29 (AR-IRLS) bzw. −0,36
+(OLS); erwartet wird ~−0,4. Der systemische Regressor halbiert dabei die Zahl signifikanter
+Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
+
+### Nutzungsempfehlung (Stand: beide Stufen)
+
+1. **Systemischen Regressor verwenden** – der größte Genauigkeits-Hebel für HbO. Wenn die
+   Montage kurze Kanäle hat, **Short-Channel-Regression** statt Global-Mittelwert: der
+   Global-Regressor enthält das gesuchte Signal mit und rechnet es teilweise weg.
+2. **Möglichst lange Auswertefenster.**
+3. **Beim Drift: DCT mit Grenzfrequenz ~0,01–0,02 Hz.** In beiden Stufen der Arbeit die
+   stabilste Wahl. Sehr hohe Ordnungen bei kurzen Fenstern meiden.
+4. **Den Drift modellieren, nicht wegfiltern.** Der Hochpass als Ersatz für Driftregressoren
+   war auf realen Daten die schlechteste Option.
+5. **Tiefpass und AR-IRLS nicht kombinieren** (Ergebnis 9).
+6. **Bei der Bewegungskorrektur genau hinsehen:** TDDR dämpft die Hirnantwort auf 70 % und
+   kann dadurch Fehler kaschieren, die im RMSE gut aussehen. Bias getrennt nach HbO und HbR
+   prüfen.
 
 ### Abbildungen zum Hauptsweep
 
@@ -493,6 +597,36 @@ injizierte Ground-Truth-HRF (schwarz), ein Kanal.*
 Sensitivität (blau) und Spezifität (orange), HbO/HbR. Moderate Drift-Modelle geben die beste
 Balance; „kein Drift" ist spezifisch, aber unsensitiv.*
 
+![Motion-Achse](figures/14_sweep_motion_axis.png)
+*Abb. 13 – Die Bewegungskorrektur als eigene Achse. Balken = Bias, Striche = RMSE. Links HbO,
+rechts HbR. Entscheidend ist, dass der Bias über **alle** Driftfamilien praktisch konstant
+bleibt – der Sprung zwischen den beiden Balkenfarben kommt allein von der Vorverarbeitung.
+TDDR (orange) drückt den HbO-Bias auf null, verdreifacht ihn aber bei HbR: dort fehlt die
+Überschätzung, gegen die sich die Dämpfung verrechnen könnte.*
+
+### Abbildungen zu den realen Daten
+
+![Reproduzierbarkeit](figures/30_real_reliability.png)
+*Abb. 14 – Das Hauptergebnis der realen Daten. Median-Korrelation der β-Karten zwischen den
+Durchgängen eines Probanden, über 74 Durchgangspaare. Höher = stabilere Schätzung. Die
+DCT-Familie (orange) liegt vorn, die Filter-Alternativen (rot) klar hinten – schlechter als
+gar kein Driftmodell (braun). „n.a." markiert die mit AR-IRLS nicht auswertbare Kombination
+(Ergebnis 9).*
+
+![Signifikante Kanäle](figures/31_real_significant.png)
+*Abb. 15 – Zahl der Kanäle, die die FDR-Korrektur überstehen (von 48). Der systemische
+Regressor (orange) entfernt bei AR-IRLS rund die Hälfte der Signifikanz – dasselbe Muster
+wie in der Simulation.*
+
+![Gruppen-Aktivierung auf dem Kopf](figures/32_real_scalp.png)
+*Abb. 16 – Die eigentliche Frage: **wo** sitzt die Aktivierung? Gruppen-β über 25 Probanden
+(oben) und t-Werte (unten), HbO links, HbR rechts. Erwartet wird die stärkste Antwort über
+dem linken, kontralateralen Motorkortex, da mit der rechten Hand getappt wurde.*
+
+![Plausibilität real](figures/33_real_plausibility.png)
+*Abb. 17 – HbR/HbO-Verhältnis (links, gestrichelt der physiologisch erwartete Wert −0,4) und
+Antikorrelation zwischen HbO und HbR (rechts). Je Punkt eine Driftfamilie.*
+
 ---
 
 ## 7. Die Dateien im Überblick
@@ -502,8 +636,14 @@ Git-Repo neben `../cedalion/` nutzbar).
 
 | Datei | Aufgabe |
 |---|---|
-| `pipeline.py` | **Kernstück.** Lädt Ruhedaten, mischt die künstliche HRF als räumlichen Blob ein, baut die Designmatrix. Liefert alles Weitere. |
+| `preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
+| `shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split bei 1,8 cm, die drei Regressor-Varianten. |
+| `pipeline.py` | **Kernstück der Simulation.** Mischt die künstliche HRF als räumlichen Blob in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
 | `sweep.py` | Der **systematische Vergleich** über alle Kombinationen (Kapitel 5). Schreibt Ergebnisse + eine Live-Fortschrittsdatei. |
+| `compare_preprocessing.py` | Vergleicht die Vorverarbeitungs-Varianten gegen die β-Rückgewinnung (Grundlage für Ergebnis 4b). |
+| `realdata.py` | **Stufe 2:** Einlesen der realen SNIRF-Dateien, Inventar, Stimulus-Zuordnung (inkl. der abweichenden Kodierung bei S25), datengetriebene Amplitudengrenzen. |
+| `realglm.py` | **Stufe 2, Kern:** GLM je Driftfamilie über alle Probanden, Gruppen-t-Test, FDR, Reproduzierbarkeit zwischen Durchgängen. |
+| `realglm_report.py` | Abbildungen zu den realen Daten (Abb. 14–17), inkl. der Gruppen-β-Karte auf dem Kopf. |
 | `sweep_report.py` | Erzeugt aus den Sweep-Ergebnissen die **Abbildungen** und **Markdown-Ergebnistabellen** (`results/tables.md`). |
 | `flex_basis.py` | **Zusatz-Analyse 1:** flexible HRF-Formvorlage → Form-Treue (Formfehler unabhängig von der Höhe). |
 | `detection.py` | **Zusatz-Analyse 2:** Signifikanz je Kanal + FDR-Korrektur → Detektionsgüte gegen die Ground Truth. |
@@ -539,18 +679,40 @@ conda run -n cedalion python sweep.py pilot              # alle Code-Pfade, ~5 m
 conda run -n cedalion python flex_basis.py test          # ~1 min
 conda run -n cedalion python detection.py test           # ~1 min
 
-# 4) Hauptstudie v3 (720 Auswertungen, ~3 Stunden)
-conda run -n cedalion python sweep.py v3
+# 4) Hauptstudie v4 (1800 Auswertungen, ~7,5 Stunden)
+conda run -n cedalion python sweep.py v4
 #    Fortschritt live verfolgen (in einem zweiten Terminal):
 cat results/sweep_progress.txt
 
 # 5) Zusatz-Analysen (schreiben ebenfalls *_progress.txt)
 conda run -n cedalion python flex_basis.py               # ~20 min
 conda run -n cedalion python detection.py                # ~60–75 min (Fits über ALLE Kanäle)
+conda run -n cedalion python compare_preprocessing.py    # ~17 min
 
 # 6) Auswertungs-Abbildungen + Ergebnistabellen erzeugen
 conda run -n cedalion python sweep_report.py
 ```
+
+**Stufe 2 – die realen Daten.** Sie liegen als SNIRF unter
+`../FingerTappingDataset_Published2025/` (Unterordner je Proband):
+
+```bash
+# Inventar: prüft die Angaben aus dem Paper gegen die Dateien
+conda run -n cedalion python realdata.py
+
+# Hauptauswertung (3864 Auswertungen, ~3,6 Stunden)
+conda run -n cedalion python realglm.py
+cat results/realglm_progress.txt        # Fortschritt
+
+# Abbildungen (die Kopf-Karte rechnet ~8 min nach; "quick" lässt sie weg)
+conda run -n cedalion python realglm_report.py
+conda run -n cedalion python realglm_report.py quick
+```
+
+*(Hinweis: Der Datensatz enthält zu jeder Aufnahme eine von den Autoren vorgefilterte
+Fassung `*_CC_filtered.snirf`. Diese ist für den Driftregressor-Vergleich **unbrauchbar** –
+sie hat den Hochpass bei 0,01 Hz bereits angewandt, also genau den Drift entfernt, um den es
+geht. `realdata.find_files()` blendet sie deshalb standardmäßig aus.)*
 
 *(Technischer Hinweis für WSL/Windows: Dateien immer aus der Linux-Umgebung heraus
 bearbeiten, nicht mit nativen Windows-Werkzeugen – sonst werden durch Zeilenende-Umschreibung
@@ -560,23 +722,30 @@ scheinbar alle Cedalion-Dateien „verändert".)*
 
 ## 9. Was noch kommt (Ausblick)
 
-Der **rechnerische/analytische** Teil der Simulationsstudie ist abgeschlossen (Version 3).
+**Beide Stufen der Arbeit sind rechnerisch abgeschlossen.** Die Simulation liegt als v4 vor
+(1800 Auswertungen), die realen Daten als Gruppenanalyse über 25 Probanden (3864
+Auswertungen). Was seit der letzten Fassung dazukam:
 
-**Inzwischen umgesetzt (v3):**
-- **Längere Fenster (bis 368 s)** und Monte-Carlo über mehrere Wiederholungen.
-- **B-Splines** als zusätzliche Driftfamilie.
-- **Flexible HRF-Formvorlage** (`GaussianKernels`) → der Formfehler ist jetzt unabhängig von
-  der Höhe messbar (Zusatz-Analyse 1, Kapitel 5).
-- **Statistische Absicherung** (Signifikanz je Kanal + FDR-Korrektur) mit Detektionsgüte
-  gegen die Ground Truth (Zusatz-Analyse 2, Kapitel 5).
-- **Reproduzierbarkeit:** Smoke-Tests, Versions-Sperrdatei, README.
+- **Vorverarbeitung nach Betreuungsvorgabe** – Bewegungskorrektur auf der optischen Dichte,
+  danach zurück zur Amplitude, erst dann Kanalbewertung (Kapitel 4, Schritt 2).
+- **Echte Short-Channel-Regression** bei 1,8 cm statt nur des Global-Mittelwerts.
+- **Bewegungskorrektur und Schätzverfahren als eigene Achsen** – beide stellten sich als
+  einflussreicher heraus als die Driftfamilie selbst.
+- **Stufe 2 auf realen Daten** mit Gruppenstatistik, FDR und dem wahrheitsfreien
+  Reproduzierbarkeits-Kriterium.
 
-**Noch offen – echte Daten (Stufe 2 der Arbeit):**
-- Anwendung auf die **300-Kanal-DOT-Tetris-Daten** (Tetris vs. Ruhe), sobald verfügbar.
-  Bis dahin dient ein öffentlicher Finger-Tapping-DOT-Datensatz als hochkanaliger Platzhalter.
-- Dort ist auch **echte Short-Channel-Regression** möglich (die Montage enthält kurze Kanäle).
-- Die in Zusatz-Analyse 2 aufgebaute Inferenz-Pipeline (Signifikanz + FDR) wird dann auf die
-  reale Frage angewandt: Wo unterscheiden sich Tetris und Ruhe signifikant?
+**Noch offen – Kanalraum gegen Bildraum.** Alle bisherigen Auswertungen laufen im
+**Kanalraum**: das Ergebnis ist ein Wert je Messkanal. Um Aktivität einer **Hirnregion**
+zuzuordnen, muss man in den **Bildraum** – also aus den Kanalwerten zurückrechnen, wo im
+Gehirn die Änderung entstanden ist. Das ist ein *inverses Problem* (viele mögliche
+Hirnbilder erklären dieselben Kanalwerte, man braucht Zusatzannahmen, um eines auszuwählen).
+
+Offen ist damit die Frage: **Macht es einen Unterschied, ob man das GLM im Kanalraum oder im
+Bildraum rechnet?** – und zwar für beide Datensätze. Cedalion bringt das Verfahren mit
+(`cedalion.dot.ImageRecon`, Tutorial-Notebook 5, das ausdrücklich auch dünn besetzte Montagen
+abdeckt). Für den Ruhedatensatz liegt die nötige Sensitivitätsmatrix fertig vor; für die
+48-Kanal-Montage der realen Daten müsste sie über ein Kopfmodell berechnet werden – das ist
+der Punkt, an dem der Aufwand zu klären ist.
 
 **Abschließend – Verschriftlichung (durch den Autor):**
 - Methoden-, Ergebnis- und Diskussionsteil der Bachelorarbeit; Einordnung in die Fachliteratur
