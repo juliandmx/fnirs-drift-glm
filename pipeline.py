@@ -33,6 +33,7 @@ import cedalion.sim.synthetic_hrf as synhrf
 from cedalion import units
 
 import preprocess as prep
+import shortchannel as sc
 
 
 @dataclass
@@ -114,6 +115,8 @@ def build(
     beta_true_hbo: float = 0.6,
     hbr_ratio: float = -0.4,
     blob_sigma_mm: float | None = 30.0,   # raeumlicher HRF-Blob; None = flache Injektion
+    inject_long_only: bool = True,        # keine HRF in kurze Kanaele (s.u.)
+    short_threshold=sc.SHORT_THRESHOLD,   # Grenze lang/kurz (Betreuungsvorgabe 1,8 cm)
 
     stim_dur_s: float = 10.0,
     min_interval_s: float = 25.0,
@@ -181,6 +184,19 @@ def build(
     chromo = conc.chromo.values
     beta_true = {"HbO": beta_true_hbo, "HbR": beta_true_hbo * hbr_ratio}  # Peak (Blob-Max)
     beta_true_map = _spatial_beta(conc, geo3d, beta_true_hbo, hbr_ratio, blob_sigma_mm)
+
+    # Kurze Kanaele bekommen KEINE Aktivierung: ihre "Banane" erreicht den Kortex nicht,
+    # sie messen nur Kopfhaut. Wuerde man dort einspeisen, enthielte der
+    # Short-Channel-Regressor die HRF und wuerde sie aus den langen Kanaelen
+    # herausregressieren -- exakt das Artefakt, das in Sweep v1 der Global-Mean-Regressor
+    # bei raeumlich flacher Injektion erzeugte.
+    if inject_long_only:
+        _, ts_short = sc.split(conc, geo3d, short_threshold)
+        short_labels = {str(c) for c in ts_short.channel.values}
+        is_long = xr.DataArray(
+            [str(c) not in short_labels for c in beta_true_map.channel.values],
+            dims="channel", coords={"channel": beta_true_map.channel.values})
+        beta_true_map = beta_true_map.where(is_long, 0.0)
 
     betas_true = xr.DataArray(
         np.zeros((conc.sizes["channel"], dm_hrf.common.sizes["regressor"],
