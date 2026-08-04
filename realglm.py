@@ -33,6 +33,7 @@ Aufruf:
 
 from __future__ import annotations
 
+import importlib
 import sys
 import time
 from collections import defaultdict
@@ -183,14 +184,25 @@ def main(mode="full"):
     # alle 48 Kanaele teilen dieselbe Designmatrix und landen in EINER Rechengruppe,
     # gemessen ~1.5 von 8 Kernen. Die Dateien sind dagegen voneinander unabhaengig.
     # Innen daher max_jobs=1, sonst ueberzeichnen sich die Prozesse.
+    #
+    # Zwei Fallstricke, beide gemessen:
+    #   * backend="threading" bringt NICHTS (gemessen Faktor 1.0-1.1): AR-IRLS ist
+    #     GIL-gebunden,
+    #     es sind Python-Schleifen in statsmodels, keine BLAS-Operationen, die den GIL
+    #     freigeben wuerden. Es braucht echte Prozesse (loky).
+    #   * loky serialisiert Funktionen aus __main__ per WERT (cloudpickle) und scheitert
+    #     dabei an cedalion-Objekten. Deshalb wird der Worker ueber importlib aus dem
+    #     MODUL geholt -- so wird er per Referenz gepickelt, und die Kinder importieren
+    #     ihn selbst.
+    worker = importlib.import_module(__spec__.name if __spec__ else "realglm").first_level
     n_jobs = min(N_JOBS, len(files))
-    print(f"Parallel ueber Dateien: {n_jobs} Prozesse", flush=True)
+    print(f"Parallel ueber Dateien: {n_jobs} Prozesse (loky)", flush=True)
     for fam in families:
         for con in CONSTELLATIONS:
             for nm in noise_models:
                 tc = time.time()
-                betas = Parallel(n_jobs=n_jobs, backend="threading")(
-                    delayed(first_level)(prepped[f][0], prepped[f][1], fam, con, nm,
+                betas = Parallel(n_jobs=n_jobs, backend="loky")(
+                    delayed(worker)(prepped[f][0], prepped[f][1], fam, con, nm,
                                          30, 1)
                     for f in files)
                 by_sub_run = defaultdict(dict)
