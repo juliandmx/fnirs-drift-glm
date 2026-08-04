@@ -52,7 +52,8 @@ from cedalion import units
 import preprocess as prep
 
 # Ablage der realen Daten, ausserhalb des Code-Repos (nicht mitversionieren).
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Unterordner je Proband (S01..S25), darin je Durchgang SxxRy_TRIM(.._CC_filtered).snirf
+DATA_DIR = Path(__file__).resolve().parent.parent / "FingerTappingDataset_Published2025"
 
 # Dateinamen-Konvention des Datensatzes: SXYRZ_TRIM(_CC_filtered).snirf
 FILTERED_MARKER = "filtered"
@@ -116,26 +117,48 @@ def inventory(rec, name: str = "") -> dict:
     }
 
 
-def amp_range_from_data(rec, lo_pct: float = 0.5, hi_headroom: float = 0.98):
-    """Geraeteabhaengige Amplitudengrenzen (dunkel/gesaettigt) aus den Daten schaetzen.
+#: Amplitudenbereich, der nichts verwirft -- fuer Datensaetze ohne dunkle Population.
+AMP_RANGE_OFF = (0.0, 1e12)
+
+
+def amp_range_from_data(rec, min_gap: float = 3.0, max_share: float = 0.1):
+    """Amplitudengrenzen (dunkel/gesaettigt) aus den Daten -- oder bewusst keine.
 
     Die NinjaNIRS-Grenzen 1e-3..0.84 V aus der Betreuungsvorgabe gelten fuer nn22 und
-    sind NICHT uebertragbar -- ein NIRScout hat einen anderen Detektor und eine andere
-    Aussteuerung. Ohne Dunkelmessung (dieser Datensatz hat keine) laesst sich der
-    Rauschboden nicht direkt bestimmen; deshalb hier eine datengetriebene Naeherung:
+    sind NICHT uebertragbar: anderes Geraet, andere Aussteuerung, und dieser Datensatz
+    hat keine Dunkelmessung, aus der sich ein Rauschboden ableiten liesse.
 
-      * untere Grenze: `lo_pct`-Perzentil der mittleren Kanalamplitude
-      * obere Grenze:  `hi_headroom` x Maximum (faengt an den Anschlag gelaufene Kanaele)
+    Statt einer Perzentil-Faustregel -- die per Konstruktion IMMER etwas verwirft, egal
+    wie gut die Daten sind -- wird hier geprueft, ob es ueberhaupt eine ABGETRENNTE
+    dunkle Population gibt: die Kanalamplituden werden sortiert und die groesste
+    relative Luecke zwischen benachbarten Werten im unteren Bereich gesucht. Nur wenn
+    diese Luecke mindestens `min_gap` betraegt und hoechstens `max_share` der Messungen
+    darunter liegen, wird dort geschnitten.
 
-    Rueckgabe (lo, hi) in der Einheit der Amplitude. IMMER zusammen mit dem Histogramm
-    aus `inventory_report` beurteilen und im Zweifel von Hand setzen -- diese Heuristik
-    ist ein Startpunkt, keine Messung.
+    Auf DIESEM Datensatz greift das bewusst NICHT, und das ist das Ergebnis, nicht ein
+    Versagen: die dunkelste Messung liegt beim 0.116-fachen des Medians, die groesste
+    Luecke betraegt Faktor 1.11 (ueber 6624 Messungen aus 69 Dateien) -- die Verteilung
+    ist kontinuierlich, es gibt keine zweite Population. Passend dazu steht in
+    "Experimental notes.txt": "Masked channels removed" -- die Autoren haben schlechte
+    Kanaele bereits entfernt. Zum Vergleich nn22: dunkelste Messung beim 0.0001-fachen
+    des Medians, klare Luecke zwischen 50x und 105x Rauschboden, 46 Kanaele verworfen.
+
+    Rueckgabe (lo, hi); `AMP_RANGE_OFF`, wenn keine Population gefunden wird.
     """
     key = "amp" if "amp" in rec.timeseries else list(rec.timeseries.keys())[0]
     a = rec[key].pint.dequantify() if hasattr(rec[key], "pint") else rec[key]
     mp = np.asarray(a.mean("time").values, dtype=float).ravel()
-    mp = mp[np.isfinite(mp) & (mp > 0)]
-    return float(np.percentile(mp, lo_pct)), float(mp.max() * hi_headroom)
+    mp = np.sort(mp[np.isfinite(mp) & (mp > 0)])
+    if mp.size < 10:
+        return AMP_RANGE_OFF
+    lower = mp[: max(int(mp.size * max_share), 1) + 1]
+    if lower.size < 2:
+        return AMP_RANGE_OFF
+    ratios = lower[1:] / lower[:-1]
+    i = int(np.argmax(ratios))
+    if ratios[i] < min_gap:
+        return AMP_RANGE_OFF                     # keine abgetrennte dunkle Population
+    return float(np.sqrt(lower[i] * lower[i + 1])), 1e12    # Schnitt in die Luecke
 
 
 def inventory_report(files=None):
@@ -188,6 +211,67 @@ def inventory_report(files=None):
     if not any("dark" in a.lower() for a in aux):
         print("  -> keine Dunkelmessung: Amplitudengrenzen datengetrieben schaetzen "
               "(amp_range_from_data).")
+    return df
+
+
+FINGERS = ("thumb", "index", "middle", "ring", "little")
+
+# Trigger-Label -> Bedeutung. Quelle: "Experimental notes.txt" im Datensatz.
+# ACHTUNG, echte Falle: S25 nutzt eine voellig ANDERE Kodierung. Dort ist 0 = Ruhe und
+# 1..5 sind die Finger; bei allen anderen Probanden ist 3 = Daumen. Wer die Labels
+# naiv uebernimmt, wertet bei S25 den Mittelfinger als Daumen -- ohne dass irgendetwas
+# fehlschlaegt. Deshalb die Zuordnung explizit je Proband.
+LABELS_DEFAULT = {
+    "1": "rest",     # initiale Ruhe, 20 s (S18: 120 s)
+    "2": "rest",     # Ruhe zwischen den Bloecken, 10 s
+    "3": "thumb", "4": "index", "5": "middle", "6": "ring", "7": "little",
+    "8": "rest",     # finale Ruhe, 20 s (S18: 5 s; bei S20/S02R4-6 nicht vorhanden)
+}
+LABELS_S25 = {
+    "0": "rest",     # ALLE Ruhephasen, dazwischen 15 s statt 10 s
+    "1": "thumb", "2": "index", "3": "middle", "4": "ring", "5": "little",
+}
+
+
+def subject_of(path) -> str:
+    """Probanden-Kennung aus dem Dateinamen, z.B. 'S25R1_TRIM.snirf' -> 'S25'."""
+    return Path(path).name[:3].upper()
+
+
+def label_map(subject: str) -> dict[str, str]:
+    """Trigger-Label -> Bedeutung fuer einen Probanden."""
+    return dict(LABELS_S25 if subject.upper() == "S25" else LABELS_DEFAULT)
+
+
+def stim_df(rec, subject: str, mode: str = "tapping"):
+    """Stimulus-Tabelle mit sprechenden Labels, Ruhephasen entfernt.
+
+    Args:
+        rec: Recording.
+        subject: Probanden-Kennung (bestimmt die Label-Zuordnung, s.o.).
+        mode: `"tapping"` fasst alle fuenf Finger zu EINEM Regressor zusammen --
+            mehr Trials pro Regressor, damit stabiler; das ist die Variante fuer den
+            Driftfamilien-Vergleich. `"fingers"` behaelt die fuenf Finger getrennt.
+
+    Die Ruhephasen werden VERWORFEN und nicht als Regressor modelliert: sie sind die
+    implizite Baseline. Wuerde man sie zusaetzlich aufnehmen, waeren Ruhe + Aktivierung
+    zusammen konstant und damit kollinear mit dem Offset -- die Designmatrix haette
+    keinen vollen Rang.
+    """
+    mapping = label_map(subject)
+    df = rec.stim.copy()
+    df["trial_type"] = df["trial_type"].astype(str).map(mapping)
+    unknown = df["trial_type"].isna()
+    if unknown.any():
+        raise ValueError(
+            f"{subject}: unbekannte Trigger-Label "
+            f"{sorted(set(rec.stim['trial_type'].astype(str)[unknown.values]))} -- "
+            f"bekannt sind {sorted(mapping)}")
+    df = df[df["trial_type"] != "rest"].reset_index(drop=True)
+    if mode == "tapping":
+        df["trial_type"] = "Tapping"
+    elif mode != "fingers":
+        raise ValueError(f"mode muss 'tapping' oder 'fingers' sein, nicht {mode!r}")
     return df
 
 
