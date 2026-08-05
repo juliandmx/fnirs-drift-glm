@@ -276,7 +276,8 @@ def stim_df(rec, subject: str, mode: str = "tapping"):
 
 
 def preprocess_recording(rec, *, motion_method=prep.DEFAULT_MOTION,
-                         snr_threshold: float = 3.0, amp_range=None, dpf: float = 6.0):
+                         snr_threshold: float = prep.DEFAULT_SNR_THRESHOLD,
+                         amp_range=None, dpf: float = prep.DEFAULT_DPF):
     """Preprocessing-Kette (preprocess.py) auf ein reales Recording.
 
     Identische Reihenfolge wie in der Simulation -- nur die Amplitudengrenzen sind
@@ -285,7 +286,7 @@ def preprocess_recording(rec, *, motion_method=prep.DEFAULT_MOTION,
     if amp_range is None:
         amp_range = amp_range_from_data(rec)
     return prep.run(rec, motion_method=motion_method, snr_threshold=snr_threshold,
-                    amp_range=amp_range, sd_range=(0.0, 4.5), dpf=dpf), amp_range
+                    amp_range=amp_range, sd_range=prep.DEFAULT_SD_RANGE, dpf=dpf), amp_range
 
 
 if __name__ == "__main__":

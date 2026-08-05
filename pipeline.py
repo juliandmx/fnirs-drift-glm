@@ -1,13 +1,21 @@
 """Gemeinsame Augmentations-/GLM-Pipeline fuer die Bachelorarbeit.
 
 Laedt Ruhedaten, speist eine HRF mit BEKANNTER Peak-Amplitude ein und baut die
-Designmatrix. Die Vorverarbeitung selbst (Motion Correction, Kanalqualitaet, Pruning)
-liegt in `preprocess.py` -- sie haengt weder vom Analysefenster noch vom Seed ab und
-kann deshalb einmal berechnet und ueber `build(pre=...)` durchgereicht werden. Der HRF-Regressor wird auf Peak = 1 normiert -- dadurch ist die
-Ground-Truth-Amplitude direkt die Peak-Konzentrationsaenderung in µM (realistisch
-~0.1..1 µM) statt eines uninterpretierbaren Koeffizienten auf einem ungenormten
-Regressor. Injektion und Fit nutzen denselben (normierten) Regressor, sodass die
-Amplitude exakt der GLM-Koeffizient ist.
+Designmatrix.
+
+Die Vorverarbeitung selbst liegt vollstaendig in `preprocess.py` -- dieses Modul ruft
+sie nur auf und haelt KEINE eigenen Preprocessing-Schritte und keine eigenen
+Standardwerte dafuer (die Defaults werden aus `preprocess` referenziert, damit sie nicht
+auseinanderlaufen). Die erste Haelfte der Kette (Rohamplitude -> Optical Density) haengt
+weder vom Analysefenster noch vom Seed ab und kann ueber `build(stage=...)`
+durchgereicht werden; die zweite Haelfte (Motion Correction -> Pruning -> Konzentration)
+laeuft je Build, weil die Aktivierung VOR der Korrektur eingemischt wird.
+
+Der HRF-Regressor wird auf Peak = 1 normiert -- dadurch ist die Ground-Truth-Amplitude
+direkt die Peak-Konzentrationsaenderung in µM (realistisch ~0.1..1 µM) statt eines
+uninterpretierbaren Koeffizienten auf einem ungenormten Regressor. Injektion und Fit
+nutzen denselben (normierten) Regressor, sodass die Amplitude exakt der GLM-Koeffizient
+ist.
 
 Hinweis zur Form: Nur die AMPLITUDE ist physiologisch (~0.1..1 µM), nicht
 automatisch die Kurvenform. Die Blockbreite entsteht aus der Faltung der
@@ -26,7 +34,6 @@ from dataclasses import replace as dc_replace
 import numpy as np
 import xarray as xr
 
-import cedalion
 import cedalion.data
 import cedalion.models.glm as glm
 import cedalion.sim.synthetic_hrf as synhrf
@@ -108,9 +115,9 @@ def _spatial_beta(conc, geo3d, peak_hbo, hbr_ratio, sigma_mm):
 def build(
     *,
     motion_method: str = prep.DEFAULT_MOTION,   # Achsenstufe, Begruendung in preprocess
-    snr_threshold: float = 3.0,       # Betreuungsvorgabe (vorher 10)
-    amp_range: tuple[float, float] = (1e-3, 0.84),   # dunkel / gesaettigt [V]
-    sd_range: tuple[float, float] = (0.0, 4.5),      # Quell-Detektor-Abstand [cm]
+    snr_threshold: float = prep.DEFAULT_SNR_THRESHOLD,
+    amp_range: tuple[float, float] = prep.DEFAULT_AMP_RANGE,
+    sd_range: tuple[float, float] = prep.DEFAULT_SD_RANGE,
     drift_order: int = 3,
     beta_true_hbo: float = 0.6,
     hbr_ratio: float = -0.4,
@@ -127,7 +134,7 @@ def build(
     window_s: float | None = None,   # Analysefenster [s]; None = volle Aufnahme
     rec=None,                  # vorgeladenes Recording (spart Neuladen im Sweep)
     stage=None,                # vorberechnete preprocess.ODStage (spart int2od im Sweep)
-    dpf: float = 6.0,
+    dpf: float = prep.DEFAULT_DPF,
     seed: int = 42,
 ) -> Pipeline:
     # build_stim_df nutzt Pythons random-Modul -> seeden fuer Reproduzierbarkeit.

@@ -98,6 +98,15 @@ MOTION_METHODS = ("none", "tddr", "wavelet", "tddr+wavelet")
 # Nachpruefbar mit `band_power_ratio` bzw. `python preprocess.py tddr+wavelet`.
 DEFAULT_MOTION = "wavelet"
 
+# Die uebrigen Vorverarbeitungs-Parameter -- an EINER Stelle, damit sie nicht
+# auseinanderlaufen. Aufrufer (pipeline.py, realdata.py) verweisen hierauf, statt die
+# Zahlen zu wiederholen: sonst behaelt ein Aufrufer beim Aendern still den alten Wert,
+# und weil er ihn explizit durchreicht, gewinnt der alte.
+DEFAULT_SNR_THRESHOLD = 3.0                  # Betreuungsvorgabe (vorher 10)
+DEFAULT_AMP_RANGE = (1e-3, 0.84)             # dunkel / gesaettigt [V], NinjaNIRS-Vorgabe
+DEFAULT_SD_RANGE = (0.0, 4.5)                # Quell-Detektor-Abstand [cm]
+DEFAULT_DPF = 6.0                            # differentieller Pfadlaengenfaktor
+
 
 def motion_correct(
     od: xr.DataArray,
@@ -157,9 +166,9 @@ def quality_masks(
     amp: xr.DataArray,
     geo3d,
     *,
-    snr_threshold: float = 3.0,
-    amp_range: tuple[float, float] = (1e-3, 0.84),
-    sd_range: tuple[float, float] = (0.0, 4.5),
+    snr_threshold: float = DEFAULT_SNR_THRESHOLD,
+    amp_range: tuple[float, float] = DEFAULT_AMP_RANGE,
+    sd_range: tuple[float, float] = DEFAULT_SD_RANGE,
 ) -> dict[str, xr.DataArray]:
     """Qualitaetsmasken auf der (korrigierten) Amplitude. CLEAN = True.
 
@@ -272,7 +281,7 @@ def band_power_ratio(od_before: xr.DataArray, od_after: xr.DataArray) -> dict:
     return out
 
 
-def to_conc(od: xr.DataArray, geo3d, dpf: float = 6.0) -> xr.DataArray:
+def to_conc(od: xr.DataArray, geo3d, dpf: float = DEFAULT_DPF) -> xr.DataArray:
     """Optical Density -> Haemoglobinkonzentration [µM], dequantifiziert."""
     dpf_da = xr.DataArray(
         [dpf] * od.sizes["wavelength"],
@@ -314,7 +323,7 @@ def to_od_stage(rec) -> ODStage:
 
 
 def to_od_activation(activation_conc: xr.DataArray, geo3d, wavelength,
-                     dpf: float = 6.0) -> xr.DataArray:
+                     dpf: float = DEFAULT_DPF) -> xr.DataArray:
     """Konzentrations-Aktivierung [µM] -> Optical Density, zum Einmischen.
 
     `conc2od` ist die exakte Umkehrung von `od2conc` (beides das modifizierte
@@ -342,10 +351,10 @@ def finish(
     od_in: xr.DataArray | None = None,
     *,
     motion_method: str = DEFAULT_MOTION,
-    snr_threshold: float = 3.0,
-    amp_range: tuple[float, float] = (1e-3, 0.84),
-    sd_range: tuple[float, float] = (0.0, 4.5),
-    dpf: float = 6.0,
+    snr_threshold: float = DEFAULT_SNR_THRESHOLD,
+    amp_range: tuple[float, float] = DEFAULT_AMP_RANGE,
+    sd_range: tuple[float, float] = DEFAULT_SD_RANGE,
+    dpf: float = DEFAULT_DPF,
     masks: dict[str, xr.DataArray] | None = None,
 ) -> Preprocessed:
     """Zweite Haelfte der Kette: Motion Correction -> Amplitude -> Masken -> Pruning -> Konzentration.
