@@ -1,10 +1,11 @@
 """Auswertung/Abbildungen des Driftregressor-Sweeps (liest results/).
 
 Erzeugt PNGs in figures/:
-  10) RMSE je Driftfamilie x Fenster (Konstellation baseline)        -> Kernresultat
-  11) Bias-Varianz-Zerlegung je Familie (baseline)
-  12) Konstellations-Effekt (RMSE je Familie x Konstellation)        -> Global-Artefakt
-  13) HbO/HbR-Plausibilitaet (rueckgew. Ratio je Familie)
+   6) RMSE je Driftfamilie x Fenster (Konstellation baseline)        -> Kernresultat
+   7) Bias-Varianz-Zerlegung je Familie (baseline)
+   8) Konstellations-Effekt (RMSE je Familie x Konstellation)
+   9) HbO/HbR-Plausibilitaet (rueckgew. Ratio je Familie)
+  10) Motion-Correction-Achse: Bias UND RMSE (der RMSE allein taeuscht)
 
 Aufruf: conda run -n cedalion python sweep_report.py
 """
@@ -107,13 +108,13 @@ def main():
     ref_motion = motions[0]
     df = df_all[df_all.motion == ref_motion].copy()
     if len(motions) > 1:
-        print(f"Motion-Achse: {motions} -> Abb. 10-13 zeigen '{ref_motion}'")
+        print(f"Motion-Achse: {motions} -> Abb. 6-9 zeigen '{ref_motion}'")
     wins = sorted(df.window_s.unique())
     fams = _order(df)
     colors = [_color(f) for f in fams]
     x = np.arange(len(fams))
 
-    # ---- Abb. 10: RMSE je Familie x Fenster, Konstellation baseline ----
+    # ---- Abb. 6: RMSE je Familie x Fenster, Konstellation baseline ----
     # Gemeinsame y-Skala je Chromophor-Zeile (Betreuungsvorgabe "ueber alle bilder
     # gleiche skala"): nur so ist der Effekt der FENSTERLAENGE ablesbar -- bei
     # teilbildweiser Autoskalierung sehen 90 s und 368 s gleich schlecht aus, obwohl
@@ -137,9 +138,9 @@ def main():
     if len(wins) > 1:
         axes[-1, 1].set_xticks(x); axes[-1, 1].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
     fig.suptitle("Driftregressor-Vergleich: RMSE der β-Rückgewinnung (AR-IRLS, MC über Seeds)")
-    fig.tight_layout(); fig.savefig(OUT / "10_sweep_rmse_by_family.png", dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / "06_sweep_rmse_by_family.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 11: Bias-Varianz-Zerlegung (baseline, laengstes Fenster) ----
+    # ---- Abb. 7: Bias-Varianz-Zerlegung (baseline, laengstes Fenster) ----
     w = wins[-1]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     for i, ch in enumerate(["HbO", "HbR"]):
@@ -153,9 +154,9 @@ def main():
         ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
         ax.grid(axis="y", alpha=0.3); ax.legend()
     fig.suptitle("Bias-Varianz-Zerlegung je Driftfamilie")
-    fig.tight_layout(); fig.savefig(OUT / "11_sweep_bias_var.png", dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / "07_sweep_bias_var.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 12: Konstellations-Effekt (RMSE je Familie x Konstellation) ----
+    # ---- Abb. 8: Konstellations-Effekt (RMSE je Familie x Konstellation) ----
     # Konstellationen aus den Daten nehmen, nicht hartkodiert: das Raster aendert sich
     # zwischen den Sweep-Versionen (v4 ersetzt "motion+global" durch die echten
     # Short-Channel-Varianten).
@@ -179,9 +180,9 @@ def main():
     fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: ein systemischer "
                  "Regressor (Short-Channel oder Global) senkt den HbO-Fehler deutlich;\n"
                  "Motion-Regressoren bleiben ~ohne Wirkung")
-    fig.tight_layout(); fig.savefig(OUT / "12_sweep_constellation_effect.png", dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / "08_sweep_constellation_effect.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 13: HbO/HbR-Plausibilitaet (rueckgew. Ratio) ----
+    # ---- Abb. 9: HbO/HbR-Plausibilitaet (rueckgew. Ratio) ----
     fig, axes = plt.subplots(1, len(wins), figsize=(6 * len(wins), 4.5), sharey=True)
     axes = np.atleast_1d(axes)
     for j, wv in enumerate(wins):
@@ -195,9 +196,9 @@ def main():
         ax.set_xticks(x); ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
         ax.grid(axis="y", alpha=0.3); ax.legend()
     fig.suptitle("HbO/HbR-Plausibilität: rückgewonnenes Amplituden-Ratio (Ziel −0.4)")
-    fig.tight_layout(); fig.savefig(OUT / "13_sweep_plausibility.png", dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / "09_sweep_plausibility.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 14: Motion-Achse -- Bias UND RMSE, getrennt nach Chromophor ----
+    # ---- Abb. 10: Motion-Achse -- Bias UND RMSE, getrennt nach Chromophor ----
     # Eigene Abbildung, weil hier der RMSE allein in die Irre führt: TDDR dämpft die
     # eingemischte HRF auf ~70 % und kompensiert damit zufällig die systemisch bedingte
     # HbO-Überschätzung. Der RMSE sinkt, obwohl nicht besser geschätzt wird. Sichtbar
@@ -226,7 +227,7 @@ def main():
             ax.grid(axis="y", alpha=0.3)
             ax.legend(fontsize=8)
         fig.suptitle("Motion Correction als Achse: Bias verrät, was der RMSE verdeckt")
-        fig.tight_layout(); fig.savefig(OUT / "14_sweep_motion_axis.png", dpi=130)
+        fig.tight_layout(); fig.savefig(OUT / "10_sweep_motion_axis.png", dpi=130)
         plt.close(fig)
 
         print("\n=== Motion-Achse (Mittel über Familien × Fenster × Konstellationen) ===")
@@ -243,7 +244,7 @@ def main():
             top = " > ".join(f"{f}({v:.3f})" for f, v in g.head(4).items())
             print(f"  {ch} {wv:g}s:  {top}")
     _write_tables(df)
-    print("\nGespeichert:", *(p.name for p in sorted(OUT.glob('1?_sweep_*.png'))))
+    print("\nGespeichert:", *(p.name for p in sorted(OUT.glob('0?_sweep_*.png'))))
 
 
 if __name__ == "__main__":

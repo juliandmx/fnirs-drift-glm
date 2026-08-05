@@ -566,65 +566,72 @@ Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
 
 ### Abbildungen zum Hauptsweep
 
-![RMSE je Driftfamilie](figures/10_sweep_rmse_by_family.png)
+![RMSE je Driftfamilie](figures/06_sweep_rmse_by_family.png)
 *Abb. 6 – Gesamtfehler (RMSE) je Driftregressor-Familie, für HbO (oben) und HbR (unten), je
 Fensterlänge (90 / 180 / 368 s). Niedriger = besser. Sichtbar: längere Fenster sind durchweg
 genauer; bei 368 s liegen die Familien eng beieinander.*
 
-![Bias-Varianz-Zerlegung](figures/11_sweep_bias_var.png)
+![Bias-Varianz-Zerlegung](figures/07_sweep_bias_var.png)
 *Abb. 7 – Aufteilung des Fehlers je Familie in Bias (systematische Verzerrung) und Streuung.*
 
-![Konstellations-Effekt](figures/12_sweep_constellation_effect.png)
+![Konstellations-Effekt](figures/08_sweep_constellation_effect.png)
 *Abb. 8 – Wirkung der Konstellation. Der Global-Regressor (grün/rot) senkt den HbO-Fehler
 (oben) deutlich gegenüber baseline/motion (blau/orange). Bei HbR (unten) ist der Effekt klein.*
 
-![HbO/HbR-Plausibilität](figures/13_sweep_plausibility.png)
+![HbO/HbR-Plausibilität](figures/09_sweep_plausibility.png)
 *Abb. 9 – Plausibilität: zurückgewonnenes HbR/HbO-Verhältnis je Familie; gestrichelt der wahre,
 eingemischte Wert (−0,4).*
 
-### Abbildungen zu den Zusatz-Analysen
-
-![Form-Treue je Familie](figures/20_flex_shape_corr.png)
-*Abb. 10 – Form-Treue (Korrelation rückgewonnene vs. injizierte HRF) je Driftfamilie, flexible
-Formvorlage. Hoch und über Familien ähnlich → die Drift-Wahl verzerrt die HRF-Form kaum.*
-
-![Rückgewonnene HRF-Formen](figures/21_flex_shape_curves.png)
-*Abb. 11 – Beispiel: rückgewonnene HRF-Kurven (flexible Basis) je Driftfamilie gegen die
-injizierte Ground-Truth-HRF (schwarz), ein Kanal.*
-
-![Detektion nach FDR](figures/22_detection.png)
-*Abb. 12 – Aktivierungs-Detektion nach FDR-Korrektur (q = 0,05) je Driftfamilie:
-Sensitivität (blau) und Spezifität (orange), HbO/HbR. Moderate Drift-Modelle geben die beste
-Balance; „kein Drift" ist spezifisch, aber unsensitiv.*
-
-![Motion-Achse](figures/14_sweep_motion_axis.png)
-*Abb. 13 – Die Bewegungskorrektur als eigene Achse. Balken = Bias, Striche = RMSE. Links HbO,
+![Motion-Achse](figures/10_sweep_motion_axis.png)
+*Abb. 10 – Die Bewegungskorrektur als eigene Achse. Balken = Bias, Striche = RMSE. Links HbO,
 rechts HbR. Entscheidend ist, dass der Bias über **alle** Driftfamilien praktisch konstant
 bleibt – der Sprung zwischen den beiden Balkenfarben kommt allein von der Vorverarbeitung.
 TDDR (orange) drückt den HbO-Bias auf null, verdreifacht ihn aber bei HbR: dort fehlt die
 Überschätzung, gegen die sich die Dämpfung verrechnen könnte.*
 
+![Wirkung der Vorverarbeitung](figures/11_preprocessing_effect.png)
+*Abb. 11 – Warum die Bewegungskorrektur eine eigene Achse ist, in einem Bild. Links: wie viel
+der **eingemischten** Hirnantwort jedes Verfahren übrig lässt (100 % = unangetastet). Ohne
+Korrektur ist es exakt 100 %, bei TDDR nur noch rund 70 %. Rechts: was daraus für den
+Schätzfehler folgt. Der gute RMSE von TDDR entsteht dadurch, dass die Dämpfung eine
+Überschätzung aufhebt – nicht dadurch, dass besser geschätzt würde.*
+
+### Abbildungen zu den Zusatz-Analysen
+
+![Form-Treue je Familie](figures/12_flex_shape_corr.png)
+*Abb. 12 – Form-Treue (Korrelation rückgewonnene vs. injizierte HRF) je Driftfamilie, flexible
+Formvorlage. Hoch und über Familien ähnlich → die Drift-Wahl verzerrt die HRF-Form kaum.*
+
+![Rückgewonnene HRF-Formen](figures/13_flex_shape_curves.png)
+*Abb. 13 – Beispiel: rückgewonnene HRF-Kurven (flexible Basis) je Driftfamilie gegen die
+injizierte Ground-Truth-HRF (schwarz), ein Kanal.*
+
+![Detektion nach FDR](figures/14_detection.png)
+*Abb. 14 – Aktivierungs-Detektion nach FDR-Korrektur (q = 0,05) je Driftfamilie:
+Sensitivität (blau) und Spezifität (orange), HbO/HbR. Moderate Drift-Modelle geben die beste
+Balance; „kein Drift" ist spezifisch, aber unsensitiv.*
+
 ### Abbildungen zu den realen Daten
 
-![Reproduzierbarkeit](figures/30_real_reliability.png)
-*Abb. 14 – Das Hauptergebnis der realen Daten. Median-Korrelation der β-Karten zwischen den
+![Reproduzierbarkeit](figures/15_real_reliability.png)
+*Abb. 15 – Das Hauptergebnis der realen Daten. Median-Korrelation der β-Karten zwischen den
 Durchgängen eines Probanden, über 74 Durchgangspaare. Höher = stabilere Schätzung. Die
 DCT-Familie (orange) liegt vorn, die Filter-Alternativen (rot) klar hinten – schlechter als
 gar kein Driftmodell (braun). „n.a." markiert die mit AR-IRLS nicht auswertbare Kombination
 (Ergebnis 9).*
 
-![Signifikante Kanäle](figures/31_real_significant.png)
-*Abb. 15 – Zahl der Kanäle, die die FDR-Korrektur überstehen (von 48). Der systemische
+![Signifikante Kanäle](figures/16_real_significant.png)
+*Abb. 16 – Zahl der Kanäle, die die FDR-Korrektur überstehen (von 48). Der systemische
 Regressor (orange) entfernt bei AR-IRLS rund die Hälfte der Signifikanz – dasselbe Muster
 wie in der Simulation.*
 
-![Gruppen-Aktivierung auf dem Kopf](figures/32_real_scalp.png)
-*Abb. 16 – Die eigentliche Frage: **wo** sitzt die Aktivierung? Gruppen-β über 25 Probanden
+![Gruppen-Aktivierung auf dem Kopf](figures/17_real_scalp.png)
+*Abb. 17 – Die eigentliche Frage: **wo** sitzt die Aktivierung? Gruppen-β über 25 Probanden
 (oben) und t-Werte (unten), HbO links, HbR rechts. Erwartet wird die stärkste Antwort über
 dem linken, kontralateralen Motorkortex, da mit der rechten Hand getappt wurde.*
 
-![Plausibilität real](figures/33_real_plausibility.png)
-*Abb. 17 – HbR/HbO-Verhältnis (links, gestrichelt der physiologisch erwartete Wert −0,4) und
+![Plausibilität real](figures/18_real_plausibility.png)
+*Abb. 18 – HbR/HbO-Verhältnis (links, gestrichelt der physiologisch erwartete Wert −0,4) und
 Antikorrelation zwischen HbO und HbR (rechts). Je Punkt eine Driftfamilie.*
 
 ---

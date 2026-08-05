@@ -130,7 +130,7 @@ def main(mode="full"):
     print("=== Flexible-Basis-Analyse (Median ueber aktive Kanaele/Seeds) ===")
     print(agg.to_string(index=False))
 
-    # ---- Abb. 20: Form-Treue je Familie (HbO) ----
+    # ---- Abb. 12: Form-Treue je Familie (HbO) ----
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
     for j, c in enumerate(["HbO", "HbR"]):
         d = agg[agg.chromo == c].set_index("family").reindex(families)
@@ -141,9 +141,9 @@ def main(mode="full"):
         ax[j].set_title(f"{c}: Form-Treue (Pearson r, rueckgew. vs. wahre HRF)")
         ax[j].set_ylabel("median r"); ax[j].grid(axis="y", alpha=0.3)
     fig.suptitle("Flexible Recovery-Basis (GaussianKernels): erhaelt die Driftwahl die HRF-Form?")
-    fig.tight_layout(); fig.savefig(OUT / "20_flex_shape_corr.png", dpi=130); plt.close(fig)
+    fig.tight_layout(); fig.savefig(OUT / "12_flex_shape_corr.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 21: Beispiel-Formspuren rueckgewonnen vs injiziert ----
+    # ---- Abb. 13: Beispiel-Formspuren rueckgewonnen vs injiziert ----
     fig, ax = plt.subplots(figsize=(12, 5))
     fam0 = families[0]
     t0, _, true0 = shape_curves[fam0]
@@ -155,8 +155,8 @@ def main(mode="full"):
     ax.set_title("Rueckgewonnene HRF (flexible Basis) je Driftfamilie vs. injizierte HRF "
                  "(ein Beispielkanal)")
     ax.legend(ncol=3, fontsize=7)
-    fig.tight_layout(); fig.savefig(OUT / "21_flex_shape_curves.png", dpi=130); plt.close(fig)
-    print(f"\n-> {RESULTS/'flex_basis_summary.csv'}  | Abb. 20/21 in {OUT}")
+    fig.tight_layout(); fig.savefig(OUT / "13_flex_shape_curves.png", dpi=130); plt.close(fig)
+    print(f"\n-> {RESULTS/'flex_basis_summary.csv'}  | Abb. 12/13 in {OUT}")
 
 
 if __name__ == "__main__":

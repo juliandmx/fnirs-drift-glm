@@ -4,14 +4,14 @@ Erzeugt aus `results/realglm_summary.csv` die Uebersichts-Abbildungen und rechne
 EINE repraesentative Konfiguration die Gruppen-beta-Karte nach, damit die Aktivierung auf
 dem Kopf sichtbar wird (das ist die Abbildung, die man im Gespraech zeigt).
 
-  Abb. 30  Reproduzierbarkeit je Driftfamilie (das wahrheitsfreie Hauptkriterium)
-  Abb. 31  Signifikante Kanaele nach FDR je Familie x Konstellation
-  Abb. 32  Gruppen-beta-Karte auf dem Kopf (HbO/HbR), beste Familie
-  Abb. 33  HbO/HbR-Plausibilitaet
+  Abb. 15  Reproduzierbarkeit je Driftfamilie (das wahrheitsfreie Hauptkriterium)
+  Abb. 16  Signifikante Kanaele nach FDR je Familie x Konstellation
+  Abb. 17  Gruppen-beta-Karte auf dem Kopf (HbO/HbR), beste Familie
+  Abb. 18  HbO/HbR-Plausibilitaet
 
 Aufruf:
-    conda run -n cedalion python realglm_report.py          # alles (Abb. 32 ~8 min)
-    conda run -n cedalion python realglm_report.py quick    # ohne Abb. 32
+    conda run -n cedalion python realglm_report.py          # alles (Abb. 17 ~13 min)
+    conda run -n cedalion python realglm_report.py quick    # ohne Abb. 17
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ def fig30_reliability(df):
     ax.set_title("Reproduzierbarkeit je Driftfamilie — 25 Probanden, 74 Durchgangspaare\n"
                  "(höher = stabilere Schätzung; „n.a.\" = mit AR-IRLS nicht auswertbar)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
-    fig.tight_layout(); fig.savefig(OUT / "30_real_reliability.png", dpi=130)
+    fig.tight_layout(); fig.savefig(OUT / "15_real_reliability.png", dpi=130)
     plt.close(fig)
 
 
@@ -108,7 +108,7 @@ def fig31_significant(df):
     axes[0].legend()
     fig.suptitle("Aktivierungs-Detektion auf den realen Daten: der systemische Regressor "
                  "entfernt einen großen Teil der Signifikanz")
-    fig.tight_layout(); fig.savefig(OUT / "31_real_significant.png", dpi=130)
+    fig.tight_layout(); fig.savefig(OUT / "16_real_significant.png", dpi=130)
     plt.close(fig)
 
 
@@ -133,7 +133,7 @@ def fig33_plausibility(df):
                             "ols\nbaseline", "ols\nglobal"], fontsize=8)
         ax.set_title(ttl); ax.grid(axis="y", alpha=0.3)
     fig.suptitle("Plausibilität auf den realen Daten (je Punkt eine Driftfamilie)")
-    fig.tight_layout(); fig.savefig(OUT / "33_real_plausibility.png", dpi=130)
+    fig.tight_layout(); fig.savefig(OUT / "18_real_plausibility.png", dpi=130)
     plt.close(fig)
 
 
@@ -183,7 +183,7 @@ def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
     cache = RES / "realglm_group_map.nc"
     if reuse and cache.exists():
         ds = xr.open_dataset(cache)
-        print(f"Abb. 32: nutze vorhandene Gruppenkarte {cache.name} "
+        print(f"Abb. 17: nutze vorhandene Gruppenkarte {cache.name} "
               f"({ds.attrs.get('family')} / {ds.attrs.get('constellation')} / "
               f"{ds.attrs.get('noise_model')})", flush=True)
         rec = rd.load(rd.find_files()[0])
@@ -192,7 +192,7 @@ def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
         return
 
     files = rd.find_files()
-    print(f"Abb. 32: {family} / {constellation} / {noise_model} — "
+    print(f"Abb. 17: {family} / {constellation} / {noise_model} — "
           f"{len(files)} Dateien werden nachgerechnet ...", flush=True)
     t0 = time.time()
     prepped, geo3d, conc0 = {}, None, None
@@ -247,7 +247,7 @@ def _draw_fig32(ds, conc, geo3d):
         "Der Datensatz enthält keine Landmarken —\ndie Darstellung zeigt die räumliche "
         "Struktur der Aktivierung, ist aber NICHT anatomisch orientiert "
         "(links/rechts nicht bestimmbar).", fontsize=10)
-    fig.tight_layout(); fig.savefig(OUT / "32_real_scalp.png", dpi=130)
+    fig.tight_layout(); fig.savefig(OUT / "17_real_scalp.png", dpi=130)
     plt.close(fig)
 
 
@@ -257,10 +257,10 @@ def main(quick=False):
     fig30_reliability(df)
     fig31_significant(df)
     fig33_plausibility(df)
-    print("Abb. 30, 31, 33 erzeugt.")
+    print("Abb. 15, 16, 18 erzeugt.")
     if not quick:
         fig32_scalp()
-    print("\nGespeichert:", *(p.name for p in sorted(OUT.glob("3?_real_*.png"))))
+    print("\nGespeichert:", *(p.name for p in sorted(OUT.glob("1?_real_*.png"))))
 
 
 if __name__ == "__main__":

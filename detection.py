@@ -148,8 +148,8 @@ def main(mode="full"):
         ax[j].set_ylim(0, 1.05); ax[j].set_title(f"{c}: Detektion nach FDR (q=0.05)")
         ax[j].grid(axis="y", alpha=0.3); ax[j].legend(fontsize=8)
     fig.suptitle("Aktivierungs-Detektion je Driftfamilie (Signifikanz + FDR vs. Ground Truth)")
-    fig.tight_layout(); fig.savefig(OUT / "22_detection.png", dpi=130); plt.close(fig)
-    print(f"\n-> {RESULTS/'detection_summary.csv'} | Abb. 22 in {OUT}")
+    fig.tight_layout(); fig.savefig(OUT / "14_detection.png", dpi=130); plt.close(fig)
+    print(f"\n-> {RESULTS/'detection_summary.csv'} | Abb. 14 in {OUT}")
 
 
 if __name__ == "__main__":
