@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 pysnirf2.log
+
+# Persoenliche Arbeitsunterlagen -- bewusst NICHT versioniert
+BESPRECHUNG.md
+UMSETZUNGSPLAN.md
