@@ -181,35 +181,56 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
 # ------------------------------------------------- Abb. 21: Driftfamilien im Bildraum
 
 def fig_image_families(csv: str = "imageglm_summary.csv"):
-    """Abb. 21 -- Driftfamilien im Bildraum: Form, Ort, Trefferanteil."""
+    """Abb. 21 -- Driftfamilien im Bildraum: Form, Ort, Trefferanteil.
+
+    Die rauschfreie Obergrenze (`truth_ref`) wird als waagerechte Linie eingezeichnet, nicht
+    als weiterer Balken: sie ist keine Schaetzung, sondern das Beste, was die Rekonstruktion
+    ueberhaupt liefern kann. Ohne diese Linie ist kein Balken interpretierbar.
+    """
     path = RESULTS / csv
     if not path.exists():
         print(f"(uebersprungen: {path} fehlt -- 'python imageglm.py' laufen lassen)")
         return
     df = pd.read_csv(path)
-    d = df[(df.chromo == "HbO") & (df.constellation == df.constellation.iloc[0])]
+    hbo = df[df.chromo == "HbO"]
+    ref = hbo[hbo.projection == "truth_ref"]
+    d = hbo[hbo.projection != "truth_ref"]
+    if d.empty:
+        print(f"(uebersprungen: {path} enthaelt nur die Obergrenze)")
+        return
 
     metrics = [("img_r", "Korrelation mit der Wahrheit", "höher = besser"),
                ("img_loc_err_mm", "Lokalisationsfehler [mm]", "niedriger = besser"),
                ("img_hit_frac", "Anteil am richtigen Ort", "höher = besser")]
     projs = [p for p in ("hrf", "residual", "cleaned") if p in set(d.projection)]
+    cons = list(dict.fromkeys(d.constellation))
     fams = list(dict.fromkeys(d.family))
     x = np.arange(len(fams))
     w = 0.8 / max(len(projs), 1)
 
-    fig, axes = plt.subplots(len(metrics), 1, figsize=(max(9, 0.8 * len(fams)), 9),
-                             sharex=True)
-    for ax, (col, label, hint) in zip(axes, metrics):
-        for k, proj in enumerate(projs):
-            g = d[d.projection == proj].groupby("family")[col].mean().reindex(fams)
-            ax.bar(x + (k - (len(projs) - 1) / 2) * w, g.values, width=w * 0.92,
-                   label=PROJ_LABEL.get(proj, proj))
-        ax.set_ylabel(f"{label}\n({hint})", fontsize=9)
-        ax.grid(axis="y", alpha=0.3)
-        ax.axhline(0, color="k", lw=0.6)
-    axes[0].legend(ncol=len(projs), fontsize=9)
-    axes[-1].set_xticks(x)
-    axes[-1].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
+    fig, axes = plt.subplots(len(metrics), len(cons), sharex=True, squeeze=False,
+                             figsize=(max(8, 0.7 * len(fams)) * len(cons), 9))
+    for i_con, con in enumerate(cons):
+        dc = d[d.constellation == con]
+        for i_m, (col, label, hint) in enumerate(metrics):
+            ax = axes[i_m][i_con]
+            for k, proj in enumerate(projs):
+                g = dc[dc.projection == proj].groupby("family")[col].mean().reindex(fams)
+                ax.bar(x + (k - (len(projs) - 1) / 2) * w, g.values, width=w * 0.92,
+                       label=PROJ_LABEL.get(proj, proj))
+            if not ref.empty and np.isfinite(ref[col].mean()):
+                ax.axhline(ref[col].mean(), color="k", ls="--", lw=1.2,
+                           label="Obergrenze (rauschfrei)")
+            ax.grid(axis="y", alpha=0.3)
+            ax.axhline(0, color="k", lw=0.6)
+            if i_con == 0:
+                ax.set_ylabel(f"{label}\n({hint})", fontsize=9)
+            if i_m == 0:
+                ax.set_title(f"Konstellation: {con}", fontsize=10)
+        axes[-1][i_con].set_xticks(x)
+        axes[-1][i_con].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
+    axes[0][0].legend(ncol=max(len(projs), 1) + 1, fontsize=8, loc="upper left",
+                      framealpha=0.9)
     fig.suptitle("Abb. 21 – Driftfamilien im Bildraum (HbO). Der Lokalisationsfehler ist "
                  "die Kennzahl,\ndie es im Kanalraum nicht gibt: sitzt die Aktivierung "
                  "am richtigen Ort?", fontsize=11)
