@@ -730,6 +730,37 @@ dem linken, kontralateralen Motorkortex, da mit der rechten Hand getappt wurde.*
 *Abb. 18 – HbR/HbO-Verhältnis (links, gestrichelt der physiologisch erwartete Wert −0,4) und
 Antikorrelation zwischen HbO und HbR (rechts). Je Punkt eine Driftfamilie.*
 
+### Abbildungen zum Bildraum und zum dritten Datensatz
+
+![HRF je Kanal](figures/19_hrf_per_channel.png)
+*Abb. 19 – Je Kanal die eingemischte HRF (dick und blass) gegen die geschätzte (dünn,
+gestrichelt); rot HbO, blau HbR. Die letzten drei Kacheln zeigen Kanäle **ohne**
+Aktivierung – dort muss die Schätzung flach bleiben. Genau diese Kontrolle verschwindet in
+jeder gemittelten Kennzahl.*
+
+![Kortex: wahr gegen rekonstruiert](figures/20_cortex_truth_vs_recon.png)
+*Abb. 20 – Die Abbildung, die den Bildraum rechtfertigt: sie zeigt den **Ort**. Links die
+eingemischte Wahrheit (Flecken unter C3 und C4), rechts, was aus dem GLM-Ergebnis
+zurückkommt – je Spalte eine der drei Projektionen, je Zeile eine Blickrichtung. Graue
+Bereiche sieht die Montage nicht; dort wäre jeder Wert reine Regularisierung.*
+
+![Driftfamilien im Bildraum](figures/21_image_families.png)
+*Abb. 21 – Driftfamilien im Bildraum (HbO). Die gestrichelte Linie ist die **rauschfreie
+Obergrenze**: die wahre Kanalkarte durch denselben Rückweg. Ohne sie ist kein Balken
+interpretierbar – erst der Abstand zur Linie sagt, wie viel die Schätzung verliert.*
+
+![Kontralaterale Kontrolle](figures/22_ms_lateralisation.png)
+*Abb. 22 – Der dritte Datensatz erlaubt eine **überprüfbare Vorhersage ohne Ground Truth**:
+Motorik ist kontralateral, also muss Tappen mit der rechten Hand links stärker sein und
+umgekehrt. Links im Kanalraum (positiv = Erwartung erfüllt), rechts im Bildraum als
+Abstand des Maximums zur erwarteten Landmarke gegen den Abstand zur Gegenseite.*
+
+![Global-Component-Subtraktion](figures/23_global_component.png)
+*Abb. 23 – Derselbe systemische Regressor, zwei Anwendungsarten: in der Designmatrix
+belassen (durchgezogen) oder vorher abgezogen (gestrichelt). Der Unterschied ist nicht
+kosmetisch – der abgezogene Anteil wird auf Daten geschätzt, die die gesuchte Antwort
+enthalten.*
+
 ---
 
 ## 7. Die Dateien im Überblick

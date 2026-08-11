@@ -64,8 +64,10 @@ def fig_hrf_per_channel(window_s: float = 368.0, family: str = "dct:0.02",
     hrf_hat = ig.with_time_coords(
         glm.predict(ts, beta, dm_hrf).transpose(*ts.dims), ts)
 
+    tts = [str(t) for t in pd.unique(P.stim_df.trial_type)]
+
     def blocks(x):
-        ep = x.cd.to_epochs(P.stim_df, None, before=ig.EPOCH_BEFORE,
+        ep = x.cd.to_epochs(P.stim_df, tts, before=ig.EPOCH_BEFORE,
                             after=ig.EPOCH_AFTER)
         ep = ep - ep.sel(reltime=(ep.reltime < 0)).mean("reltime")
         ba = ep.groupby("trial_type").mean("epoch")
@@ -146,26 +148,31 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
         od = ig.conc_map_to_od(pr[proj], P.geo3d, P.pre.od.wavelength, like=P.conc_syn)
         imgs[PROJ_LABEL[proj]] = recon.reconstruct(od, c_meas.sel(channel=od.channel))
 
-    # Unsichtbare Vertices ausgrauen statt mitfaerben -- dort ist der Wert reine
-    # Regularisierung (siehe imagespace.sensitivity_mask).
+    # Unsichtbare Vertices auf NaN setzen statt mitzufaerben -- dort ist der Wert reine
+    # Regularisierung (siehe imagespace.sensitivity_mask); plot_brain_in_axes stellt NaN
+    # ueber `bad_color` grau dar. Bewusst als DataArray OHNE Einheit: die Funktion ruft
+    # `metric.pint.dequantify()` auf, und eine Mischung aus quantifizierten µM und einem
+    # nackten numpy-Array wuerde an der Einheitenpruefung von pint scheitern.
     def masked(img):
         v = img.sel(chromo="HbO")
-        v = v.pint.to("uM") if v.pint.units is not None else v
-        a = np.asarray(v.pint.dequantify().values
-                       if v.pint.units is not None else v.values, float).copy()
+        if getattr(v, "pint", None) is not None and v.pint.units is not None:
+            v = v.pint.to("uM").pint.dequantify()
+        a = np.asarray(v.values, dtype=float).copy()
         a[~sens] = np.nan
-        return a
+        return v.copy(data=a)
 
     cols = list(imgs)
     fig, axes = plt.subplots(2, len(cols), figsize=(3.6 * len(cols), 7.2))
     for i_col, name in enumerate(cols):
-        a = masked(imgs[name])
-        lim = float(np.nanpercentile(np.abs(a), 99.5)) or 1.0
+        m = masked(imgs[name])
+        lim = float(np.nanpercentile(np.abs(m.values), 99.5))
+        if not np.isfinite(lim) or lim == 0.0:
+            lim = 1.0
         for i_row, cam in enumerate(("C3", "C4")):
             vis.plot_brain_in_axes(
-                P.pre.od, head.landmarks, imgs[name].sel(chromo="HbO") * 0 + a,
-                head.brain, axes[i_row, i_col], camera_pos=cam, cmap="RdBu_r",
-                vmin=-lim, vmax=+lim, cb_label=r"$\Delta$ HbO / µM", title=None)
+                P.pre.od, head.landmarks, m, head.brain, axes[i_row, i_col],
+                camera_pos=cam, cmap="RdBu_r", vmin=-lim, vmax=+lim,
+                cb_label=r"$\Delta$ HbO / µM", title=None)
             axes[i_row, i_col].set_title(f"{name} · Blick von {cam}", fontsize=9)
     fig.suptitle("Abb. 20 – Aktivierung auf dem Kortex: eingemischt und aus dem "
                  f"GLM-Ergebnis rekonstruiert ({family}, {noise_model})\n"
@@ -325,13 +332,32 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
     print(f"-> {out}")
 
 
+def _try(label, fn, *a, **kw):
+    """Eine Abbildung erzeugen, Fehler melden statt den Lauf abzubrechen.
+
+    Das Skript laeuft am Ende eines mehrstuendigen Nachtlaufs unbeaufsichtigt. Wuerde eine
+    fehlgeschlagene Abbildung die uebrigen mitnehmen, waere am Morgen nichts da -- und die
+    billigen Tabellen-Abbildungen haengen an den teuren (Abb. 19/20 brauchen je einen
+    vollen Build plus AR-IRLS-Fit).
+    """
+    import traceback
+    try:
+        fn(*a, **kw)
+        return True
+    except Exception:                                          # noqa: BLE001
+        print(f"!! {label} fehlgeschlagen:\n{traceback.format_exc()}", flush=True)
+        return False
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     FIGURES.mkdir(exist_ok=True)
+    ok = True
+    if what in ("all", "tables"):        # zuerst: billig und haengt nur an den CSVs
+        ok &= _try("Abb. 21", fig_image_families)
+        ok &= _try("Abb. 22/23", fig_multisubject)
     if what in ("all", "hrf"):
-        fig_hrf_per_channel()
+        ok &= _try("Abb. 19", fig_hrf_per_channel)
     if what in ("all", "cortex"):
-        fig_cortex()
-    if what in ("all", "tables"):
-        fig_image_families()
-        fig_multisubject()
+        ok &= _try("Abb. 20", fig_cortex)
+    sys.exit(0 if ok else 1)
