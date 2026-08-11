@@ -122,6 +122,26 @@ $CR msglm.py                          # voll (Nachtlauf); Fortschritt: results/m
 $CR coregister.py                     # Registrierung + Blocker-Bericht (keine GPU nötig)
 ```
 
+### Nachtlauf (alles auf einmal)
+
+```bash
+nohup ./run_v5.sh > results/run_v5.log 2>&1 &
+tail -f results/imageglm_progress.txt results/msglm_progress.txt
+```
+
+Läuft **sequenziell**: `imageglm.py` → `msglm.py` → `imagespace_report.py`. Gemessene
+Größenordnungen auf dieser Maschine:
+
+| Schritt | Kosten | woran es hängt |
+|---|---|---|
+| `imageglm.py` | ~3 h | 420 s je AR-IRLS-Fit über 519 Kanäle, 24 Zellen, plus ~20 min Build |
+| `msglm.py` | ~5 h | AR-IRLS kostet hier das ~200-Fache von OLS (23 240 Samples je Kanal) |
+| `imagespace_report.py` | ~1 h | Abb. 19 und 20 brauchen je einen Build plus einen Fit |
+
+Beide Auswertungen schreiben ihre CSV **nach jeder Zelle** – ein Abbruch verliert nur die
+laufende Zelle. Der Report ist fehlertolerant: eine fehlgeschlagene Abbildung nimmt die
+übrigen nicht mit.
+
 ## Reproduzierbarkeit
 
 - **Seeds:** Alle Zufallsanteile (Stimulus-Platzierung) sind über `seed` gesteuert und

@@ -9,6 +9,24 @@
 # Logs:              results/run_v5_imageglm.log  results/run_v5_msglm.log
 set -u
 cd "$(dirname "$0")"
+
+# Sperre. Zwei Ketten gleichzeitig killen sich gegenseitig ueber den Speicher -- genau das
+# ist beim Entwickeln passiert: die erste Kette wurde beim imageglm-Schritt abgebrochen,
+# ist daraufhin auf msglm weitergeschaltet, und der Neustart lief dagegen. Ergebnis: der
+# neue imageglm-Lauf wurde nach einer Minute vom OOM-Killer beendet.
+LOCK="results/.run_v5.lock"
+mkdir -p results
+if [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
+    echo "Es laeuft schon eine Kette (PID $(cat "$LOCK")). Abbruch." >&2
+    echo "Falls das ein Ueberrest ist: kill -9 -\$(cat $LOCK); rm $LOCK" >&2
+    exit 1
+fi
+echo $$ > "$LOCK"
+# Beim Beenden -- auch bei Abbruch -- die ganze Prozessgruppe mitnehmen, damit kein
+# Teilschritt weiterlaeuft und in den naechsten Lauf hineinrechnet.
+cleanup() { rm -f "$LOCK"; kill -- -$$ 2>/dev/null; }
+trap cleanup EXIT INT TERM
+
 source ~/anaconda3/etc/profile.d/conda.sh
 CR="conda run --no-capture-output -n cedalion python -u"
 
