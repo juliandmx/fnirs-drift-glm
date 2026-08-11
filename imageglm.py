@@ -275,17 +275,23 @@ def image_metrics(img_hat: xr.DataArray, img_true: xr.DataArray, seeds: dict,
                 loc_err_mm=dmin, hit_frac=hit, n_vertices=int(keep.sum()))
 
 
-#: Seeds fuer den Volllauf. Zwei statt vieler, weil jeder Seed einen kompletten
-#: `pipeline.build` braucht -- und der kostet auf 567 Kanaelen rund 20 Minuten, weil die
-#: Wavelet-Korrektur zweimal laufen muss (reine Ruhedaten und augmentiert). Zwei Seeds
-#: zeigen, ob ein Befund an der Stimulus-Platzierung haengt; fuer eine belastbare
-#: Varianzschaetzung braeuchte es mehr, dafuer ist der Kanalraum-Sweep da.
-DEFAULT_SEEDS = (0, 1)
+#: Seeds fuer den Volllauf -- gemessen EINER, und das ist eine Kostenentscheidung.
+#:
+#: Ein AR-IRLS-Fit ueber die 519 Kanaele bei 368 s kostet gemessen **420 s**. Bei 12
+#: Familien x 2 Konstellationen sind das je Seed 24 Zellen, also ~2,8 h, plus rund 20 min
+#: fuer den `pipeline.build` selbst (die Wavelet-Korrektur laeuft zweimal: reine Ruhedaten
+#: und augmentiert). Mit zwei Seeds waere der Lauf bei ~10 h -- und danach soll noch
+#: `msglm.py` laufen. Ein Seed haelt die Kette in einer Nacht.
+#:
+#: Der Verlust ist vertretbar: die Varianz ueber Stimulus-Platzierungen ist die Frage, die
+#: der Kanalraum-Sweep mit 4 Seeds x 3 Fenstern beantwortet. Hier geht es um den Ort, und
+#: den beantwortet ein Seed gegen die mitlaufende rauschfreie Obergrenze.
+DEFAULT_SEEDS = (0,)
 
 
 def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 368.0,
         families=None, constellations=("baseline", "global"), noise_model="ar_irls",
-        seeds=(0, 1), out: str | None = None) -> pd.DataFrame:
+        seeds=DEFAULT_SEEDS, out: str | None = None) -> pd.DataFrame:
     """Driftfamilien im Bildraum vergleichen. Schreibt eine CSV nach `results/`."""
     RESULTS.mkdir(exist_ok=True)
     if families is None:
