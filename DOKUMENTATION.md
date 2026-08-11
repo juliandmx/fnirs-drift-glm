@@ -583,6 +583,68 @@ antikorreliert, das Signal ist also physiologisch. Das HbR/HbO-Verhältnis liegt
 (OLS); erwartet wird ~−0,4. Der systemische Regressor halbiert dabei die Zahl signifikanter
 Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
 
+### Teil C – Im Bildraum (Version 5)
+
+Hier wird eine Frage gestellt, die im Kanalraum gar nicht formulierbar ist: **landet die
+Aktivierung am richtigen Ort auf dem Kortex?** Ein Kanal ist ein Quell-Detektor-Paar, keine
+Hirnregion; erst die Rückrechnung in den Bildraum liefert einen Ort. Sie ist ein *inverses
+Problem* – viele Hirnbilder erklären dieselben Kanalwerte, man braucht Zusatzannahmen
+(Regularisierung), um eines auszuwählen.
+
+**Ergebnis C1 – Ohne Sichtbarkeitsmaske ist im Bildraum keine Zahl brauchbar.**
+Die Rekonstruktion gibt für **jeden** Punkt der Hirnoberfläche einen Wert zurück, auch für
+solche, zu denen nie ein Photon gelangt ist. Dort ist das Ergebnis kein Messwert, sondern
+reine Regularisierung – und die Tiefenkorrektur verstärkt genau diese Punkte am stärksten,
+weil sie durch die (kleine) örtliche Empfindlichkeit teilt. Gemessen: ohne Maske landet
+selbst die **rauschfreie Wahrheit** 65–110 mm neben ihrem eigenen Zentrum, bei einer
+Korrelation von 0,00. Mit Maske (Punkte über 1 % der maximalen Empfindlichkeit) sind es
+r = 0,80 und 11,9 mm. *Das ist keine Feinheit der Auswertung, sondern die Voraussetzung
+dafür, dass sie überhaupt etwas misst.*
+
+**Ergebnis C2 – Die Regularisierung entscheidet mehr als das Rauschmodell.** Rauschfrei
+geprüft (`python imagespace.py check`) hängt der Ortsfehler praktisch nur an einem
+Parameter, `alpha_spatial`; der zweite (`alpha_meas`) verschiebt ihn kaum. Auf der dünnen
+28-Kanal-Montage:
+
+| `alpha_spatial` | Korrelation | Amplitude (Ist/Soll) | Ortsfehler |
+|---|---|---|---|
+| aus | +0,49 … +0,58 | 1,36 – 1,51 | **8,6 mm** |
+| 0,001 (Vorgabe) | +0,45 … +0,51 | **1,82 – 2,02** | 14,6 mm |
+| 0,01 | **+0,59 … +0,65** | **0,89 – 0,97** | 13,2 – 14,0 mm |
+
+Der vorgegebene Wert 0,001 schneidet also am schlechtesten ab – er überschätzt die
+Amplitude um den Faktor 2. Er bleibt trotzdem die Voreinstellung (Betreuungsvorgabe wird
+nicht stillschweigend übersteuert), der Gegenlauf ist ein Argument. Auf der dichten
+520-Kanal-Montage ist der Unterschied kleiner, aber gleichgerichtet (0,001 → 11,9 mm;
+0,01 → 3,0 mm).
+
+**Ergebnis C3 – Der Bildraum ist ein strengeres Gütekriterium als der Kanalraum.**
+Damit die Zahlen einordbar sind, läuft eine **rauschfreie Obergrenze** mit: die wahre
+Kanalkarte durch denselben Rückweg (r = 0,80 / 11,9 mm auf dem Ruhedatensatz). In der
+ungünstigsten Konfiguration – einfaches Schätzverfahren, kurzes Fenster, **ohne**
+systemischen Regressor – erreicht die Schätzung dagegen r ≈ 0,00 und 65–110 mm. Im
+Kanalraum sah dieselbe Schätzung unauffällig aus (RMSE 0,21 µM bei 0,6 µM Peak).
+
+> Eine im Kanalraum akzeptable Schätzung kann im Bildraum vollständig danebenliegen, weil
+> die Rekonstruktion die Fehler über ganze Lichtwege verteilt. Der Bildraum ist damit
+> **kein zusätzlicher Darstellungsschritt, sondern ein härteres Kriterium.**
+
+**Ergebnis C4 – Die „Konzentration" eines kurzen Kanals ist keine Amplitude.** Ein
+Fallstrick, der still falsche Zahlen erzeugt. Die Umrechnung von optischer Dichte in
+Konzentration teilt durch den Quell-Detektor-Abstand; bei 7,3 mm gegen 37 mm ist dieser
+Nenner fünfmal kleiner, dieselbe optische Dichte wird also zu einer fünfmal größeren
+Konzentration. Auf der 28-Kanal-Montage lag das globale Maximum der Kanalraum-Wahrheit
+dadurch auf einem **7,3-mm-Kanal** (0,600 µM) vor dem besten langen (0,231 µM) – obwohl
+dessen Hirn-Empfindlichkeit 230-mal größer ist. Die Amplituden-Kalibrierung greift deshalb
+nur auf Kanäle zu, die mindestens 10 % der maximalen Hirn-Empfindlichkeit haben.
+
+**Ergebnis C5 – Die „kurzen" Kanäle des Ruhedatensatzes sind keine reinen
+Systemik-Messungen.** Mit der Einmischung auf dem Kortex ist das beziffert statt behauptet:
+der stärkste 15,8–17,8-mm-Kanal bekommt **18,9 % des eingemischten Peaks** ab. Im
+gemittelten Regressor bleiben davon 1,4 % (Short-Average) gegen 3,8 % (Global-Mittelwert) –
+derselbe Befund wie in Ergebnis 3, aber jetzt mit physikalisch abgeleitetem Muster statt der
+künstlich auf Null gesetzten kurzen Kanäle der Vorversion.
+
 ### Nutzungsempfehlung (Stand: beide Stufen)
 
 1. **Systemischen Regressor verwenden** – der größte Genauigkeits-Hebel für HbO. Wenn die
@@ -781,18 +843,30 @@ Auswertungen). Was seit der letzten Fassung dazukam:
 - **Stufe 2 auf realen Daten** mit Gruppenstatistik, FDR und dem wahrheitsfreien
   Reproduzierbarkeits-Kriterium.
 
-**Noch offen – Kanalraum gegen Bildraum.** Alle bisherigen Auswertungen laufen im
-**Kanalraum**: das Ergebnis ist ein Wert je Messkanal. Um Aktivität einer **Hirnregion**
-zuzuordnen, muss man in den **Bildraum** – also aus den Kanalwerten zurückrechnen, wo im
-Gehirn die Änderung entstanden ist. Das ist ein *inverses Problem* (viele mögliche
-Hirnbilder erklären dieselben Kanalwerte, man braucht Zusatzannahmen, um eines auszuwählen).
+**Version 5 (August) – der Bildraum ist dazugekommen, und ein dritter Datensatz.** Was
+zuvor als „noch offen" hier stand, ist umgesetzt:
 
-Offen ist damit die Frage: **Macht es einen Unterschied, ob man das GLM im Kanalraum oder im
-Bildraum rechnet?** – und zwar für beide Datensätze. Cedalion bringt das Verfahren mit
-(`cedalion.dot.ImageRecon`, Tutorial-Notebook 5, das ausdrücklich auch dünn besetzte Montagen
-abdeckt). Für den Ruhedatensatz liegt die nötige Sensitivitätsmatrix fertig vor; für die
-48-Kanal-Montage der realen Daten müsste sie über ein Kopfmodell berechnet werden – das ist
-der Punkt, an dem der Aufwand zu klären ist.
+- **Die Ground Truth liegt jetzt auf dem Kortex** (Kapitel 4, Schritt 4): ein geodätischer
+  Fleck unter C3 und C4, über die Sensitivitätsmatrix in den Kanalraum getragen, dort in die
+  Ruhedaten gemischt. Kopfmodell durchgängig **ICBM152**.
+- **Das GLM-Ergebnis geht zurück auf den Kortex** – die geschätzte HRF, das Residuum und
+  beides zusammen. Damit ist erstmals messbar, ob die Aktivierung am **richtigen Ort**
+  landet (`imageglm.py`, Abb. 20/21).
+- **Ein dritter Datensatz mit echten Short Channels**: Multisubject-Fingertapping,
+  5 Probanden, 8 Kanäle bei 7,1 mm. Damit ist die Short-Channel-Regression kein reiner
+  Simulationsbefund mehr, und weil beide Hände getrennt getappt wurden, gibt es eine
+  **überprüfbare anatomische Vorhersage** ohne Ground Truth: kontralateral muss stärker
+  sein (`msglm.py`, Abb. 22).
+- **Die Global-Component-Subtraktion** als eigene Achse neben dem Regressor in der
+  Designmatrix (Abb. 23).
+
+**Was offen bleibt – der Bildraum für den 48-Kanal-Datensatz.** Dessen Optodendatei enthält
+keine Landmarken (Nasenwurzel, Ohrpunkte). Eine landmarkenfreie Anpassung legt die Optoden
+zwar im Median 2,2 mm auf die Kopfhaut (`coregister.py`), aber sie kann **links und rechts
+nicht unterscheiden** – eine Kopfhaut ist dafür zu symmetrisch. Und die
+Sensitivitätsmatrix selbst müsste über eine Photonensimulation berechnet werden, die eine
+CUDA-GPU braucht (hier nicht vorhanden). Beides löst sich, sobald von der Betreuung eine
+Koregistrierung oder eine fertige Matrix für dieses Gerät kommt.
 
 **Abschließend – Verschriftlichung (durch den Autor):**
 - Methoden-, Ergebnis- und Diskussionsteil der Bachelorarbeit; Einordnung in die Fachliteratur
