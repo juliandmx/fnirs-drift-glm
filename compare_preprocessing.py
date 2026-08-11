@@ -64,6 +64,86 @@ VARIANTS = {
 }
 
 
+RETENTION_METHODS = ("none", "wavelet", "tddr", "tddr+wavelet")
+
+
+def hrf_retention(stage, methods=RETENTION_METHODS, seeds=(0, 1)):
+    """Wie viel der EINGEMISCHTEN HRF-Amplitude ueberlebt die Bewegungskorrektur?
+
+    Das ist die Kernzahl fuer die Bewertung der Korrekturverfahren -- und sie braucht
+    keinen GLM-Fit: die Aktivierung ist bekannt, also laesst sich direkt vergleichen,
+    was nach der Kette davon ankommt. Gemessen am Ort des wahren Maximums, je Chromophor.
+
+    1.00 = unveraendert. Ohne Korrektur muss der Wert exakt 1 sein (der Weg
+    Konzentration -> OD -> Konzentration ist verlustfrei); jede Abweichung darunter ist
+    der Eingriff des Verfahrens in das gesuchte Signal.
+    """
+    recs = []
+    for m in methods:
+        for seed in seeds:
+            t = time.time()
+            P = pl.build(window_s=WINDOW_S, stage=stage, motion_method=m, seed=seed)
+            got = (P.conc_syn - P.conc).transpose(*P.activation.dims)
+            row = dict(motion_method=m, seed=seed)
+            for ch in ("HbO", "HbR"):
+                w = np.asarray(P.activation.sel(chromo=ch).values, float)
+                g = np.asarray(got.sel(chromo=ch).values, float)
+                j = np.unravel_index(np.argmax(np.abs(w)), w.shape)
+                row[ch] = float(g[j] / w[j])
+            recs.append(row)
+            print(f"  Erhalt {m:14s} seed={seed}: HbO {row['HbO']:.3f}  "
+                  f"HbR {row['HbR']:.3f}  ({time.time() - t:5.1f}s)", flush=True)
+    return pd.DataFrame(recs)
+
+
+def figure(df, ret):
+    """Zwei Bilder: was die Korrektur mit dem Signal macht, und was daraus folgt."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # links: Erhalt der eingemischten Amplitude
+    ax = axes[0]
+    g = ret.groupby("motion_method")[["HbO", "HbR"]].mean().reindex(
+        [m for m in RETENTION_METHODS if m in set(ret.motion_method)])
+    x = np.arange(len(g))
+    for k, ch in enumerate(["HbO", "HbR"]):
+        ax.bar(x + (k - 0.5) * 0.38, g[ch].values * 100, width=0.36, label=ch,
+               color="#c44e52" if k == 0 else "#4c72b0")
+    ax.axhline(100, ls="--", color="k", lw=1)
+    ax.set_xticks(x); ax.set_xticklabels(g.index, rotation=20, ha="right")
+    ax.set_ylabel("erhaltene HRF-Amplitude [%]")
+    ax.set_title("Was die Bewegungskorrektur mit der gesuchten Antwort macht\n"
+                 "(100 % = unangetastet; gemessen am Ort des wahren Maximums)")
+    ax.grid(axis="y", alpha=0.3); ax.legend()
+
+    # rechts: Folge fuer die Schaetzung (Bias, aus dem Vergleichslauf)
+    ax = axes[1]
+    order = [v for v in VARIANTS if v in set(df.variante)]
+    x = np.arange(len(order))
+    for k, ch in enumerate(["HbO", "HbR"]):
+        d = df[(df.chromo == ch) & (df.regressoren == "baseline")]
+        v = [float(d[d.variante == o].bias.iloc[0]) if len(d[d.variante == o]) else np.nan
+             for o in order]
+        ax.bar(x + (k - 0.5) * 0.38, v, width=0.36, label=ch,
+               color="#c44e52" if k == 0 else "#4c72b0")
+        truth = float(d.beta_true_med.iloc[0]) if len(d) else np.nan
+        ax.axhline(0, color="k", lw=1)
+    ax.set_xticks(x); ax.set_xticklabels(order, rotation=20, ha="right", fontsize=8)
+    ax.set_ylabel("Bias [µM]")
+    ax.set_title("Folge für die Schätzung: der Fehler\n"
+                 "(0 = unverzerrt; positiv = Überschätzung)")
+    ax.grid(axis="y", alpha=0.3); ax.legend()
+
+    fig.suptitle("Warum die Bewegungskorrektur eine eigene Vergleichsachse ist: "
+                 "TDDR dämpft die gesuchte Antwort selbst")
+    fig.tight_layout()
+    fig.savefig(Path(__file__).parent / "figures" / "11_preprocessing_effect.png", dpi=130)
+    plt.close(fig)
+
+
 def metrics(bhat, truth):
     """Bias/RMSE/Streuung von beta_hat gegen die per-Kanal-Wahrheit.
 
@@ -141,6 +221,16 @@ def main(seeds):
 
     df = pd.DataFrame(recs)
     df.to_csv(RESULTS / "preprocessing_comparison.csv", index=False)
+
+    # Der Erhalt der eingemischten Amplitude -- die Kernzahl fuer die Bewertung der
+    # Korrekturverfahren. Braucht keinen Fit, deshalb hier billig mitgemessen.
+    print("\nErhalt der eingemischten HRF-Amplitude:", flush=True)
+    ret = hrf_retention(stage, seeds=seeds[:2])
+    ret.to_csv(RESULTS / "hrf_retention.csv", index=False)
+    print(ret.groupby("motion_method")[["HbO", "HbR"]].mean()
+             .to_string(float_format=lambda v: f"{100 * v:.1f} %"))
+    figure(df, ret)
+    print(f"-> {RESULTS / 'hrf_retention.csv'} + figures/11_preprocessing_effect.png")
 
     print(f"\n[OK] {time.time() - t0:.0f}s -> {RESULTS / 'preprocessing_comparison.csv'}\n")
     for chromo in ("HbO", "HbR"):

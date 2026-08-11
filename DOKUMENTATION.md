@@ -332,7 +332,19 @@ Empfänger auf dem Kopf.*
 
 ![Kopf-Karte der relativen Abweichung](figures/05_scalp_rel_abweichung.png)
 *Abb. 5 – Relative Abweichung, nur in der aktiven Region gezeigt (graue Kanäle liegen
-außerhalb der Aktivierung). Oben: relativer Fehler der Amplitude; unten: ein Formfehler-Maß.*
+außerhalb der Aktivierung). Oben: relativer Fehler der Amplitude; unten: ein Formfehler-Maß.
+Die Farbskala ist fest auf ±100 % begrenzt; wie viele Kanäle darüber liegen, steht im Titel.*
+
+> **Warum hier 67 % stehen und im Sweep 21 %.** Beide Zahlen sind richtig, sie beziehen sich
+> auf verschiedene Kanäle. Der Sweep wertet die **20 am stärksten aktivierten** Kanäle aus –
+> dort ist die eingemischte Stärke 0,6 µM, und ein Fehler von 0,12 µM sind 21 %. Diese
+> Kopf-Karte zeigt **alle** Kanäle, in denen überhaupt etwas eingemischt wurde, also auch den
+> Rand des Flecks. Dort beträgt die Wahrheit nur noch 0,06 µM – derselbe absolute Fehler ist
+> dann 200 %. Der Median über alle diese Kanäle liegt bei 67 % (HbO) bzw. 39 % (HbR).
+>
+> Am Rand ist also nicht die Methode schlechter, sondern die Bezugsgröße kleiner. Für die
+> Bewertung der Driftfamilien zählt der Blob-Kern (Kapitel 5/6); diese Karte zeigt, **wo** im
+> Feld der Fehler sitzt – und das ist am Rand, wie erwartet.*
 
 ---
 
