@@ -34,17 +34,31 @@ Alle Skripte dann mit `conda run -n cedalion python <skript>` starten.
 
 ```
 fnirs-drift-glm/         (dieses Repository — als Git-Repo neben ../cedalion/ nutzbar)
-  pipeline.py          Kern: Ruhedaten laden, synthetische HRF (räumlicher Blob) einmischen,
-                       Designmatrix bauen. Wird von allen anderen Skripten genutzt.
+  preprocess.py        Vorverarbeitungskette (OD, Motion Correction, Kanalmasken, Pruning).
+  shortchannel.py      Long/Short-Split, Short-Regressoren, Global-Component-Subtraktion.
+  imagespace.py        Bildraum-Fundament: Kopfmodell ICBM152, Adot, C3/C4-Blob,
+                       Vorwärts-/Rückweg, Sichtbarkeitsmaske, Regularisierung.
+  pipeline.py          Kern der Simulation: Ruhedaten laden, synthetische HRF im BILDRAUM
+                       erzeugen, in den Kanalraum tragen, dort einmischen, Designmatrix.
   sweep.py             Systematischer Vergleich (Familie × Fenster × Konstellation × Seeds).
   sweep_report.py      Abbildungen + Markdown-Ergebnistabellen aus den Sweep-Ergebnissen.
+  imageglm.py          GLM-Ergebnis (HRF / Residuum / Residuum+HRF) zurück auf den Kortex,
+                       Gütemaße inkl. Lokalisationsfehler.
   flex_basis.py        Flexible HRF-Recovery-Basis -> Formfehler unabhängig von der Amplitude.
   detection.py         Signifikanz je Kanal + FDR-Korrektur -> Detektionsgüte vs. Ground Truth.
+  realdata.py          Stufe 2 (Khan, 25 Probanden, 48 Kanäle): Loader, Inventar, Stimuli.
+  realglm.py           Stufe 2, Kern: GLM je Familie, Gruppen-t-Test, Reproduzierbarkeit.
+  realglm_report.py    Abbildungen zu den Khan-Daten.
+  coregister.py        Landmarkenfreie Koregistrierung der NIRScout-Montage auf ICBM152.
+  multisubject.py      Stufe 3 (Cedalion, 5 Probanden, echte Short Channels): Loader.
+  msglm.py             Stufe 3, Kern: Familien × Systemik-Achse, Halbierungs-
+                       Reproduzierbarkeit, kontralaterale Kontrolle, Bildraum.
+  imagespace_report.py Abbildungen 19–23 (Bildraum und Multisubject).
   demo_recovery.py     End-to-end-Demo (Zahlen): ein Durchlauf, Fehlerkennzahlen.
   demo_figures.py      Diagnose-Abbildungen (Designmatrix, Ein-Kanal-Fit, Scalp-Karten).
-  tests/               Smoke-Tests (pytest).
+  tests/               Smoke-Tests (pytest): test_smoke.py, test_imagespace.py.
   results/             Ausgaben: sweep_summary.csv, sweep_per_channel.nc, tables.md,
-                       flex_basis_summary.csv, detection_summary.csv, *_progress.txt.
+                       imageglm_summary.csv, msglm_summary.csv, *_progress.txt.
   figures/             Erzeugte Abbildungen (PNG).
   environment.lock.txt Versions-Sperrdatei (Reproduzierbarkeit).
   README.md            Diese Datei (knappe technische Referenz).
@@ -76,6 +90,36 @@ $CR detection.py                  # ~60–75 min (Fits über ALLE Kanäle); resu
 
 # Auswertung / Abbildungen
 $CR sweep_report.py
+```
+
+### Bildraum (Kopfmodell ICBM152)
+
+```bash
+$CR imagespace.py                     # Selbsttest: Adot, C3/C4-Seeds, Vorwärtsmodell
+$CR imagespace.py check               # Regularisierung empirisch prüfen (rauschfrei)
+$CR pipeline.py leakage               # wie viel HRF landet in den kurzen Kanälen?
+$CR imageglm.py test                  # ~5 min;  voll: $CR imageglm.py  (mehrere Stunden)
+$CR imagespace_report.py              # Abb. 19-23
+```
+
+> **Speicher.** Die nn22-Sensitivitätsmatrix belegt im Arbeitsspeicher rund 300 MB, eine
+> `ImageRecon`-Instanz darauf ähnlich viel. Auf einer 8-GB-Maschine **immer nur einen**
+> Bildraum-Lauf gleichzeitig starten – zwei parallele Läufe wurden hier vom OOM-Killer
+> beendet. Die 28-Kanal-Montage der Stufe 3 ist dagegen unkritisch (~16 MB).
+
+### Stufe 3: Multisubject-Fingertapping (5 Probanden, echte Short Channels)
+
+```bash
+$CR multisubject.py                   # Inventar aller 5 Probanden
+$CR multisubject.py sub-01            # Inventar + Vorverarbeitung eines Probanden
+$CR msglm.py test                     # 2 Probanden, 2 Familien (Timing)
+$CR msglm.py                          # voll (Nachtlauf); Fortschritt: results/msglm_progress.txt
+```
+
+### Koregistrierung der Khan-Montage
+
+```bash
+$CR coregister.py                     # Registrierung + Blocker-Bericht (keine GPU nötig)
 ```
 
 ## Reproduzierbarkeit

@@ -58,6 +58,14 @@ RESULTS = Path(__file__).parent / "results"
 
 PROJECTIONS = ("hrf", "residual", "cleaned")
 
+#: Zusaetzliche "Projektion", die keine Schaetzung ist: die WAHRE Kanalkarte durch
+#: denselben Rueckweg. Sie ist die Obergrenze, die die Rekonstruktion ueberhaupt erreichen
+#: kann, und ohne sie ist keine der anderen Zahlen interpretierbar -- ein
+#: Lokalisationsfehler von 12 mm kann hervorragend oder schlecht sein, je nachdem, was
+#: rauschfrei herauskaeme. Auf nn22 sind es rauschfrei r = 0.80 und 11.9 mm
+#: (alpha_spatial = 0.001) bzw. r = 0.87 und 3.0 mm (alpha_spatial = 0.01).
+TRUTH_REF = "truth_ref"
+
 #: Fenster nach Stimulusbeginn, ueber das die Blockantwort gemittelt wird [s].
 #: Bei 10 s Blockdauer und einer Gamma-Basis mit sigma = 3 s liegt das Plateau hier.
 #: Die genaue Wahl ist unkritisch, weil Schaetzung UND Wahrheit dasselbe Fenster benutzen.
@@ -267,9 +275,17 @@ def image_metrics(img_hat: xr.DataArray, img_true: xr.DataArray, seeds: dict,
                 loc_err_mm=dmin, hit_frac=hit, n_vertices=int(keep.sum()))
 
 
+#: Seeds fuer den Volllauf. Zwei statt vieler, weil jeder Seed einen kompletten
+#: `pipeline.build` braucht -- und der kostet auf 567 Kanaelen rund 20 Minuten, weil die
+#: Wavelet-Korrektur zweimal laufen muss (reine Ruhedaten und augmentiert). Zwei Seeds
+#: zeigen, ob ein Befund an der Stimulus-Platzierung haengt; fuer eine belastbare
+#: Varianzschaetzung braeuchte es mehr, dafuer ist der Kanalraum-Sweep da.
+DEFAULT_SEEDS = (0, 1)
+
+
 def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 368.0,
         families=None, constellations=("baseline", "global"), noise_model="ar_irls",
-        seeds=(0,), out: str | None = None) -> pd.DataFrame:
+        seeds=(0, 1), out: str | None = None) -> pd.DataFrame:
     """Driftfamilien im Bildraum vergleichen. Schreibt eine CSV nach `results/`."""
     RESULTS.mkdir(exist_ok=True)
     if families is None:
@@ -281,6 +297,8 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
     head_ras = ims.head()
     recs, total = [], len(families) * len(constellations) * len(seeds)
     done = 0
+    path = RESULTS / (out or ("imageglm_summary_test.csv" if mode == "test"
+                              else "imageglm_summary.csv"))
 
     for seed in seeds:
         P = pl.build(dataset=dataset, window_s=window_s, seed=seed,
@@ -298,6 +316,30 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
         A = ims.adot(dataset).sel(channel=[str(c) for c in P.pre.od.channel.values])
         recon, c_meas = ims.recon_operator(A, P.pre.od)
         sens = ims.sensitivity_mask(A)
+
+        # Die Obergrenze: die WAHRE Kanalkarte durch denselben Rueckweg. Ohne diese Zeile
+        # ist keine der folgenden interpretierbar -- 12 mm Lokalisationsfehler koennen
+        # ausgezeichnet oder schlecht sein, je nachdem, was rauschfrei herauskommt. Haengt
+        # nicht von Familie oder Konstellation ab, also einmal je Build.
+        bt_ref = P.beta_true_map
+        if "trial_type" in bt_ref.dims:
+            bt_ref = bt_ref.max("trial_type")
+        od_ref = conc_map_to_od(bt_ref, P.geo3d, P.pre.od.wavelength, like=P.conc_syn)
+        img_ref = recon.reconstruct(od_ref, c_meas.sel(channel=od_ref.channel))
+        ref_metrics = {ch: image_metrics(img_ref, img_true, P.seeds, ch, head_ras, sens)
+                       for ch in ("HbO", "HbR")}
+        print(f"  Obergrenze (rauschfrei, seed={seed}): "
+              + "  ".join(f"{ch}: r={m['r']:+.3f} Ort={m['loc_err_mm']:.1f} mm"
+                          for ch, m in ref_metrics.items()), flush=True)
+        for ch, m in ref_metrics.items():
+            row = dict(dataset=dataset, seed=seed, family="-", constellation="-",
+                       noise_model="-", projection=TRUTH_REF, chromo=ch,
+                       window_s=window_s, n_channels=int(od_ref.sizes["channel"]),
+                       alpha_meas=recon.alpha_meas, alpha_spatial=recon.alpha_spatial,
+                       fit_s=0.0)
+            row.update({f"img_{k}": v for k, v in m.items()})
+            recs.append(row)
+        del od_ref, img_ref
 
         for fam in families:
             for con in constellations:
@@ -330,11 +372,12 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
                 (RESULTS / "imageglm_progress.txt").write_text(
                     f"imageglm: {done}/{total}\n"
                     f"verstrichen: {(time.time() - t00) / 60:.1f} min\n"
+                    f"ETA: {(time.time() - t00) / done * (total - done) / 60:.1f} min\n"
                     f"letzte Zelle: {fam} {con} seed={seed}\n")
+                # Nach jeder Zelle schreiben -- der Lauf dauert Stunden.
+                pd.DataFrame(recs).to_csv(path, index=False)
 
     df = pd.DataFrame(recs)
-    path = RESULTS / (out or ("imageglm_summary_test.csv" if mode == "test"
-                              else "imageglm_summary.csv"))
     df.to_csv(path, index=False)
     print(f"\n[OK] {len(df)} Zeilen in {(time.time() - t00) / 60:.1f} min -> {path}")
     return df

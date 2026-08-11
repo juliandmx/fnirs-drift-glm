@@ -260,24 +260,46 @@ mischen sie mit einer selbst gewählten Stärke β in die Ruhedaten. Weil die We
 normiert ist, **ist die eingemischte Stärke danach exakt gleich dem β**, das die Auswertung
 zurückliefern soll. So können wir „Geschätzt vs. Wahrheit" direkt vergleichen.
 
-Wichtige Feinheit (**räumlicher Blob**, seit Version 2): Eine echte Hirnaktivierung sitzt
-**lokal** an einer Stelle, nicht überall gleich. Deshalb mischen wir die Aktivität als
-**räumlichen Fleck** ein: Kanäle nahe dem Zentrum bekommen die volle Stärke (0,6 µM für
-HbO), weiter entfernte Kanäle immer weniger (glockenförmiger Abfall, „Gauß-Blob", Breite
-σ = 30 mm). Konkret sind ~24 Kanäle stark und ~95 überhaupt merklich aktiviert. HbR bekommt
-dieselbe Form, aber mit umgekehrtem Vorzeichen und 40 % der Höhe (die inverse HbO/HbR-Beziehung).
+Wichtige Feinheit (**räumlicher Blob**): Eine echte Hirnaktivierung sitzt **lokal** an
+einer Stelle, nicht überall gleich. Deshalb mischen wir die Aktivität als räumlichen Fleck
+ein – und **seit Version 5 dort, wo sie hingehört: auf dem Kortex.**
 
-*(Cedalion-Bezug: Idee und Bausteine aus Notebook `augmentation/62` und Tutorial `7`. Dort
-wird der Fleck zuerst auf der Hirnoberfläche erzeugt und dann über ein Kopfmodell auf die
-Kanäle projiziert. Wir definieren ihn stattdessen **direkt im Kanal-Raum** über die
-Kanalpositionen – das entspricht der Betreuungsvorgabe („künstliche Aktivierung nicht im
-Bildraum einfügen, sondern im Kanalraum, um realistischer zu sein"): eingemischt wird genau
-dort, wo Ruhedaten und Aktivierung zusammengeführt werden, ohne den Umweg über ein
-Vorwärtsmodell und dessen eigene Näherungen. Funktion `_spatial_beta` in `pipeline.py`.
-Ein Kopfmodell **läge durchaus vor** – `cedalion.data.get_precomputed_sensitivity(
-"nn22_resting", "colin27")` liefert die fertige Sensitivitätsmatrix für genau diesen
-Datensatz –, es wird für die Einmischung aber bewusst nicht verwendet. Für den Vergleich
-**im Bildraum** (Kapitel 9) kommt es dann zum Einsatz.)*
+> **Was sich in Version 5 geändert hat (und warum das mehr als eine Formalität ist).**
+> Bis Version 4 war der Fleck eine Glocke über den **Kanal-Mittelpunkten**: ein Kanal war
+> aktiv, wenn sein Mittelpunkt nah am Zentrum lag. Das war eine bewusste
+> Hilfskonstruktion ohne Kopfmodell – aber die räumliche Ausdehnung hatte damit nichts mit
+> Anatomie zu tun, und ein „Ort" im Gehirn kam darin überhaupt nicht vor.
+>
+> Jetzt entsteht der Fleck als **geodätische Gauß-Glocke auf der Hirnoberfläche** unter den
+> 10-20-Punkten **C3 und C4** (dem linken und rechten Handmotorkortex, σ = 2 cm), wird über
+> die **Sensitivitätsmatrix** in Kanal-Werte umgerechnet und **erst dann** zu den Ruhedaten
+> addiert. „Geodätisch" heißt: der Abstand wird **entlang der gefalteten Oberfläche**
+> gemessen, nicht durch das Gewebe hindurch – ein Fleck läuft also nicht über eine
+> Hirnfurche hinweg auf den gegenüberliegenden Wulst, obwohl der in Luftlinie nah wäre.
+>
+> Der Gewinn: Wie stark ein Kanal aktiviert ist, ergibt sich nun daraus, **wie stark sein
+> Lichtweg den Fleck überlappt** – genau wie bei echten Daten. Und weil die Wahrheit einen
+> Ort auf dem Kortex hat, lässt sich erstmals fragen, ob die Auswertung die Aktivierung am
+> **richtigen Ort** wiederfindet (Kapitel 6, Teil C).
+>
+> Damit lösen sich auch zwei scheinbar widersprüchliche Betreuungsvorgaben auf: **erzeugt**
+> wird im Bildraum (Vorgabe 5. August), **eingemischt** im Kanalraum (Vorgabe 11. Juli).
+> Beides gilt gleichzeitig. Die alte Variante bleibt als `activation_space="channel"`
+> erreichbar, damit die v4-Zahlen anschlussfähig bleiben.
+
+Die Höhe wird weiterhin auf **0,6 µM Peak für HbO im Kanalraum** kalibriert. Das ist
+nötig, weil Vertex- und Kanal-Konzentration verschiedene Größen sind: ein Kanal
+integriert über sein ganzes Sensitivitätsprofil. Gemessen entspricht ein Kanal-Peak von
+0,6 µM einem **Vertex-Peak von 5,3 µM** – beide Zahlen sind physiologisch plausibel, sie
+beziehen sich nur auf verschiedene Volumina. HbR bekommt dieselbe Form mit umgekehrtem
+Vorzeichen und 40 % der Höhe.
+
+*(Cedalion-Bezug: das Vorgehen folgt jetzt Tutorial `7` Schritt für Schritt –
+`build_spatial_activation` für den Fleck, `get_precomputed_sensitivity` für die
+Sensitivitätsmatrix, `image_to_channel_space` für den Weg in den Kanalraum. Kopfmodell ist
+durchgängig **ICBM152** (Betreuungsvorgabe 5. August, vorher Colin27): ICBM152 ist ein
+Mittelwert über 152 Gehirne und damit der übliche Bezugsraum für Gruppenaussagen, Colin27
+ein einzelnes Gehirn. Umgesetzt in `imagespace.py`, aufgerufen aus `pipeline.build`.)*
 
 ### Schritt 5 – Die Designmatrix (das „Rezept") zusammenstellen
 Jetzt legen wir die „Zutaten" fest, mit denen das GLM das Signal erklären soll:
@@ -655,9 +677,15 @@ Git-Repo neben `../cedalion/` nutzbar).
 
 | Datei | Aufgabe |
 |---|---|
-| `preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
-| `shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split bei 1,8 cm, die drei Regressor-Varianten. |
-| `pipeline.py` | **Kernstück der Simulation.** Mischt die künstliche HRF als räumlichen Blob in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
+| `preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning, datengetriebene Amplitudengrenzen. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
+| `shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split, die drei Regressor-Varianten – und die Alternative, den systemischen Anteil *abzuziehen* statt ihn im Modell zu lassen. |
+| `imagespace.py` | **Bildraum-Fundament:** Kopfmodell (ICBM152), Sensitivitätsmatrix, C3/C4-Blob, Vorwärts- und Rückweg, Sichtbarkeitsmaske, Regularisierung. Einzige Stelle, an der das Kopfmodell beschafft wird. |
+| `pipeline.py` | **Kernstück der Simulation.** Erzeugt die künstliche HRF als Blob auf dem Kortex, trägt sie über die Sensitivitätsmatrix in den Kanalraum, mischt sie dort in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
+| `imageglm.py` | **Bildraum-Auswertung:** GLM-Ergebnis (geschätzte HRF, Residuum, Residuum+HRF) zurück auf den Kortex, Gütemaße inkl. Lokalisationsfehler. |
+| `multisubject.py` | **Stufe 3:** Multisubject-Fingertapping (5 Probanden, echte Short Channels), Loader, Inventar, Vorverarbeitung. |
+| `msglm.py` | **Stufe 3, Kern:** GLM je Driftfamilie × Systemik-Stufe, Gruppen-t-Test, Halbierungs-Reproduzierbarkeit, kontralaterale Kontrolle im Kanal- und Bildraum. |
+| `coregister.py` | Landmarkenfreie Koregistrierung der NIRScout-Montage auf ICBM152 – und die Dokumentation, warum daraus hier keine Sensitivitätsmatrix wird. |
+| `imagespace_report.py` | Abbildungen 19–23 (HRF je Kanal, Kortexdarstellung, Driftfamilien im Bildraum, Lateralisierung, Systemik-Achse). |
 | `sweep.py` | Der **systematische Vergleich** über alle Kombinationen (Kapitel 5). Schreibt Ergebnisse + eine Live-Fortschrittsdatei. |
 | `compare_preprocessing.py` | Vergleicht die Vorverarbeitungs-Varianten gegen die β-Rückgewinnung (Grundlage für Ergebnis 4b). |
 | `realdata.py` | **Stufe 2:** Einlesen der realen SNIRF-Dateien, Inventar, Stimulus-Zuordnung (inkl. der abweichenden Kodierung bei S25), datengetriebene Amplitudengrenzen. |
