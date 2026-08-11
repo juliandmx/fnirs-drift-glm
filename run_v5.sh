@@ -36,8 +36,14 @@ STEPS="${*:-imageglm msglm report}"
 
 run_step() {                       # $1 = Name, $2 = Modul
     case " $STEPS " in *" $1 "*) ;; *) return 0 ;; esac
+    local log="results/logs/run_v5_$1.log"
+    # Erst loeschen, dann neu anlegen. Auf dem WSL-/drvfs-Mount kann ein Verzeichniseintrag
+    # nach einem `mv` in einem Zustand landen, in dem er sich nicht mehr zum Schreiben
+    # oeffnen laesst ("No such file or directory", `ls` zeigt `-????????`). Das hat hier
+    # einen msglm-Lauf sofort abgebrochen.
+    rm -f "$log"; : > "$log" || { echo "!! kann $log nicht schreiben" >&2; return 1; }
     echo "=== $(date +%H:%M) $1 ($2) ==="
-    $CR "$2" > "results/logs/run_v5_$1.log" 2>&1
+    $CR "$2" >> "$log" 2>&1
     echo "    exit=$?  $(date +%H:%M)"
 }
 
