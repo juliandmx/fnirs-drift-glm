@@ -117,48 +117,11 @@ def inventory(rec, name: str = "") -> dict:
     }
 
 
-#: Amplitudenbereich, der nichts verwirft -- fuer Datensaetze ohne dunkle Population.
-AMP_RANGE_OFF = (0.0, 1e12)
-
-
-def amp_range_from_data(rec, min_gap: float = 3.0, max_share: float = 0.1):
-    """Amplitudengrenzen (dunkel/gesaettigt) aus den Daten -- oder bewusst keine.
-
-    Die NinjaNIRS-Grenzen 1e-3..0.84 V aus der Betreuungsvorgabe gelten fuer nn22 und
-    sind NICHT uebertragbar: anderes Geraet, andere Aussteuerung, und dieser Datensatz
-    hat keine Dunkelmessung, aus der sich ein Rauschboden ableiten liesse.
-
-    Statt einer Perzentil-Faustregel -- die per Konstruktion IMMER etwas verwirft, egal
-    wie gut die Daten sind -- wird hier geprueft, ob es ueberhaupt eine ABGETRENNTE
-    dunkle Population gibt: die Kanalamplituden werden sortiert und die groesste
-    relative Luecke zwischen benachbarten Werten im unteren Bereich gesucht. Nur wenn
-    diese Luecke mindestens `min_gap` betraegt und hoechstens `max_share` der Messungen
-    darunter liegen, wird dort geschnitten.
-
-    Auf DIESEM Datensatz greift das bewusst NICHT, und das ist das Ergebnis, nicht ein
-    Versagen: die dunkelste Messung liegt beim 0.116-fachen des Medians, die groesste
-    Luecke betraegt Faktor 1.11 (ueber 6624 Messungen aus 69 Dateien) -- die Verteilung
-    ist kontinuierlich, es gibt keine zweite Population. Passend dazu steht in
-    "Experimental notes.txt": "Masked channels removed" -- die Autoren haben schlechte
-    Kanaele bereits entfernt. Zum Vergleich nn22: dunkelste Messung beim 0.0001-fachen
-    des Medians, klare Luecke zwischen 50x und 105x Rauschboden, 46 Kanaele verworfen.
-
-    Rueckgabe (lo, hi); `AMP_RANGE_OFF`, wenn keine Population gefunden wird.
-    """
-    key = "amp" if "amp" in rec.timeseries else list(rec.timeseries.keys())[0]
-    a = rec[key].pint.dequantify() if hasattr(rec[key], "pint") else rec[key]
-    mp = np.asarray(a.mean("time").values, dtype=float).ravel()
-    mp = np.sort(mp[np.isfinite(mp) & (mp > 0)])
-    if mp.size < 10:
-        return AMP_RANGE_OFF
-    lower = mp[: max(int(mp.size * max_share), 1) + 1]
-    if lower.size < 2:
-        return AMP_RANGE_OFF
-    ratios = lower[1:] / lower[:-1]
-    i = int(np.argmax(ratios))
-    if ratios[i] < min_gap:
-        return AMP_RANGE_OFF                     # keine abgetrennte dunkle Population
-    return float(np.sqrt(lower[i] * lower[i + 1])), 1e12    # Schnitt in die Luecke
+# Die datengetriebene Amplitudengrenze liegt in `preprocess.py`: sie wird von BEIDEN
+# Realdatensaetzen gebraucht (Khan und Multisubject-Fingertapping), und die
+# Vorverarbeitungs-Parameter stehen dort ohnehin an genau einer Stelle.
+AMP_RANGE_OFF = prep.AMP_RANGE_OFF
+amp_range_from_data = prep.amp_range_from_data
 
 
 def inventory_report(files=None):

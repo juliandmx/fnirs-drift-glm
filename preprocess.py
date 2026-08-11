@@ -281,6 +281,50 @@ def band_power_ratio(od_before: xr.DataArray, od_after: xr.DataArray) -> dict:
     return out
 
 
+#: Amplitudenbereich, der nichts verwirft -- fuer Datensaetze ohne dunkle Population.
+AMP_RANGE_OFF = (0.0, 1e12)
+
+
+def amp_range_from_data(rec, min_gap: float = 3.0, max_share: float = 0.1):
+    """Amplitudengrenzen (dunkel/gesaettigt) aus den Daten -- oder bewusst keine.
+
+    Die NinjaNIRS-Grenzen 1e-3..0.84 V aus der Betreuungsvorgabe gelten fuer nn22 und
+    sind NICHT uebertragbar: anderes Geraet, andere Aussteuerung, und andere Datensaetze
+    haben keine Dunkelmessung, aus der sich ein Rauschboden ableiten liesse.
+
+    Statt einer Perzentil-Faustregel -- die per Konstruktion IMMER etwas verwirft, egal
+    wie gut die Daten sind -- wird hier geprueft, ob es ueberhaupt eine ABGETRENNTE
+    dunkle Population gibt: die Kanalamplituden werden sortiert und die groesste
+    relative Luecke zwischen benachbarten Werten im unteren Bereich gesucht. Nur wenn
+    diese Luecke mindestens `min_gap` betraegt und hoechstens `max_share` der Messungen
+    darunter liegen, wird dort geschnitten.
+
+    Auf BEIDEN Realdatensaetzen greift das bewusst NICHT, und das ist das Ergebnis, nicht
+    ein Versagen. Khan (NIRScout): dunkelste Messung beim 0.116-fachen des Medians,
+    groesste Luecke Faktor 1.11 ueber 6624 Messungen -- passend dazu steht in
+    "Experimental notes.txt" "Masked channels removed". Multisubject-Fingertapping:
+    dunkelste Messung beim 0.21-fachen des Medians, ebenfalls lueckenlos. Zum Vergleich
+    nn22: dunkelste Messung beim 0.0001-fachen des Medians, klare Luecke zwischen 50x und
+    105x Rauschboden, 46 Kanaele verworfen.
+
+    Rueckgabe (lo, hi); `AMP_RANGE_OFF`, wenn keine Population gefunden wird.
+    """
+    key = "amp" if "amp" in rec.timeseries else list(rec.timeseries.keys())[0]
+    a = rec[key].pint.dequantify() if hasattr(rec[key], "pint") else rec[key]
+    mp = np.asarray(a.mean("time").values, dtype=float).ravel()
+    mp = np.sort(mp[np.isfinite(mp) & (mp > 0)])
+    if mp.size < 10:
+        return AMP_RANGE_OFF
+    lower = mp[: max(int(mp.size * max_share), 1) + 1]
+    if lower.size < 2:
+        return AMP_RANGE_OFF
+    ratios = lower[1:] / lower[:-1]
+    i = int(np.argmax(ratios))
+    if ratios[i] < min_gap:
+        return AMP_RANGE_OFF                     # keine abgetrennte dunkle Population
+    return float(np.sqrt(lower[i] * lower[i + 1])), 1e12    # Schnitt in die Luecke
+
+
 def to_conc(od: xr.DataArray, geo3d, dpf: float = DEFAULT_DPF) -> xr.DataArray:
     """Optical Density -> Haemoglobinkonzentration [µM], dequantifiziert."""
     dpf_da = xr.DataArray(
