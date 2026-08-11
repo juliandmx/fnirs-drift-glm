@@ -7,3 +7,11 @@ pysnirf2.log
 # Persoenliche Arbeitsunterlagen -- bewusst NICHT versioniert
 BESPRECHUNG.md
 UMSETZUNGSPLAN.md
+
+# Zwischenstaende der Laeufe: Testausgaben, Live-Fortschritt, Nachtlauf-Logs.
+# Nicht versioniert, weil sie sich bei jedem Lauf aendern und keine Ergebnisse sind.
+# (results/sweep_progress.txt ist historisch bereits versioniert und bleibt es.)
+results/*_summary_test.csv
+results/*_progress.txt
+results/run_v5*.log
+results/.run_v5.lock
