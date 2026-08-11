@@ -197,12 +197,14 @@ def build(
             spatial_scale_mm=spatial_scale_mm, hbr_scale=hbr_ratio,
             target_uM=beta_true_hbo, separate_trial_types=separate_trial_types, dpf=dpf)
         beta_true_map, beta_true_img, seeds = gt["beta_true_map"], gt["img"], gt["seeds"]
+        sees_cortex = gt["sees_cortex"]
         trial_types = ([str(t) for t in beta_true_map.trial_type.values]
                        if "trial_type" in beta_true_map.dims else ["Stim"])
     elif activation_space == "channel":
         beta_true_map = _spatial_beta(conc, geo3d, beta_true_hbo, hbr_ratio,
                                       blob_sigma_mm)
         beta_true_img, seeds, trial_types = None, None, ["Stim"]
+        sees_cortex = np.ones(conc.sizes["channel"], dtype=bool)
     else:
         raise ValueError(f"activation_space muss 'image' oder 'channel' sein, "
                          f"nicht {activation_space!r}")
@@ -262,7 +264,11 @@ def build(
     _bt = beta_true_map
     if "trial_type" in _bt.dims:
         _bt = _bt.max("trial_type")
-    _j = int(np.nanargmax(np.abs(np.asarray(_bt.sel(chromo="HbO").values, float))))
+    # Nur Kanaele, die den Kortex sehen, duerfen die Peak-Referenz stellen: die
+    # "Konzentration" eines kurzen Kanals ist wegen des kurzen Nenners in od2conc keine
+    # Amplitude (Begruendung in imagespace.calibrate_to_channel_peak).
+    _v = np.abs(np.asarray(_bt.sel(chromo="HbO").values, float))
+    _j = int(np.nanargmax(np.where(sees_cortex, _v, -np.inf)))
     beta_true = {str(c): float(_bt.sel(chromo=c).isel(channel=_j)) for c in chromo}
 
     betas_true = xr.DataArray(
@@ -343,6 +349,15 @@ def _leakage_report(dataset: str = "nn22_resting", window_s: float = 180.0):
           f"{int(is_short.sum())} davon kurz (< {sc.SHORT_THRESHOLD})")
     print(f"Abstaende: kurz {d[is_short].min():.1f}-{d[is_short].max():.1f} mm, "
           f"lang {d[~is_short].min():.1f}-{d[~is_short].max():.1f} mm")
+
+    # Die scharfe Fassung der Limitation aus shortchannel.py: sehen die "kurzen" Kanaele
+    # den Kortex? Auf einer echten Short-Separation-Montage (7-8 mm) ist die Antwort nein,
+    # auf nn22 (15,5-18 mm) ja -- und dann ist der Regressor kein reiner Systemik-Proxy.
+    Ab = ims.brain_adot(ims.adot(dataset), channels=[str(c) for c in bt.channel.values])
+    sees = ims.cortex_channels(Ab)
+    print(f"Sehen den Kortex (>= {100 * ims.CORTEX_CHANNEL_FRAC:.0f} % der maximalen "
+          f"Hirnsensitivitaet): {int(sees.sum())} Kanaele, davon "
+          f"{int((sees & is_short).sum())} von {int(is_short.sum())} kurzen")
     print("\nWie viel der eingemischten HRF steckt in welchem systemischen Regressor?")
     print("(Ein Regressor, der einen Teil des Gesuchten enthaelt, rechnet ihn weg.)")
     for c in ("HbO", "HbR"):

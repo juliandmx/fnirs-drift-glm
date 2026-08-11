@@ -57,6 +57,38 @@ HEAD_MODEL = "icbm152"
 #                 (`dot.estimate_alpha_meas`, s. `recon_operator`).
 #   alpha_spatial 0.001 -- steuert die effektive Tiefe: kleinere Werte unterdruecken
 #                 Aktivitaet, die auf der Kopfhaut rekonstruiert wuerde, staerker.
+#
+# GEMESSEN, rauschfrei ueber `recon_check` auf der 28-Kanal-Montage (bekanntes Muster
+# hinein, Guete auf den sichtbaren Vertices heraus):
+#
+#   alpha_spatial   alpha_meas    r     Peak/wahr   Ort [mm]
+#   None            0.001      +0.578     1.51         8.6
+#   None            8.86 (est) +0.494     1.36         8.6
+#   0.001           0.001      +0.505     2.02        14.6     <- Vorgabe
+#   0.001           8.86 (est) +0.450     1.82        14.6     <- Vorgabe + est
+#   0.01            0.001      +0.650     0.97        13.2
+#   0.01            8.86 (est) +0.590     0.89        14.0
+#
+# Drei Dinge stehen darin, und keines davon ist trivial:
+#
+#   1. `alpha_spatial` dominiert. Der Lokalisationsfehler haengt praktisch nur daran
+#      (8.6 mm gegen ~14 mm), `alpha_meas` verschiebt ihn kaum.
+#   2. **Die Vorgabe 0.001 ist von den drei getesteten Werten der schlechteste**: kleinste
+#      Korrelation UND eine um Faktor 2 zu grosse Amplitude. Der Grund ist die Bauart der
+#      Tiefenkorrektur: R_j = 1/(sum_i A_ij^2 + alpha_spatial * max), also teilt ein
+#      kleiner Wert durch eine kleine Vertexsensitivitaet und blaest schwach gesehene
+#      Vertices auf. Mit `brain_only=True` gibt es keine Kopfhaut, die davon profitieren
+#      wuerde -- verstaerkt werden nur tiefe Hirnvertices, die die Sonde kaum sieht.
+#   3. Cedalions eigener Optimierungs-Preset (`REG_PAPER_MUA_SBF`) benutzt 1e-2, also den
+#      hier besten Wert.
+#
+# Die Vorgabe bleibt trotzdem der DEFAULT -- so wie bei TDDR wird eine Betreuungsvorgabe
+# nicht stillschweigend uebersteuert, sondern befolgt, gemessen und zur Entscheidung
+# gestellt (siehe BESPRECHUNG.md). Der Parameter ist in `recon_operator` durchgereicht,
+# der Gegenlauf kostet also nur ein Argument.
+#
+# Auf der 520-Kanal-Montage von nn22 ist alles deutlich besser (alpha_spatial=None:
+# r = 0.76..0.82, Ort 3.6 mm) -- die Zahlen oben sind die einer bewusst duennen Montage.
 ALPHA_SPATIAL = 0.001
 
 #: K in `alpha_meas = K / median(C_meas)`. Cedalion-Default; laut Docstring lag K in
@@ -182,8 +214,30 @@ def to_channel_space(Adot_brain: xr.DataArray, img: xr.DataArray,
     return dot.forward_model.image_to_channel_space(Adot_brain, img, spectrum=spectrum)
 
 
+#: Anteil der maximalen Hirnsensitivitaet, ab dem ein Kanal als "sieht den Kortex" gilt.
+CORTEX_CHANNEL_FRAC = 0.10
+
+
+def cortex_channels(Adot_brain: xr.DataArray, frac: float = CORTEX_CHANNEL_FRAC
+                    ) -> np.ndarray:
+    """Boolesche Maske ueber die Kanaele: welche sehen den Kortex ueberhaupt?
+
+    Kriterium ist die aufsummierte Hirnsensitivitaet je Kanal, bezogen auf den besten
+    Kanal -- nicht der Quell-Detektor-Abstand. Das ist montageunabhaengig und braucht
+    keine Schwelle in Millimetern.
+
+    Auf der 28-Kanal-Montage trennt das scharf: die langen Kanaele liegen bei 14..83, die
+    acht 7-mm-Kanaele bei 0.08..0.58 -- gut zwei Groessenordnungen darunter.
+    """
+    A = np.abs(np.asarray(Adot_brain.values, dtype=float))
+    ax = tuple(i for i, d in enumerate(Adot_brain.dims) if d != "channel")
+    s = A.sum(axis=ax)
+    return s >= frac * s.max()
+
+
 def calibrate_to_channel_peak(od_channel: xr.DataArray, geo3d, target_uM: float = 1.0,
-                              dpf: float = 6.0, spectrum: str = "prahl") -> float:
+                              dpf: float = 6.0, spectrum: str = "prahl",
+                              channel_mask: np.ndarray | None = None) -> float:
     """Faktor, der das Kanalraum-Muster auf `target_uM` Peak-Konzentration bringt.
 
     WARUM DIESER SCHRITT NOETIG IST: `spatial_activation` setzt den Peak *je Vertex*.
@@ -196,6 +250,16 @@ def calibrate_to_channel_peak(od_channel: xr.DataArray, geo3d, target_uM: float 
     Erst dadurch ist die eingemischte Amplitude wieder in µM interpretierbar und mit den
     Kanalraum-Zahlen aus Kapitel 6 sowie mit physiologischen Erwartungswerten
     (~0.1..1 µM) vergleichbar.
+
+    `channel_mask` schliesst Kanaele von der Peak-Suche aus, und das ist keine Feinheit.
+    **Die "Konzentration" eines kurzen Kanals ist keine Amplitude.** `od2conc` teilt durch
+    Kanalabstand x DPF; bei 7 mm gegen 37 mm ist dieser Nenner fuenfmal kleiner, dieselbe
+    OD wird also zu einer fuenfmal groesseren Konzentration. Auf der 28-Kanal-Montage
+    fuehrte das dazu, dass das GLOBALE Maximum der Kanalraum-Wahrheit auf einem 7,3-mm-Kanal
+    lag (0,600 µM) -- vor dem besten langen Kanal (0,231 µM), obwohl dessen
+    Hirnsensitivitaet 230-mal groesser ist. Ohne die Maske wuerde die Kalibrierung an
+    diesem Artefakt verankert, und alle langen Kanaele bekaemen nur einen Bruchteil der
+    Zielamplitude. Sinnvoll ist `cortex_channels(Adot_brain)`.
     """
     ts = od_channel
     if "time" not in ts.dims:                        # od2conc braucht eine Zeitachse
@@ -204,7 +268,10 @@ def calibrate_to_channel_peak(od_channel: xr.DataArray, geo3d, target_uM: float 
     dpf_da = xr.DataArray([dpf] * ts.sizes["wavelength"], dims="wavelength",
                           coords={"wavelength": ts.wavelength})
     conc = cedalion.nirs.cw.od2conc(ts, geo3d, dpf_da, spectrum=spectrum)
-    peak = float(np.abs(conc.pint.to("uM").pint.dequantify()).max())
+    conc = np.abs(conc.pint.to("uM").pint.dequantify())
+    if channel_mask is not None:
+        conc = conc.isel(channel=np.flatnonzero(np.asarray(channel_mask, bool)))
+    peak = float(conc.max())
     if not np.isfinite(peak) or peak == 0.0:
         raise ValueError("Kanalraum-Muster ist leer -- passt die Adot zur Montage?")
     return target_uM / peak
@@ -274,7 +341,11 @@ def ground_truth(
     Ab = brain_adot(adot(dataset, model), channels=ch)
     chan_od = to_channel_space(Ab, img)
 
-    factor = calibrate_to_channel_peak(chan_od, geo3d, target_uM=target_uM, dpf=dpf)
+    # Nur Kanaele, die den Kortex sehen, duerfen die Amplitude festlegen -- siehe
+    # `calibrate_to_channel_peak`.
+    sees = cortex_channels(Ab)
+    factor = calibrate_to_channel_peak(chan_od, geo3d, target_uM=target_uM, dpf=dpf,
+                                       channel_mask=sees)
     img, chan_od = img * factor, chan_od * factor
 
     # Kanalraum-Wahrheit in Konzentration: exakt der Peak, den das GLM schaetzen soll.
@@ -286,7 +357,8 @@ def ground_truth(
     beta = beta.isel(time=0, drop=True).pint.to("uM").pint.dequantify()
 
     out = dict(beta_true_map=beta, img=img.pint.to("uM"), chan_od=chan_od,
-               seeds={lab: seed_vertex(hd, lab) for lab in labels}, factor=factor)
+               seeds={lab: seed_vertex(hd, lab) for lab in labels}, factor=factor,
+               sees_cortex=sees)
     _GT_MEMO[key] = out
     return out
 
@@ -376,6 +448,123 @@ def to_parcels(img: xr.DataArray, parcels: list[str] | None = None) -> xr.DataAr
     return out
 
 
+#: Sichtbarkeitsschwelle fuer Vertices, als Zehnerlogarithmus der auf das Maximum
+#: normierten Gesamtsensitivitaet. -2 = ein Prozent des besten Vertex. Cedalions
+#: Sensitivitaets-Plots benutzen dieselbe Skala (`low_th=-3` in NB 50b).
+SENS_LOG_THRESHOLD = -2.0
+
+
+def sensitivity_mask(Adot: xr.DataArray, log_threshold: float = SENS_LOG_THRESHOLD
+                     ) -> np.ndarray:
+    """Boolesche Maske ueber die Hirnvertices: was die Montage ueberhaupt sieht.
+
+    WARUM DAS FUER DIE BEWERTUNG UNVERZICHTBAR IST. Die Rekonstruktion gibt fuer JEDEN
+    Vertex einen Wert zurueck, auch fuer solche, zu denen kein einziges Photon gelangt
+    ist. Dort ist das Ergebnis kein Messwert, sondern reine Regularisierung: die
+    Tiefenkorrektur (`alpha_spatial`) teilt durch die Vertexsensitivitaet und blaest
+    unsichtbare Vertices dadurch systematisch auf. Nimmt man sie in eine Korrelation oder
+    einen Lokalisationsfehler mit hinein, misst man das Verhalten des Regularisierers und
+    nicht die Guete der Schaetzung -- der Fehler landet dann zuverlassig irgendwo tief im
+    Gehirn, wo nie etwas gemessen wurde.
+
+    Notebook 50b loest dasselbe Problem eine Stufe grober, ueber `parcel_sensitivity`:
+    Parzellen, die die Sonde nicht sieht, gehen nicht in die Auswertung ein. Diese Maske
+    ist die Vertex-Variante davon und laesst sich zusaetzlich mit `to_parcels` kombinieren.
+    """
+    A = np.abs(np.asarray(brain_adot(Adot).values, dtype=float))
+    ax = tuple(i for i, d in enumerate(brain_adot(Adot).dims) if d != "vertex")
+    s = A.sum(axis=ax)
+    s = s / s.max()
+    with np.errstate(divide="ignore"):
+        return np.log10(s) > log_threshold
+
+
+def reference_od(dataset: str):
+    """Eine vorverarbeitete OD-Zeitreihe des Datensatzes -- fuer `c_meas` und Diagnosen.
+
+    Ohne Motion Correction, weil hier nur die Rauschgroesse je Kanal gebraucht wird und
+    die Korrektur sie veraendern wuerde.
+    """
+    import preprocess as prep
+
+    if dataset == "nn22_resting":
+        import cedalion.data as cdata
+        return prep.finish(prep.to_od_stage(cdata.get_nn22_resting_state()),
+                           motion_method="none")
+    if dataset == "multisubject_fingertapping":
+        import multisubject as ms
+        return ms.preprocess_recording(ms.load(ms.paths()[0]),
+                                       motion_method="none")[0]
+    raise ValueError(f"reference_od kennt den Datensatz {dataset!r} nicht")
+
+
+def recon_check(dataset: str = "multisubject_fingertapping", *,
+                alpha_meas_grid=("est", 0.001, 1.0),
+                alpha_spatial_grid=(None, 0.001, 0.01),
+                target_uM: float = 0.6) -> "list[dict]":
+    """Rauschfreie Kontrolle des Kreises Bildraum -> Kanalraum -> Bildraum.
+
+    Das eingemischte Muster ist bekannt, also laesst sich die Rekonstruktion OHNE
+    Ruhedaten und OHNE GLM pruefen: was kommt zurueck, wenn man exakt das Wahre
+    hineingibt? Was hier nicht funktioniert, kann spaeter nicht an der Driftfamilie
+    liegen. Zugleich belegt der Lauf die Wahl der Regularisierungsparameter empirisch,
+    statt sie nur zu uebernehmen.
+
+    Gemessen wird ausschliesslich auf den sichtbaren Vertices (`sensitivity_mask`).
+
+    Default ist die 28-Kanal-Montage, NICHT nn22: dort ist eine `ImageRecon`-Instanz
+    ~16 MB statt ~300 MB, und die Aussage ueber die Regularisierung ist dieselbe. Auf
+    dieser Maschine (7,8 GB) laesst nn22 nichts anderes daneben laufen -- ein voller
+    Parameterraster darauf hat 40 Minuten CPU gebraucht und zwei parallele Laeufe
+    OOM-killen lassen.
+    """
+    pre = reference_od(dataset)
+    od = pre.od
+    chans = [str(c) for c in od.channel.values]
+
+    gt = ground_truth(dataset, chans, pre.geo3d, target_uM=target_uM)
+    A = adot(dataset).sel(channel=chans)
+    mask = sensitivity_mask(A)
+    xyz = vertex_coords_mm()
+    truth = np.asarray(gt["img"].sel(chromo="HbO").pint.dequantify().values, float)
+    c_meas = c_meas_of(od)
+
+    print(f"{dataset}: {len(chans)} Kanaele, {int(mask.sum())} von {mask.size} "
+          f"Vertices sichtbar (> {SENS_LOG_THRESHOLD} log10)")
+    print(f"Wahrheit: Peak {np.abs(truth).max():.3f} µM im Bildraum, "
+          f"{target_uM:.2f} µM im Kanalraum\n")
+    print(f"{'a_spatial':>10s} {'a_meas':>10s} {'r':>7s} {'peak_hat':>9s} "
+          f"{'peak/wahr':>10s} {'Ort [mm]':>9s}")
+
+    rows = []
+    for aspat in alpha_spatial_grid:
+        for am in alpha_meas_grid:
+            if am == "est":
+                r_, _ = recon_operator(A, od, alpha_spatial=aspat)
+                a_used = r_.alpha_meas
+            else:
+                a_used = float(am)
+                r_ = dot.ImageRecon(A, recon_mode="mua2conc", brain_only=True,
+                                    alpha_meas=a_used, alpha_spatial=aspat,
+                                    apply_c_meas=True, spatial_basis_functions=None)
+            img = r_.reconstruct(gt["chan_od"], c_meas)
+            h = np.asarray(img.sel(chromo="HbO").pint.dequantify().values, float)
+            hm, tm = h[mask], truth[mask]
+            r = (float(np.corrcoef(hm, tm)[0, 1])
+                 if hm.std() > 0 and tm.std() > 0 else np.nan)
+            idx = np.flatnonzero(mask)
+            j = idx[int(np.nanargmax(np.abs(hm)))]
+            loc = min(float(np.linalg.norm(xyz[j] - xyz[s]))
+                      for s in gt["seeds"].values())
+            rows.append(dict(alpha_spatial=aspat, alpha_meas=a_used, r=r,
+                             peak=float(np.abs(hm).max()), loc_err_mm=loc))
+            print(f"{str(aspat):>10s} {a_used:10.4g} {r:+7.3f} "
+                  f"{np.abs(hm).max():9.3f} {np.abs(hm).max() / np.abs(tm).max():10.3f} "
+                  f"{loc:9.1f}", flush=True)
+            del r_, img
+    return rows
+
+
 def vertex_coords_mm(head_ras=None) -> np.ndarray:
     """Hirn-Vertexkoordinaten in mm, (n_vertex, 3) -- fuer Lokalisationsfehler."""
     head_ras = head_ras if head_ras is not None else head()
@@ -410,6 +599,10 @@ def localisation_error_mm(img: xr.DataArray, seed: int, head_ras=None,
 if __name__ == "__main__":
     import sys
     import time
+
+    if len(sys.argv) > 1 and sys.argv[1] == "check":
+        recon_check(*sys.argv[2:3])       # Default: die guenstige 28-Kanal-Montage
+        sys.exit(0)
 
     dataset = sys.argv[1] if len(sys.argv) > 1 else "nn22_resting"
 

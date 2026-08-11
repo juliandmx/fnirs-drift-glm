@@ -100,6 +100,58 @@ def short_dm(variant: str, ts_long: xr.DataArray, ts_short: xr.DataArray, geo3d)
                      f"(erlaubt: {VARIANTS})")
 
 
+GLOBAL_COMP_MODES = ("none", "dm", "subtract")
+
+
+def subtract_global_component(ts_long, ts_short, stim_df, basis, *,
+                              variant: str = "short_avg", geo3d=None,
+                              noise_model: str = "ols"):
+    """Den vom Short-Regressor erklaerten Anteil ABZIEHEN, statt ihn im Modell zu lassen.
+
+    Das ist die Variante aus Notebook 50b (`subtract_global_component`) und der Punkt
+    "global components subtraction anschauen" aus den Gespraechsnotizen vom 2026-08-05.
+    Sie tut etwas anderes als der Regressor in der Designmatrix, auch wenn beides
+    denselben Regressor benutzt:
+
+      `dm`        Der Short-Regressor bleibt im Modell. Der HRF-Koeffizient wird GEMEINSAM
+                  mit ihm geschaetzt, ist also gegen ihn orthogonalisiert. Unter dem
+                  Modell ist er damit unverzerrt, auch wenn Systemik und Aufgabe
+                  korrelieren.
+
+      `subtract`  Der Anteil des Short-Regressors wird geschaetzt und abgezogen, danach
+                  wird auf der bereinigten Zeitreihe weitergearbeitet. Der Haken: der
+                  Anteil wird auf Daten geschaetzt, die die HRF ENTHALTEN. Systemische
+                  Antworten sind aufgabengekoppelt (Herzrate und Blutdruck reagieren auf
+                  die Aufgabe), also korreliert der Short-Regressor mit der HRF -- und der
+                  Abzug nimmt einen Teil der gesuchten Antwort mit. Ein spaeterer Fit kann
+                  ihn nicht zurueckholen, weil er aus den Daten verschwunden ist.
+
+    Es ist genau das Muster, das in Sweep v1 der Global-Mean-Regressor zeigte (siehe
+    `DOKUMENTATION.md`, v1 -> v2) -- nur an einer anderen Stelle der Kette. Deshalb wird
+    hier nicht eine der beiden Varianten gewaehlt, sondern beide als Achse gefuehrt und
+    der Unterschied beziffert.
+
+    Der Vorteil von `subtract` ist praktisch, nicht statistisch: die bereinigte Zeitreihe
+    laesst sich anschliessend beliebig weiterverarbeiten -- blockmitteln, epochieren, in
+    den Bildraum bringen -- ohne dass jeder dieser Schritte ein GLM braucht. Genau deshalb
+    benutzt Notebook 50b sie.
+
+    Rueckgabe: `ts_long` minus dem erklaerten systemischen Anteil.
+    """
+    import cedalion.models.glm as glm
+
+    dm = (glm.design_matrix.hrf_regressors(ts_long, stim_df, basis)
+          & short_dm(variant, ts_long, ts_short, geo3d))
+    res = glm.fit(ts_long, dm, noise_model=noise_model)
+    comp = glm.predict(ts_long, res.sm.params.sel(regressor=["short"]), dm)
+    comp = comp.transpose(*ts_long.dims)
+    # Einheiten angleichen: to_conc liefert dequantifiziert, 50b arbeitet quantifiziert.
+    u = getattr(ts_long, "pint", None)
+    if u is not None and ts_long.pint.units is not None and comp.pint.units is None:
+        comp = comp.pint.quantify(ts_long.pint.units)
+    return ts_long - comp
+
+
 if __name__ == "__main__":
     import cedalion.data
 
