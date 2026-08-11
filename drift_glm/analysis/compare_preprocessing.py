@@ -28,8 +28,8 @@ Verglichen wird auf IDENTISCHEN Kanaelen (Schnittmenge aller Varianten), sonst w
 Unterschied teils nur eine andere Kanalauswahl.
 
 Aufruf:
-    conda run -n cedalion python compare_preprocessing.py        # voll (~6 min)
-    conda run -n cedalion python compare_preprocessing.py test   # 1 Seed, schneller
+    conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing        # voll (~6 min)
+    conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing test   # 1 Seed, schneller
 """
 from __future__ import annotations
 
@@ -43,11 +43,12 @@ import pandas as pd
 import cedalion.data
 import cedalion.models.glm as glm
 
-import pipeline as pl
-import preprocess as prep
-from sweep import motion_dm
+from drift_glm.core import pipeline as pl
+from drift_glm.core import preprocess as prep
+from drift_glm.analysis.sweep import motion_dm
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
+RESULTS = paths.RESULTS
 HRF_REG = "HRF Stim"
 WINDOW_S = 180.0
 N_CHANNELS = 20
@@ -140,7 +141,7 @@ def figure(df, ret):
     fig.suptitle("Warum die Bewegungskorrektur eine eigene Vergleichsachse ist: "
                  "TDDR dämpft die gesuchte Antwort selbst")
     fig.tight_layout()
-    fig.savefig(Path(__file__).parent / "figures" / "11_preprocessing_effect.png", dpi=130)
+    fig.savefig(paths.FIGURES / "11_preprocessing_effect.png", dpi=130)
     plt.close(fig)
 
 
@@ -157,7 +158,7 @@ def metrics(bhat, truth):
 
 
 def main(seeds):
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     t0 = time.time()
     rec = cedalion.data.get_nn22_resting_state()
 

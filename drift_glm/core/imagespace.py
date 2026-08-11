@@ -29,7 +29,7 @@ Kopfmodelle ICBM152 - nicht Colin"). Der Unterschied ist nicht kosmetisch: Colin
 ein einzelnes, hochaufgeloest gemitteltes Gehirn, ICBM152 ein nichtlinearer Mittelwert
 ueber 152 Probanden und damit der uebliche Bezugsraum fuer Gruppenaussagen.
 
-Aufruf:  conda run -n cedalion python imagespace.py [datensatz]
+Aufruf:  conda run -n cedalion python -m drift_glm.core.imagespace [datensatz]
 """
 
 from __future__ import annotations
@@ -485,14 +485,14 @@ def reference_od(dataset: str):
     Ohne Motion Correction, weil hier nur die Rauschgroesse je Kanal gebraucht wird und
     die Korrektur sie veraendern wuerde.
     """
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
 
     if dataset == "nn22_resting":
         import cedalion.data as cdata
         return prep.finish(prep.to_od_stage(cdata.get_nn22_resting_state()),
                            motion_method="none")
     if dataset == "multisubject_fingertapping":
-        import multisubject as ms
+        from drift_glm.data import multisubject as ms
         return ms.preprocess_recording(ms.load(ms.paths()[0]),
                                        motion_method="none")[0]
     raise ValueError(f"reference_od kennt den Datensatz {dataset!r} nicht")

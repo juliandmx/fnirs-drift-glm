@@ -16,7 +16,7 @@ LIMITATION, die in die Arbeit gehoert: 15,5-18 mm sehen noch etwas Kortex. Der R
 entfernt daher potenziell auch echtes Hirnsignal, nicht nur Systemik. Er ist ein
 Naeherungs-Surrogat fuer eine echte Short-Separation-Montage, kein Ersatz.
 
-Aufruf:  conda run -n cedalion python shortchannel.py
+Aufruf:  conda run -n cedalion python -m drift_glm.core.shortchannel
 """
 
 from __future__ import annotations
@@ -155,7 +155,7 @@ def subtract_global_component(ts_long, ts_short, stim_df, basis, *,
 if __name__ == "__main__":
     import cedalion.data
 
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
 
     P = prep.run(cedalion.data.get_nn22_resting_state())
     r = report(P.conc, P.geo3d)

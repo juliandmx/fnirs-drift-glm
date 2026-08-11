@@ -5,8 +5,8 @@
 # nn22-Sensitivitaetsmatrix belegt ~300 MB, eine ImageRecon-Instanz darauf aehnlich viel.
 # Auf dieser Maschine (7,8 GB) wurden zwei parallele Bildraum-Laeufe vom OOM-Killer beendet.
 #
-# Fortschritt live:  tail -f results/imageglm_progress.txt results/msglm_progress.txt
-# Logs:              results/run_v5_imageglm.log  results/run_v5_msglm.log
+# Fortschritt live:  tail -f results/logs/*_progress.txt
+# Logs:              results/logs/run_v5_*.log
 set -u
 cd "$(dirname "$0")"
 
@@ -14,8 +14,8 @@ cd "$(dirname "$0")"
 # ist beim Entwickeln passiert: die erste Kette wurde beim imageglm-Schritt abgebrochen,
 # ist daraufhin auf msglm weitergeschaltet, und der Neustart lief dagegen. Ergebnis: der
 # neue imageglm-Lauf wurde nach einer Minute vom OOM-Killer beendet.
-LOCK="results/.run_v5.lock"
-mkdir -p results
+mkdir -p results/logs
+LOCK="results/logs/.run_v5.lock"
 if [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
     echo "Es laeuft schon eine Kette (PID $(cat "$LOCK")). Abbruch." >&2
     echo "Falls das ein Ueberrest ist: kill -9 -\$(cat $LOCK); rm $LOCK" >&2
@@ -28,17 +28,20 @@ cleanup() { rm -f "$LOCK"; kill -- -$$ 2>/dev/null; }
 trap cleanup EXIT INT TERM
 
 source ~/anaconda3/etc/profile.d/conda.sh
-CR="conda run --no-capture-output -n cedalion python -u"
+CR="conda run --no-capture-output -n cedalion python -u -m"
 
-echo "=== $(date +%H:%M) imageglm (Simulation, Bildraum) ==="
-$CR imageglm.py > results/run_v5_imageglm.log 2>&1
-echo "    exit=$?  $(date +%H:%M)"
+# Welche Schritte laufen sollen: ohne Argumente alle, sonst nur die genannten.
+# Beispiel:  ./run_v5.sh msglm report      (imageglm ueberspringen)
+STEPS="${*:-imageglm msglm report}"
 
-echo "=== $(date +%H:%M) msglm (Multisubject) ==="
-$CR msglm.py > results/run_v5_msglm.log 2>&1
-echo "    exit=$?  $(date +%H:%M)"
+run_step() {                       # $1 = Name, $2 = Modul
+    case " $STEPS " in *" $1 "*) ;; *) return 0 ;; esac
+    echo "=== $(date +%H:%M) $1 ($2) ==="
+    $CR "$2" > "results/logs/run_v5_$1.log" 2>&1
+    echo "    exit=$?  $(date +%H:%M)"
+}
 
-echo "=== $(date +%H:%M) Abbildungen 19-23 ==="
-$CR imagespace_report.py > results/run_v5_report.log 2>&1
-echo "    exit=$?  $(date +%H:%M)"
+run_step imageglm drift_glm.analysis.imageglm
+run_step msglm    drift_glm.analysis.msglm
+run_step report   drift_glm.reports.imagespace_report
 echo "=== fertig $(date +%H:%M) ==="

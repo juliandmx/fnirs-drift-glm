@@ -25,8 +25,8 @@ oder wird er vorher abgezogen? Beides benutzt denselben Regressor, ist aber nich
 dasselbe -- Begruendung in `shortchannel.subtract_global_component`.
 
 Aufruf:
-    conda run -n cedalion python msglm.py test    # 2 Probanden, 2 Familien (Timing)
-    conda run -n cedalion python msglm.py         # voll (Nachtlauf)
+    conda run -n cedalion python -m drift_glm.analysis.msglm test    # 2 Probanden, 2 Familien (Timing)
+    conda run -n cedalion python -m drift_glm.analysis.msglm         # voll (Nachtlauf)
 """
 
 from __future__ import annotations
@@ -47,14 +47,15 @@ import cedalion.models.glm as glm
 import cedalion.nirs
 from cedalion import units
 
-import imageglm as ig
-import imagespace as ims
-import multisubject as ms
-import pipeline as pl
-import shortchannel as sc
-from sweep import drift_dm
+from drift_glm.analysis import imageglm as ig
+from drift_glm.core import imagespace as ims
+from drift_glm.data import multisubject as ms
+from drift_glm.core import pipeline as pl
+from drift_glm.core import shortchannel as sc
+from drift_glm.analysis.sweep import drift_dm
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
+RESULTS = paths.RESULTS
 ALPHA = 0.05
 
 FAMILIES = ["none", "poly:1", "poly:3", "poly:5", "dct:0.005", "dct:0.01", "dct:0.02",
@@ -237,7 +238,7 @@ def _out_path(mode: str) -> Path:
 
 def main(mode: str = "full", *, motion_method: str = "wavelet",
          with_halves: bool = True, with_image: bool = True):
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     files = ms.paths()
     families, systemic, noise_models = FAMILIES, SYSTEMIC, NOISE_MODELS
     if mode == "test":
@@ -254,7 +255,8 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
         print(f"  {nm:8s}: {len(f)} Familien x {len(s)} Systemik-Stufen "
               f"= {len(f) * len(s)} Zellen", flush=True)
 
-    worker = importlib.import_module(__spec__.name if __spec__ else "msglm")._fit_one
+    _self = __spec__.name if __spec__ else "drift_glm.analysis.msglm"
+    worker = importlib.import_module(_self)._fit_one
     n_jobs = min(N_JOBS, len(files))
 
     # Vorverarbeitung EINMAL je Proband. Die Geometrie und die Kanalmenge sind ueber die
@@ -366,7 +368,7 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                       f"rel={rel:+.3f} lat_left={lat.get('lat_left', float('nan')):+.4f} "
                       f"lat_right={lat.get('lat_right', float('nan')):+.4f} ({dt:5.1f}s)",
                       flush=True)
-                (RESULTS / "msglm_progress.txt").write_text(
+                (paths.LOGS / "msglm_progress.txt").write_text(
                     f"msglm: {done}/{total}\n"
                     f"verstrichen: {(time.time() - t0) / 60:.1f} min\n"
                     f"ETA: {(time.time() - t0) / done * (total - done) / 60:.1f} min\n"

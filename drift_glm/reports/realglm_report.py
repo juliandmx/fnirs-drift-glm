@@ -10,8 +10,8 @@ dem Kopf sichtbar wird (das ist die Abbildung, die man im Gespraech zeigt).
   Abb. 18  HbO/HbR-Plausibilitaet
 
 Aufruf:
-    conda run -n cedalion python realglm_report.py          # alles (Abb. 17 ~13 min)
-    conda run -n cedalion python realglm_report.py quick    # ohne Abb. 17
+    conda run -n cedalion python -m drift_glm.reports.realglm_report          # alles (Abb. 17 ~13 min)
+    conda run -n cedalion python -m drift_glm.reports.realglm_report quick    # ohne Abb. 17
 """
 
 from __future__ import annotations
@@ -32,11 +32,12 @@ from joblib import Parallel, delayed
 import cedalion
 import cedalion.vis.anatomy
 
-import realdata as rd
-import realglm as rg
+from drift_glm.data import realdata as rd
+from drift_glm.analysis import realglm as rg
+from drift_glm import paths
 
-RES = Path(__file__).parent / "results"
-OUT = Path(__file__).parent / "figures"
+RES = paths.RESULTS
+OUT = paths.FIGURES
 
 ORDER = ["none", "poly:1", "poly:2", "poly:3", "poly:5",
          "dct:0.005", "dct:0.01", "dct:0.02", "legendre:1", "legendre:3",
@@ -252,7 +253,7 @@ def _draw_fig32(ds, conc, geo3d):
 
 
 def main(quick=False):
-    OUT.mkdir(exist_ok=True)
+    paths.ensure()
     df = load()
     fig30_reliability(df)
     fig31_significant(df)

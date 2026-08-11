@@ -32,8 +32,8 @@ Eckdaten: 5 Probanden, 28 Kanaele, 7,8125 Hz, 2974,5 s je Aufnahme, 760/850 nm,
 je 30 Trials control / Tapping/Left / Tapping/Right (Blockdauer 5 s), kein Aux.
 
 Aufruf:
-    conda run -n cedalion python multisubject.py            # Inventar
-    conda run -n cedalion python multisubject.py sub-01     # Inventar + Vorverarbeitung
+    conda run -n cedalion python -m drift_glm.data.multisubject            # Inventar
+    conda run -n cedalion python -m drift_glm.data.multisubject sub-01     # Inventar + Vorverarbeitung
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ import cedalion.io
 import cedalion.nirs
 from cedalion import units
 
-import preprocess as prep
+from drift_glm.core import preprocess as prep
 
 #: Trigger-Werte -> sprechende Namen, exakt wie in Notebook 50b. "15.0" ist ein
 #: Sentinel-Event am Aufnahmeende und gehoert in keine Analyse.
@@ -207,7 +207,7 @@ if __name__ == "__main__":
                  if ar == prep.AMP_RANGE_OFF else ""))
         print(f"  {rec['amp'].sizes['channel']} roh -> {P.conc.sizes['channel']} "
               f"verwertbar ({len(P.dropped)} verworfen: {P.dropped})")
-        import shortchannel as sc
+        from drift_glm.core import shortchannel as sc
         long, short = cedalion.nirs.split_long_short_channels(
             P.conc, P.geo3d, distance_threshold=SHORT_THRESHOLD)
         print(f"  Split bei {SHORT_THRESHOLD}: {short.sizes['channel']} kurz, "

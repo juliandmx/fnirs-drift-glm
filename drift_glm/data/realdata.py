@@ -32,8 +32,8 @@ Filter-Arm (Betreuungsvorgabe "high (0,01) und lowpass (0,5) ... entweder Driftr
 oder Highpassfilter").
 
 Aufruf:
-    conda run -n cedalion python realdata.py            # Inventar aller gefundenen Dateien
-    conda run -n cedalion python realdata.py <datei>    # Inventar + Vorverarbeitung einer Datei
+    conda run -n cedalion python -m drift_glm.data.realdata            # Inventar aller gefundenen Dateien
+    conda run -n cedalion python -m drift_glm.data.realdata <datei>    # Inventar + Vorverarbeitung einer Datei
 """
 
 from __future__ import annotations
@@ -49,11 +49,12 @@ import cedalion.io
 import cedalion.nirs
 from cedalion import units
 
-import preprocess as prep
+from drift_glm.core import preprocess as prep
+from drift_glm import paths
 
 # Ablage der realen Daten, ausserhalb des Code-Repos (nicht mitversionieren).
 # Unterordner je Proband (S01..S25), darin je Durchgang SxxRy_TRIM(.._CC_filtered).snirf
-DATA_DIR = Path(__file__).resolve().parent.parent / "FingerTappingDataset_Published2025"
+DATA_DIR = paths.EXTERNAL / "FingerTappingDataset_Published2025"
 
 # Dateinamen-Konvention des Datensatzes: SXYRZ_TRIM(_CC_filtered).snirf
 FILTERED_MARKER = "filtered"

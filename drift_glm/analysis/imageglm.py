@@ -31,8 +31,8 @@ DIESELBE Verdichtung wird auf die Ground Truth angewandt -- dadurch sind sie ohn
 Umrechnungsannahme miteinander und mit der Wahrheit vergleichbar.
 
 Aufruf:
-    conda run -n cedalion python imageglm.py test    # 2 Familien, kurzes Fenster
-    conda run -n cedalion python imageglm.py         # alle Familien (Nachtlauf)
+    conda run -n cedalion python -m drift_glm.analysis.imageglm test    # 2 Familien, kurzes Fenster
+    conda run -n cedalion python -m drift_glm.analysis.imageglm         # alle Familien (Nachtlauf)
 """
 
 from __future__ import annotations
@@ -48,13 +48,14 @@ import xarray as xr
 import cedalion.models.glm as glm
 from cedalion import units
 
-import imagespace as ims
-import pipeline as pl
-import preprocess as prep
-import shortchannel as sc
-from sweep import drift_dm
+from drift_glm.core import imagespace as ims
+from drift_glm.core import pipeline as pl
+from drift_glm.core import preprocess as prep
+from drift_glm.core import shortchannel as sc
+from drift_glm.analysis.sweep import drift_dm
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
+RESULTS = paths.RESULTS
 
 PROJECTIONS = ("hrf", "residual", "cleaned")
 
@@ -293,7 +294,7 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
         families=None, constellations=("baseline", "global"), noise_model="ar_irls",
         seeds=DEFAULT_SEEDS, out: str | None = None) -> pd.DataFrame:
     """Driftfamilien im Bildraum vergleichen. Schreibt eine CSV nach `results/`."""
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     if families is None:
         families = ["poly:3", "dct:0.02"] if mode == "test" else list(FAMILIES)
     if mode == "test":
@@ -375,7 +376,7 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
                       f"HbO: r={d['img_r']:+.3f} Ort={d['img_loc_err_mm']:5.1f} mm "
                       f"Treffer={100 * d['img_hit_frac']:4.1f} %  "
                       f"({pr['fit_s']:.0f}s Fit)", flush=True)
-                (RESULTS / "imageglm_progress.txt").write_text(
+                (paths.LOGS / "imageglm_progress.txt").write_text(
                     f"imageglm: {done}/{total}\n"
                     f"verstrichen: {(time.time() - t00) / 60:.1f} min\n"
                     f"ETA: {(time.time() - t00) / done * (total - done) / 60:.1f} min\n"

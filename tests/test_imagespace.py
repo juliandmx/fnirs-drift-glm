@@ -11,7 +11,7 @@ import pytest
 
 @pytest.fixture(scope="module")
 def ims():
-    import imagespace
+    from drift_glm.core import imagespace
     return imagespace
 
 
@@ -22,7 +22,7 @@ def head(ims):
 
 @pytest.fixture(scope="module")
 def adot_ms(ims):
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     return ims.adot(ms.DATASET)
 
 
@@ -90,7 +90,7 @@ def test_ground_truth_is_calibrated_to_target_peak(ims, adot_ms):
     Ohne diesen Schritt haengt die eingemischte Amplitude an der willkuerlichen
     Vertex-Intensitaet und ist nicht mehr in µM interpretierbar.
     """
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     rec = ms.load(ms.paths()[0])
     chans = [str(c) for c in rec["amp"].channel.values]
     gt = ims.ground_truth(ms.DATASET, chans, rec.geo3d, target_uM=0.6)
@@ -114,7 +114,7 @@ def test_cortex_channel_mask_separates_short_from_long(ims):
     letzterer ist montageabhaengig, erstere ist die physikalische Groesse.
     """
     import cedalion.nirs
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     rec = ms.load(ms.paths()[0])
     chans = [str(c) for c in rec["amp"].channel.values]
     Ab = ims.brain_adot(ims.adot(ms.DATASET), channels=chans)
@@ -139,7 +139,7 @@ def test_calibration_is_anchored_to_a_cortex_channel(ims):
     langen Kanaele haetten nur einen Bruchteil der Zielamplitude bekommen.
     """
     import cedalion.nirs
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     rec = ms.load(ms.paths()[0])
     chans = [str(c) for c in rec["amp"].channel.values]
     gt = ims.ground_truth(ms.DATASET, chans, rec.geo3d, target_uM=0.6)
@@ -176,9 +176,9 @@ def test_conc_map_survives_the_od_roundtrip():
     Artefakt der Umrechnung -- dieselbe Argumentation wie beim Zeitreihen-Rundweg in
     `test_smoke.test_od_roundtrip_is_exact`, hier fuer die Karten ohne Zeitachse.
     """
-    import imageglm as ig
-    import multisubject as ms
-    import preprocess as prep
+    from drift_glm.analysis import imageglm as ig
+    from drift_glm.data import multisubject as ms
+    from drift_glm.core import preprocess as prep
     import cedalion.nirs
     import xarray as xr
 
@@ -204,7 +204,7 @@ def test_conc_map_survives_the_od_roundtrip():
 def test_multisubject_has_eight_real_short_channels():
     """Der Grund, warum dieser Datensatz dazugekommen ist."""
     import cedalion.nirs
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     rec = ms.load(ms.paths()[0])
     d = np.asarray(cedalion.nirs.channel_distances(rec["amp"], rec.geo3d)
                    .pint.to("mm").pint.dequantify().values, float)
@@ -216,7 +216,7 @@ def test_multisubject_has_eight_real_short_channels():
 
 def test_multisubject_events_are_renamed_and_sentinel_dropped():
     """Ohne die Umbenennung waeren '2.0'/'3.0' stumme Fallen wie S25 im Khan-Datensatz."""
-    import multisubject as ms
+    from drift_glm.data import multisubject as ms
     rec = ms.load(ms.paths()[0])
     tt = set(map(str, rec.stim.trial_type))
     assert tt == set(ms.CONDITIONS)
@@ -235,8 +235,8 @@ def test_global_component_subtraction_reduces_systemic_share():
     """
     import cedalion.models.glm as glm
     import cedalion.nirs
-    import multisubject as ms
-    import shortchannel as sc
+    from drift_glm.data import multisubject as ms
+    from drift_glm.core import shortchannel as sc
     from cedalion import units
 
     rec = ms.load(ms.paths()[0])

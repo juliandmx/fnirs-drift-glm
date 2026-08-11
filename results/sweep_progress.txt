@@ -1,6 +1,0 @@
-Fortschritt: 1800/1800 (100 %)
-verstrichen : 452.2 min
-ETA (Rest)  :   0.0 min
-median/Fit  : 12.8 s
-letzte Zelle: bspline:8 short_maxcorr (tddr+wavelet, win=368, seed=3)
-(Datei wird nach JEDEM Fit aktualisiert)

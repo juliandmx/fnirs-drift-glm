@@ -8,7 +8,7 @@ Erzeugt PNGs in figures/:
   5) Scalp-Plot der RELATIVEN Abweichung: rel. beta-Peak-Fehler + rel. Formfehler
 
 Aufruf:
-    conda run -n cedalion python demo_figures.py
+    conda run -n cedalion python -m drift_glm.reports.demo_figures
 """
 
 from __future__ import annotations
@@ -23,9 +23,10 @@ import numpy as np
 import cedalion
 import cedalion.vis.anatomy
 import cedalion.models.glm as glm
-import pipeline as pl
+from drift_glm.core import pipeline as pl
+from drift_glm import paths
 
-OUTDIR = Path(__file__).parent / "figures"
+OUTDIR = paths.FIGURES
 
 
 def _sym_lim(values, pct=98.0):
@@ -35,7 +36,7 @@ def _sym_lim(values, pct=98.0):
 
 
 def main():
-    OUTDIR.mkdir(exist_ok=True)
+    paths.ensure()
     P = pl.build()
     main_hrf = P.hrf_names[0]
 

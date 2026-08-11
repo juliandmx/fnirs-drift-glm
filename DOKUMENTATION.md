@@ -166,7 +166,7 @@ simulieren, Karten zeichnen). Wir bauen darauf auf, statt alles selbst zu progra
 
 ## 4. Wie die Auswertung Schritt für Schritt funktioniert
 
-Das Herzstück ist die Datei `pipeline.py`. Sie baut aus Ruhedaten einen Testfall mit
+Das Herzstück ist die Datei `drift_glm/core/pipeline.py`. Sie baut aus Ruhedaten einen Testfall mit
 **bekannter Wahrheit**. Hier die Schritte in Alltagssprache; in Klammern die
 Cedalion-Bausteine und die Notebooks, an denen sie sich orientieren.
 
@@ -230,7 +230,7 @@ getrennt, die genaue Lage der Grenze ist unkritisch.
 > prompt verschlechtert TDDR den Fehler von +0,018 auf +0,071. Dieselbe Dämpfung, aber ohne
 > den Gegenfehler.
 >
-> *(Zahlen aus `compare_preprocessing.py`, 3 Wiederholungen, Fenster 180 s, 20 aktivste
+> *(Zahlen aus `drift_glm/analysis/compare_preprocessing.py`, 3 Wiederholungen, Fenster 180 s, 20 aktivste
 > Kanäle → `results/preprocessing_comparison.csv`. Der Vergleich läuft auf einer gemeinsamen
 > Kanalbasis; deshalb sind „alte" und „neue" Kette ohne Bewegungskorrektur identisch – die
 > Umstellung ändert nicht die Schätzung auf einem Kanal, sondern welche Kanäle eingehen.)*
@@ -244,7 +244,7 @@ getrennt, die genaue Lage der Grenze ist unkritisch.
 *(Cedalion: `cedalion.nirs.cw.int2od(..., return_baseline=True)` / `od2int(...)`,
 `cedalion.sigproc.motion.tddr(...)` / `wavelet(...)`, `cedalion.sigproc.quality.snr / mean_amp /
 sd_dist / prune_ch`. Notebooks `signal_quality/21`, `signal_quality/22`, Tutorial `3`.
-Umgesetzt in `preprocess.py`; die Reihenfolge entspricht der Betreuungsvorgabe und zugleich
+Umgesetzt in `drift_glm/core/preprocess.py`; die Reihenfolge entspricht der Betreuungsvorgabe und zugleich
 der von Cedalion empfohlenen Kette.)*
 
 ### Schritt 3 – Licht in Blutkonzentrationen umrechnen
@@ -299,7 +299,7 @@ Vorzeichen und 40 % der Höhe.
 Sensitivitätsmatrix, `image_to_channel_space` für den Weg in den Kanalraum. Kopfmodell ist
 durchgängig **ICBM152** (Betreuungsvorgabe 5. August, vorher Colin27): ICBM152 ist ein
 Mittelwert über 152 Gehirne und damit der übliche Bezugsraum für Gruppenaussagen, Colin27
-ein einzelnes Gehirn. Umgesetzt in `imagespace.py`, aufgerufen aus `pipeline.build`.)*
+ein einzelnes Gehirn. Umgesetzt in `drift_glm/core/imagespace.py`, aufgerufen aus `pipeline.build`.)*
 
 ### Schritt 5 – Die Designmatrix (das „Rezept") zusammenstellen
 Jetzt legen wir die „Zutaten" fest, mit denen das GLM das Signal erklären soll:
@@ -340,7 +340,7 @@ liegen die aktiven Kanäle überwiegend oberhalb → systematische Überschätzu
 Punkte bei „wahres β ≈ 0" sind inaktive Kanäle (reines Rauschen).*
 
 ### Schritt 8 – Bilder zeichnen
-Zur Kontrolle erzeugt `demo_figures.py` Diagramme, u. a. **Kopf-Karten (scalp plots)**, auf
+Zur Kontrolle erzeugt `drift_glm/reports/demo_figures.py` Diagramme, u. a. **Kopf-Karten (scalp plots)**, auf
 denen jeder Kanal an seiner Position auf dem Kopf farbig dargestellt wird (z. B. „wie weit
 lag die Schätzung daneben?").
 *(Cedalion: `cedalion.vis.anatomy.scalp_plot(...)`; Vorbild Notebook `tutorial/7` und
@@ -374,7 +374,7 @@ Die Farbskala ist fest auf ±100 % begrenzt; wie viele Kanäle darüber liegen, 
 
 Ein einzelner Durchlauf beantwortet die Forschungsfrage noch nicht. Dafür wiederholen wir
 die Schritte 4–7 **systematisch für alle Kombinationen** von Einflussgrößen. Das erledigt
-`sweep.py`. „Sweep" heißt sinngemäß „alles einmal durchfahren".
+`drift_glm/analysis/sweep.py`. „Sweep" heißt sinngemäß „alles einmal durchfahren".
 
 Variiert werden sechs Achsen:
 1. **Driftregressor-Familie** (die Hauptfrage): 15 Varianten – Polynom Ordnung 1–5, DCT mit
@@ -400,7 +400,7 @@ Variiert werden sechs Achsen:
 
 Das ergibt in der Hauptversion (v4) 15 × 3 × 5 × 2 × 4 = **1800 Auswertungen** in 7,5 Stunden.
 Ergebnisse landen in `results/` (Tabelle `sweep_summary.csv`, Rohdaten
-`sweep_per_channel.nc`), Abbildungen und Markdown-Tabellen erzeugt `sweep_report.py`.
+`sweep_per_channel.nc`), Abbildungen und Markdown-Tabellen erzeugt `drift_glm/reports/sweep_report.py`.
 
 **Zu den kurzen Kanälen.** Ein Kanal mit kleinem Abstand zwischen Sender und Empfänger hat
 eine flache „Lichtbanane": sein Licht erreicht das Gehirn gar nicht und misst nur Kopfhaut
@@ -434,7 +434,7 @@ Antwort verzerrt, wird zusätzlich mit einer **flexiblen** Formvorlage ausgewert
 (`GaussianKernels` – eine Reihe von Glockenkurven, die zusammen praktisch jede Kurvenform
 annehmen können). Als Maß dient die **Form-Treue**: die Korrelation zwischen zurückgewonnener
 und eingemischter HRF-Kurve. Diese ist *skaleninvariant* – sie misst also reine Form,
-unabhängig von der Höhe (1,0 = perfekte Form). Skript: `flex_basis.py`.
+unabhängig von der Höhe (1,0 = perfekte Form). Skript: `drift_glm/analysis/flex_basis.py`.
 *(Cedalion: `glm.GaussianKernels`; HRF-Formvorlagen aus Notebook `modeling/31`.)*
 
 ### Zusatz-Analyse 2: Statistische Absicherung – Signifikanz und Mehrfachvergleichs-Korrektur
@@ -453,7 +453,7 @@ lässt sich die **Detektionsgüte** direkt messen:
 - **Youden-J** (= Sensitivität + Spezifität − 1) als Gesamtmaß.
 
 So zeigt sich, welche Driftfamilie die zuverlässigste Aktivierungs-Erkennung liefert. Dieses
-Skript (`detection.py`) fittet über **alle** 544 Kanäle (nur so sind Falsch-Positive
+Skript (`drift_glm/analysis/detection.py`) fittet über **alle** 544 Kanäle (nur so sind Falsch-Positive
 bewertbar) und demonstriert damit die komplette Inferenz-Pipeline für die realen DOT-Daten.
 *(Cedalion: `.sm.params` + `.sm.regressor_variances()`; FDR über `statsmodels`.)*
 
@@ -539,7 +539,7 @@ Stufe 2 der Arbeit läuft auf einem öffentlichen Finger-Tapping-Datensatz (Khan
 Mirtaheri 2026): **25 Probanden**, 69 Aufnahmen, 48 Kanäle, Einzelfinger-Tapping der rechten
 Hand, 10 s Block gegen 10 s Ruhe, 15 Tapping-Blöcke je Aufnahme. Ausgewertet wurden
 14 Driftfamilien × 2 Konstellationen × 2 Schätzverfahren über alle Aufnahmen =
-**3864 Auswertungen** in 3,6 Stunden (`realglm.py`).
+**3864 Auswertungen** in 3,6 Stunden (`drift_glm/analysis/realglm.py`).
 
 **Der entscheidende Unterschied:** Hier gibt es **keine Ground Truth**. Der Fehler gegen die
 Wahrheit, an dem in der Simulation alles hing, existiert nicht. Stattdessen drei Kriterien,
@@ -602,7 +602,7 @@ r = 0,80 und 11,9 mm. *Das ist keine Feinheit der Auswertung, sondern die Voraus
 dafür, dass sie überhaupt etwas misst.*
 
 **Ergebnis C2 – Die Regularisierung entscheidet mehr als das Rauschmodell.** Rauschfrei
-geprüft (`python imagespace.py check`) hängt der Ortsfehler praktisch nur an einem
+geprüft (`python -m drift_glm.core.imagespace check`) hängt der Ortsfehler praktisch nur an einem
 Parameter, `alpha_spatial`; der zweite (`alpha_meas`) verschiebt ihn kaum. Auf der dünnen
 28-Kanal-Montage:
 
@@ -765,32 +765,36 @@ enthalten.*
 
 ## 7. Die Dateien im Überblick
 
-Alle Dateien liegen in diesem Repository-Ordner `fnirs-drift-glm/` (als eigenständiges
-Git-Repo neben `../cedalion/` nutzbar).
+Der Code liegt im Paket `drift_glm/` mit vier Schichten. Die Abhängigkeiten laufen nur
+nach unten: `reports` darf `analysis` benutzen, `analysis` darf `data` und `core`, und
+`core` kennt die oberen Schichten nicht. Wer das umdreht, baut einen Importzyklus – und
+der fällt sofort auf. Aufgerufen wird deshalb immer als Modul
+(`python -m drift_glm.analysis.sweep`), nie als Datei; die genaue Begründung steht in
+der [`README`](README.md).
 
 | Datei | Aufgabe |
 |---|---|
-| `preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning, datengetriebene Amplitudengrenzen. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
-| `shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split, die drei Regressor-Varianten – und die Alternative, den systemischen Anteil *abzuziehen* statt ihn im Modell zu lassen. |
-| `imagespace.py` | **Bildraum-Fundament:** Kopfmodell (ICBM152), Sensitivitätsmatrix, C3/C4-Blob, Vorwärts- und Rückweg, Sichtbarkeitsmaske, Regularisierung. Einzige Stelle, an der das Kopfmodell beschafft wird. |
-| `pipeline.py` | **Kernstück der Simulation.** Erzeugt die künstliche HRF als Blob auf dem Kortex, trägt sie über die Sensitivitätsmatrix in den Kanalraum, mischt sie dort in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
-| `imageglm.py` | **Bildraum-Auswertung:** GLM-Ergebnis (geschätzte HRF, Residuum, Residuum+HRF) zurück auf den Kortex, Gütemaße inkl. Lokalisationsfehler. |
-| `multisubject.py` | **Stufe 3:** Multisubject-Fingertapping (5 Probanden, echte Short Channels), Loader, Inventar, Vorverarbeitung. |
-| `msglm.py` | **Stufe 3, Kern:** GLM je Driftfamilie × Systemik-Stufe, Gruppen-t-Test, Halbierungs-Reproduzierbarkeit, kontralaterale Kontrolle im Kanal- und Bildraum. |
-| `coregister.py` | Landmarkenfreie Koregistrierung der NIRScout-Montage auf ICBM152 – und die Dokumentation, warum daraus hier keine Sensitivitätsmatrix wird. |
-| `imagespace_report.py` | Abbildungen 19–23 (HRF je Kanal, Kortexdarstellung, Driftfamilien im Bildraum, Lateralisierung, Systemik-Achse). |
-| `sweep.py` | Der **systematische Vergleich** über alle Kombinationen (Kapitel 5). Schreibt Ergebnisse + eine Live-Fortschrittsdatei. |
-| `compare_preprocessing.py` | Vergleicht die Vorverarbeitungs-Varianten gegen die β-Rückgewinnung (Grundlage für Ergebnis 4b). |
-| `realdata.py` | **Stufe 2:** Einlesen der realen SNIRF-Dateien, Inventar, Stimulus-Zuordnung (inkl. der abweichenden Kodierung bei S25), datengetriebene Amplitudengrenzen. |
-| `realglm.py` | **Stufe 2, Kern:** GLM je Driftfamilie über alle Probanden, Gruppen-t-Test, FDR, Reproduzierbarkeit zwischen Durchgängen. |
-| `realglm_report.py` | Abbildungen zu den realen Daten (Abb. 14–17), inkl. der Gruppen-β-Karte auf dem Kopf. |
-| `sweep_report.py` | Erzeugt aus den Sweep-Ergebnissen die **Abbildungen** und **Markdown-Ergebnistabellen** (`results/tables.md`). |
-| `flex_basis.py` | **Zusatz-Analyse 1:** flexible HRF-Formvorlage → Form-Treue (Formfehler unabhängig von der Höhe). |
-| `detection.py` | **Zusatz-Analyse 2:** Signifikanz je Kanal + FDR-Korrektur → Detektionsgüte gegen die Ground Truth. |
-| `demo_recovery.py` | **End-to-end-Demo (Zahlen):** ein Durchlauf, gibt Fehlerkennzahlen aus. |
-| `demo_figures.py` | **End-to-end-Demo (Bilder):** Designmatrix, Ein-Kanal-Fit, β̂-vs-Wahrheit, Kopf-Karten. |
+| `drift_glm/core/preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning, datengetriebene Amplitudengrenzen. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
+| `drift_glm/core/shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split, die drei Regressor-Varianten – und die Alternative, den systemischen Anteil *abzuziehen* statt ihn im Modell zu lassen. |
+| `drift_glm/core/imagespace.py` | **Bildraum-Fundament:** Kopfmodell (ICBM152), Sensitivitätsmatrix, C3/C4-Blob, Vorwärts- und Rückweg, Sichtbarkeitsmaske, Regularisierung. Einzige Stelle, an der das Kopfmodell beschafft wird. |
+| `drift_glm/core/pipeline.py` | **Kernstück der Simulation.** Erzeugt die künstliche HRF als Blob auf dem Kortex, trägt sie über die Sensitivitätsmatrix in den Kanalraum, mischt sie dort in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
+| `drift_glm/analysis/imageglm.py` | **Bildraum-Auswertung:** GLM-Ergebnis (geschätzte HRF, Residuum, Residuum+HRF) zurück auf den Kortex, Gütemaße inkl. Lokalisationsfehler. |
+| `drift_glm/data/multisubject.py` | **Stufe 3:** Multisubject-Fingertapping (5 Probanden, echte Short Channels), Loader, Inventar, Vorverarbeitung. |
+| `drift_glm/analysis/msglm.py` | **Stufe 3, Kern:** GLM je Driftfamilie × Systemik-Stufe, Gruppen-t-Test, Halbierungs-Reproduzierbarkeit, kontralaterale Kontrolle im Kanal- und Bildraum. |
+| `drift_glm/data/coregister.py` | Landmarkenfreie Koregistrierung der NIRScout-Montage auf ICBM152 – und die Dokumentation, warum daraus hier keine Sensitivitätsmatrix wird. |
+| `drift_glm/reports/imagespace_report.py` | Abbildungen 19–23 (HRF je Kanal, Kortexdarstellung, Driftfamilien im Bildraum, Lateralisierung, Systemik-Achse). |
+| `drift_glm/analysis/sweep.py` | Der **systematische Vergleich** über alle Kombinationen (Kapitel 5). Schreibt Ergebnisse + eine Live-Fortschrittsdatei. |
+| `drift_glm/analysis/compare_preprocessing.py` | Vergleicht die Vorverarbeitungs-Varianten gegen die β-Rückgewinnung (Grundlage für Ergebnis 4b). |
+| `drift_glm/data/realdata.py` | **Stufe 2:** Einlesen der realen SNIRF-Dateien, Inventar, Stimulus-Zuordnung (inkl. der abweichenden Kodierung bei S25), datengetriebene Amplitudengrenzen. |
+| `drift_glm/analysis/realglm.py` | **Stufe 2, Kern:** GLM je Driftfamilie über alle Probanden, Gruppen-t-Test, FDR, Reproduzierbarkeit zwischen Durchgängen. |
+| `drift_glm/reports/realglm_report.py` | Abbildungen zu den realen Daten (Abb. 14–17), inkl. der Gruppen-β-Karte auf dem Kopf. |
+| `drift_glm/reports/sweep_report.py` | Erzeugt aus den Sweep-Ergebnissen die **Abbildungen** und **Markdown-Ergebnistabellen** (`results/tables.md`). |
+| `drift_glm/analysis/flex_basis.py` | **Zusatz-Analyse 1:** flexible HRF-Formvorlage → Form-Treue (Formfehler unabhängig von der Höhe). |
+| `drift_glm/analysis/detection.py` | **Zusatz-Analyse 2:** Signifikanz je Kanal + FDR-Korrektur → Detektionsgüte gegen die Ground Truth. |
+| `drift_glm/reports/demo_recovery.py` | **End-to-end-Demo (Zahlen):** ein Durchlauf, gibt Fehlerkennzahlen aus. |
+| `drift_glm/reports/demo_figures.py` | **End-to-end-Demo (Bilder):** Designmatrix, Ein-Kanal-Fit, β̂-vs-Wahrheit, Kopf-Karten. |
 | `tests/` | Schnelle **Smoke-Tests** (pytest) für die Pipeline. |
-| `results/` | Ausgaben: `sweep_summary.csv`, `sweep_per_channel.nc`, `tables.md`, `flex_basis_summary.csv`, `detection_summary.csv`, `*_progress.txt`. |
+| `results/` | Ausgaben: `sweep_summary.csv`, `sweep_per_channel.nc`, `tables.md`, `flex_basis_summary.csv`, `detection_summary.csv`, `logs/*_progress.txt`. |
 | `figures/` | Alle erzeugten Abbildungen (PNG). |
 | `environment.lock.txt` | Exakte Versionen der Kern-Pakete (Reproduzierbarkeit). |
 | `README.md` | Knappe technische Ausführ-/Reproduktions-Anleitung. |
@@ -808,29 +812,29 @@ source ~/anaconda3/etc/profile.d/conda.sh
 cd fnirs-drift-glm
 
 # 1) End-to-end-Demo mit Zahlen (~einige Minuten)
-conda run -n cedalion python demo_recovery.py
+conda run -n cedalion python -m drift_glm.reports.demo_recovery
 
 # 2) Kontroll-Abbildungen erzeugen
-conda run -n cedalion python demo_figures.py
+conda run -n cedalion python -m drift_glm.reports.demo_figures
 
 # 3) Schnelltests (Sekunden–Minuten)
 conda run -n cedalion python -m pytest tests -q          # Smoke-Tests
-conda run -n cedalion python sweep.py pilot              # alle Code-Pfade, ~5 min
-conda run -n cedalion python flex_basis.py test          # ~1 min
-conda run -n cedalion python detection.py test           # ~1 min
+conda run -n cedalion python -m drift_glm.analysis.sweep pilot              # alle Code-Pfade, ~5 min
+conda run -n cedalion python -m drift_glm.analysis.flex_basis test          # ~1 min
+conda run -n cedalion python -m drift_glm.analysis.detection test           # ~1 min
 
 # 4) Hauptstudie v4 (1800 Auswertungen, ~7,5 Stunden)
-conda run -n cedalion python sweep.py v4
+conda run -n cedalion python -m drift_glm.analysis.sweep v4
 #    Fortschritt live verfolgen (in einem zweiten Terminal):
-cat results/sweep_progress.txt
+cat results/logs/sweep_progress.txt
 
 # 5) Zusatz-Analysen (schreiben ebenfalls *_progress.txt)
-conda run -n cedalion python flex_basis.py               # ~20 min
-conda run -n cedalion python detection.py                # ~60–75 min (Fits über ALLE Kanäle)
-conda run -n cedalion python compare_preprocessing.py    # ~17 min
+conda run -n cedalion python -m drift_glm.analysis.flex_basis               # ~20 min
+conda run -n cedalion python -m drift_glm.analysis.detection                # ~60–75 min (Fits über ALLE Kanäle)
+conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing    # ~17 min
 
 # 6) Auswertungs-Abbildungen + Ergebnistabellen erzeugen
-conda run -n cedalion python sweep_report.py
+conda run -n cedalion python -m drift_glm.reports.sweep_report
 ```
 
 **Stufe 2 – die realen Daten.** Sie liegen als SNIRF unter
@@ -838,15 +842,15 @@ conda run -n cedalion python sweep_report.py
 
 ```bash
 # Inventar: prüft die Angaben aus dem Paper gegen die Dateien
-conda run -n cedalion python realdata.py
+conda run -n cedalion python -m drift_glm.data.realdata
 
 # Hauptauswertung (3864 Auswertungen, ~3,6 Stunden)
-conda run -n cedalion python realglm.py
-cat results/realglm_progress.txt        # Fortschritt
+conda run -n cedalion python -m drift_glm.analysis.realglm
+cat results/logs/realglm_progress.txt        # Fortschritt
 
 # Abbildungen (die Kopf-Karte rechnet ~8 min nach; "quick" lässt sie weg)
-conda run -n cedalion python realglm_report.py
-conda run -n cedalion python realglm_report.py quick
+conda run -n cedalion python -m drift_glm.reports.realglm_report
+conda run -n cedalion python -m drift_glm.reports.realglm_report quick
 ```
 
 *(Hinweis: Der Datensatz enthält zu jeder Aufnahme eine von den Autoren vorgefilterte
@@ -882,18 +886,18 @@ zuvor als „noch offen" hier stand, ist umgesetzt:
   Ruhedaten gemischt. Kopfmodell durchgängig **ICBM152**.
 - **Das GLM-Ergebnis geht zurück auf den Kortex** – die geschätzte HRF, das Residuum und
   beides zusammen. Damit ist erstmals messbar, ob die Aktivierung am **richtigen Ort**
-  landet (`imageglm.py`, Abb. 20/21).
+  landet (`drift_glm/analysis/imageglm.py`, Abb. 20/21).
 - **Ein dritter Datensatz mit echten Short Channels**: Multisubject-Fingertapping,
   5 Probanden, 8 Kanäle bei 7,1 mm. Damit ist die Short-Channel-Regression kein reiner
   Simulationsbefund mehr, und weil beide Hände getrennt getappt wurden, gibt es eine
   **überprüfbare anatomische Vorhersage** ohne Ground Truth: kontralateral muss stärker
-  sein (`msglm.py`, Abb. 22).
+  sein (`drift_glm/analysis/msglm.py`, Abb. 22).
 - **Die Global-Component-Subtraktion** als eigene Achse neben dem Regressor in der
   Designmatrix (Abb. 23).
 
 **Was offen bleibt – der Bildraum für den 48-Kanal-Datensatz.** Dessen Optodendatei enthält
 keine Landmarken (Nasenwurzel, Ohrpunkte). Eine landmarkenfreie Anpassung legt die Optoden
-zwar im Median 2,2 mm auf die Kopfhaut (`coregister.py`), aber sie kann **links und rechts
+zwar im Median 2,2 mm auf die Kopfhaut (`drift_glm/data/coregister.py`), aber sie kann **links und rechts
 nicht unterscheiden** – eine Kopfhaut ist dafür zu symmetrisch. Und die
 Sensitivitätsmatrix selbst müsste über eine Photonensimulation berechnet werden, die eine
 CUDA-GPU braucht (hier nicht vorhanden). Beides löst sich, sobald von der Betreuung eine

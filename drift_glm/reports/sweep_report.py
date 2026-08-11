@@ -7,7 +7,7 @@ Erzeugt PNGs in figures/:
    9) HbO/HbR-Plausibilitaet (rueckgew. Ratio je Familie)
   10) Motion-Correction-Achse: Bias UND RMSE (der RMSE allein taeuscht)
 
-Aufruf: conda run -n cedalion python sweep_report.py
+Aufruf: conda run -n cedalion python -m drift_glm.reports.sweep_report
 """
 from __future__ import annotations
 from pathlib import Path
@@ -17,9 +17,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from drift_glm import paths
 
-RES = Path(__file__).parent / "results"
-OUT = Path(__file__).parent / "figures"
+RES = paths.RESULTS
+OUT = paths.FIGURES
 
 ORDER = ["none", "poly:1", "poly:2", "poly:3", "poly:4", "poly:5",
          "dct:0.005", "dct:0.01", "dct:0.02",
@@ -96,7 +97,7 @@ def _write_tables(df):
 
 
 def main():
-    OUT.mkdir(exist_ok=True)
+    paths.ensure()
     df_all = pd.read_csv(RES / "sweep_summary.csv")
     # Seit v4 ist die Motion Correction eine eigene Achse. Die Familien-/Konstellations-
     # Abbildungen zeigen EINE Stufe (die erste, per Konvention die driftneutrale

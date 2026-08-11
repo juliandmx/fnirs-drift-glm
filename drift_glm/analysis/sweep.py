@@ -24,8 +24,8 @@ BETREUUNGSHINWEISE, die hier umgesetzt sind:
     DOT-Daten, deren Montage Short-Channels enthaelt.
 
 Aufruf:
-    conda run -n cedalion python sweep.py pilot   # kleiner Test + Timing
-    conda run -n cedalion python sweep.py full     # voller Sweep
+    conda run -n cedalion python -m drift_glm.analysis.sweep pilot   # kleiner Test + Timing
+    conda run -n cedalion python -m drift_glm.analysis.sweep full     # voller Sweep
 """
 from __future__ import annotations
 
@@ -44,11 +44,12 @@ import cedalion.data
 import cedalion.models.glm as glm
 from cedalion import units
 
-import pipeline as pl
-import preprocess as prep
-import shortchannel as sc
+from drift_glm.core import pipeline as pl
+from drift_glm.core import preprocess as prep
+from drift_glm.core import shortchannel as sc
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
+RESULTS = paths.RESULTS
 HRF_REG = "HRF Stim"
 
 
@@ -258,7 +259,7 @@ def _write_progress(done, total, t0, timings, last):
     el = time.time() - t0
     med = float(np.median(timings)) if timings else 0.0
     eta = med * (total - done)
-    (RESULTS / "sweep_progress.txt").write_text(
+    (paths.LOGS / "sweep_progress.txt").write_text(
         f"Fortschritt: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
@@ -269,7 +270,7 @@ def _write_progress(done, total, t0, timings, last):
 
 
 def run(cfg: dict):
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     t0 = time.time()
     rec = cedalion.data.get_nn22_resting_state()   # einmal laden
     # Erste Haelfte der Preprocessing-Kette (Rohamplitude -> OD) haengt weder vom
@@ -404,7 +405,7 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     ds = xr.Dataset(dict(bhat=bhat, bias=bias, var=var, rmse=rmse, beta_true_map=bt))
     ds.attrs["beta_true_peak_hbo"] = beta_true["HbO"]
     ds.attrs["beta_true_peak_hbr"] = beta_true["HbR"]
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     ds.to_netcdf(RESULTS / "sweep_per_channel.nc")
 
     # Tidy-Zusammenfassung (ueber Kanaele aggregiert) + Plausibilitaet

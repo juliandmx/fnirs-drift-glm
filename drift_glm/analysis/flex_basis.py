@@ -16,8 +16,8 @@ Fenster 180 s, Konstellation baseline. Ausgabe: results/flex_basis_summary.csv
 und Abbildungen 20/21 in figures/.
 
 Aufruf:
-    conda run -n cedalion python flex_basis.py        # voll
-    conda run -n cedalion python flex_basis.py test    # Mini-Test (Code-Pfade)
+    conda run -n cedalion python -m drift_glm.analysis.flex_basis        # voll
+    conda run -n cedalion python -m drift_glm.analysis.flex_basis test    # Mini-Test (Code-Pfade)
 """
 from __future__ import annotations
 
@@ -36,11 +36,12 @@ import cedalion.data
 import cedalion.models.glm as glm
 from cedalion import units
 
-import pipeline as pl
-from sweep import drift_dm   # Driftfamilien wiederverwenden
+from drift_glm.core import pipeline as pl
+from drift_glm.analysis.sweep import drift_dm   # Driftfamilien wiederverwenden
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
-OUT = Path(__file__).parent / "figures"
+RESULTS = paths.RESULTS
+OUT = paths.FIGURES
 
 FAMILIES = ["none", "poly:1", "poly:3", "poly:5", "dct:0.01",
             "legendre:3", "bspline:5", "butter:0.01"]
@@ -56,10 +57,10 @@ def _config(mode):
 
 
 def _progress(done, total, t0, last):
-    """Live-Fortschrittsdatei (nach jedem Fit) -> results/flex_basis_progress.txt."""
+    """Live-Fortschrittsdatei (nach jedem Fit) -> results/logs/flex_basis_progress.txt."""
     el = time.time() - t0
     eta = (el / done) * (total - done) if done else 0.0
-    (RESULTS / "flex_basis_progress.txt").write_text(
+    (paths.LOGS / "flex_basis_progress.txt").write_text(
         f"flex_basis: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
@@ -68,8 +69,7 @@ def _progress(done, total, t0, last):
 
 
 def main(mode="full"):
-    RESULTS.mkdir(exist_ok=True)
-    OUT.mkdir(exist_ok=True)
+    paths.ensure()
     families, seeds, nch = _config(mode)
     rec = cedalion.data.get_nn22_resting_state()
     # Flexible HRF-Basis: Gaussfunktionen alle 2 s ueber 0..20 s nach Stimulus-Onset.

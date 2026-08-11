@@ -12,7 +12,7 @@ Schaetzung. Letztere folgt im eigentlichen Sweep (Schleife ueber mehrere Seeds).
 Siehe pipeline.py fuer die gemeinsame Pipeline.
 
 Aufruf:
-    conda run -n cedalion python demo_recovery.py
+    conda run -n cedalion python -m drift_glm.reports.demo_recovery
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 import cedalion.models.glm as glm
-import pipeline as pl
+from drift_glm.core import pipeline as pl
 
 
 def main() -> None:

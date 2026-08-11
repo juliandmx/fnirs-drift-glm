@@ -32,7 +32,7 @@ Die CPU-Alternative `compute_fluence_nirfaster` braucht das Plugin `nirfasteruff
 nicht installiert ist. Dieses Modul liefert deshalb die registrierten Positionen und ein
 lauffaehiges Skript (`fluence_script`), nicht die Matrix.
 
-Aufruf:  conda run -n cedalion python coregister.py
+Aufruf:  conda run -n cedalion python -m drift_glm.data.coregister
 """
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ from scipy.spatial import KDTree
 
 import cedalion.nirs
 
-import imagespace as ims
-import realdata as rd
+from drift_glm.core import imagespace as ims
+from drift_glm.data import realdata as rd
 
 
 def _rot(a: np.ndarray) -> np.ndarray:
@@ -143,7 +143,7 @@ FLUENCE_SCRIPT = '''\
 # Auf dieser Maschine nicht ausfuehrbar (pmcx ohne GPU, nirfasteruff nicht installiert).
 # Laufzeit-Groessenordnung: 32 Optoden x 1e8 Photonen, also mehrere GPU-Stunden.
 import cedalion.dot as dot
-import coregister, realdata as rd
+from drift_glm.data import coregister, realdata as rd
 
 rec = rd.load(rd.find_files()[0])
 geo3d = coregister.registered_geo3d(rec)          # Positionen aus diesem Modul

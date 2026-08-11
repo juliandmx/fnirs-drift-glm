@@ -24,7 +24,7 @@ def _fake_conc(nt=240, nch=3):
 
 def test_bspline_partition_of_unity():
     """B-Spline-Drift: 6 Regressoren, geklemmte Basis bildet Zerlegung der Eins."""
-    import sweep
+    from drift_glm.analysis import sweep
     dm = sweep._bspline_dm(_fake_conc(), 6)
     common = dm.common
     assert common.sizes["regressor"] == 6
@@ -36,7 +36,7 @@ def test_bspline_partition_of_unity():
 
 def test_drift_family_dispatch():
     """drift_dm liefert fuer jede Familie eine DesignMatrix mit erwartetem Praefix."""
-    import sweep
+    from drift_glm.analysis import sweep
     conc = _fake_conc()
     checks = {
         "poly:2": "Drift ", "legendre:3": "Drift LP ", "bspline:5": "Drift BS ",
@@ -55,7 +55,7 @@ def test_filter_families_return_cutoffs_and_no_drift():
     beides gesetzt -> Bandpass. Die Familien duerfen keine Driftregressoren liefern,
     sonst waere gefiltert UND modelliert (Betreuungsvorgabe: entweder/oder).
     """
-    import sweep
+    from drift_glm.analysis import sweep
     conc = _fake_conc()
     expected = {
         "butter:0.01": (0.01, 0.0),          # Hochpass
@@ -81,20 +81,20 @@ def rec():
 @pytest.fixture(scope="module")
 def pre(rec):
     """Preprocessing einmal je Testlauf -- Default-Motion-Stufe."""
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
     return prep.run(rec)
 
 
 @pytest.fixture(scope="module")
 def stage(rec):
     """Erste Haelfte der Kette (Rohamplitude -> OD), einmal je Testlauf."""
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
     return prep.to_od_stage(rec)
 
 
 @pytest.fixture(scope="module")
 def P(stage):
-    import pipeline as pl
+    from drift_glm.core import pipeline as pl
     return pl.build(window_s=90.0, stage=stage, seed=0)
 
 
@@ -107,7 +107,7 @@ def test_od_roundtrip_is_exact(rec):
     richtigen Amplitude bewertet wird: korrigiert wird auf OD, bewertet auf der
     daraus zurueckgerechneten Amplitude (Betreuungsvorgabe).
     """
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
     amp = rec["amp"].pint.dequantify().pint.quantify("V")
     amp, _ = prep.gate_positive(amp)
     od, baseline = prep.to_od(amp)
@@ -125,7 +125,7 @@ def test_wavelet_preserves_drift_band_but_tddr_does_not(rec):
     Diese Asymmetrie ist der Grund, warum die Motion Correction eine eigene Sweep-Achse
     ist und nicht stillschweigend fest verdrahtet wird.
     """
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
     amp = rec["amp"].pint.dequantify().pint.quantify("V")
     amp, _ = prep.gate_positive(amp)
     # Kanal-Subset: der Effekt ist deutlich, ein voller TDDR-Lauf waere fuer einen
@@ -138,7 +138,7 @@ def test_wavelet_preserves_drift_band_but_tddr_does_not(rec):
 
 def test_quality_masks_drop_dark_and_saturated(rec, pre):
     """mean_amp verwirft dunkle/gesaettigte Kanaele, SNR=3 ist dagegen permissiv."""
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
 
     def n_keep(mask):
         keep = mask.all(dim=[d for d in mask.dims if d != "channel"])
@@ -155,7 +155,7 @@ def test_quality_masks_drop_dark_and_saturated(rec, pre):
 
 def test_dark_noise_floor_justifies_threshold(pre):
     """Die Untergrenze 1e-3 V liegt weit ueber dem gemessenen Rauschboden."""
-    import preprocess as prep
+    from drift_glm.core import preprocess as prep
     nf = prep.dark_noise_floor(pre.aux)
     assert nf is not None and nf > 0
     assert 1e-3 / nf > 10        # Vorgabe liegt mind. eine Groessenordnung darueber
@@ -188,7 +188,7 @@ def test_injection_survives_od_roundtrip_without_correction(stage):
     unveraendert zurueckliefern. Waere das nicht so, waere jede spaeter gemessene
     Abweichung ein Artefakt der Umrechnung statt ein Effekt der Korrektur.
     """
-    import pipeline as pl
+    from drift_glm.core import pipeline as pl
     P = pl.build(window_s=90.0, stage=stage, motion_method="none", seed=0)
     got = (P.conc_syn - P.conc).transpose(*P.activation.dims)
     want = P.activation
@@ -206,7 +206,7 @@ def test_tddr_attenuates_the_injected_hrf(stage):
     """
     from dataclasses import replace
 
-    import pipeline as pl
+    from drift_glm.core import pipeline as pl
 
     # Kanal-Subset: der Effekt ist gross und eindeutig, ein voller TDDR-Lauf waere
     # fuer einen Smoke-Test zu teuer (~3 min je Build).

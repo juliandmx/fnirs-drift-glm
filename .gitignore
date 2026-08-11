@@ -8,10 +8,9 @@ pysnirf2.log
 BESPRECHUNG.md
 UMSETZUNGSPLAN.md
 
-# Zwischenstaende der Laeufe: Testausgaben, Live-Fortschritt, Nachtlauf-Logs.
-# Nicht versioniert, weil sie sich bei jedem Lauf aendern und keine Ergebnisse sind.
-# (results/sweep_progress.txt ist historisch bereits versioniert und bleibt es.)
+# Zwischenstaende der Laeufe. In results/ liegen nur Ergebnisse, in results/logs/ die
+# Live-Fortschrittsdateien und Nachtlauf-Logs -- die aendern sich bei jedem Lauf.
+# (sweep_progress.txt war historisch versioniert; mit dem Umzug nach logs/ ist es
+#  ausgetragen, weil es nie ein Ergebnis war.)
 results/*_summary_test.csv
-results/*_progress.txt
-results/run_v5*.log
-results/.run_v5.lock
+results/logs/

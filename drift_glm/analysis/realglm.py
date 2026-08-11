@@ -27,8 +27,8 @@ Kanaele (kuerzester Abstand 25.9 mm) noch Bewegungs-Aux -- `short_*` und `motion
 hier nicht anwendbar und bleiben Simulationsbefunde.
 
 Aufruf:
-    conda run -n cedalion python realglm.py test    # 2 Probanden, 2 Familien (Timing)
-    conda run -n cedalion python realglm.py         # voll (Nachtlauf)
+    conda run -n cedalion python -m drift_glm.analysis.realglm test    # 2 Probanden, 2 Familien (Timing)
+    conda run -n cedalion python -m drift_glm.analysis.realglm         # voll (Nachtlauf)
 """
 
 from __future__ import annotations
@@ -49,11 +49,12 @@ from statsmodels.stats.multitest import multipletests
 import cedalion.models.glm as glm
 from cedalion import units
 
-import pipeline as pl
-import realdata as rd
-from sweep import drift_dm
+from drift_glm.core import pipeline as pl
+from drift_glm.data import realdata as rd
+from drift_glm.analysis.sweep import drift_dm
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
+RESULTS = paths.RESULTS
 HRF_REG = "HRF Tapping"
 ALPHA = 0.05          # FDR-Niveau q
 
@@ -93,7 +94,7 @@ N_JOBS = 5
 def _progress(done, total, t0, last):
     el = time.time() - t0
     eta = (el / done) * (total - done) if done else 0.0
-    (RESULTS / "realglm_progress.txt").write_text(
+    (paths.LOGS / "realglm_progress.txt").write_text(
         f"realglm: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
@@ -175,7 +176,7 @@ def split_run_reliability(beta_by_run: dict[str, dict[str, xr.DataArray]], chrom
 
 
 def main(mode="full"):
-    RESULTS.mkdir(exist_ok=True)
+    paths.ensure()
     files = rd.find_files()
     if not files:
         print(f"Keine Daten in {rd.DATA_DIR}"); return
@@ -215,7 +216,8 @@ def main(mode="full"):
     #     dabei an cedalion-Objekten. Deshalb wird der Worker ueber importlib aus dem
     #     MODUL geholt -- so wird er per Referenz gepickelt, und die Kinder importieren
     #     ihn selbst.
-    worker = importlib.import_module(__spec__.name if __spec__ else "realglm").first_level
+    _self = __spec__.name if __spec__ else "drift_glm.analysis.realglm"
+    worker = importlib.import_module(_self).first_level
     n_jobs = min(N_JOBS, len(files))
     print(f"Parallel ueber Dateien: {n_jobs} Prozesse (loky)", flush=True)
     for fam in families:

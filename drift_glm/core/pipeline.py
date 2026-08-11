@@ -54,9 +54,9 @@ import cedalion.models.glm as glm
 import cedalion.sim.synthetic_hrf as synhrf
 from cedalion import units
 
-import imagespace as ims
-import preprocess as prep
-import shortchannel as sc
+from drift_glm.core import imagespace as ims
+from drift_glm.core import preprocess as prep
+from drift_glm.core import shortchannel as sc
 
 
 @dataclass
@@ -245,7 +245,7 @@ def build(
     # kleiner als die eines 3-cm-Kanals. Das Nullen von Hand ist dann nicht nur
     # unnoetig, sondern falsch -- es wuerde einen real vorhandenen (kleinen) Anteil
     # unterdruecken und den Short-Channel-Regressor besser aussehen lassen, als er ist.
-    # Wie klein der Restanteil tatsaechlich ist, misst `python pipeline.py leakage`.
+    # Wie klein der Restanteil tatsaechlich ist, misst `python -m drift_glm.core.pipeline leakage`.
     if inject_long_only is None:
         inject_long_only = (activation_space == "channel")
     if inject_long_only:

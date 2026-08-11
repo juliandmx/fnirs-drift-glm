@@ -12,8 +12,8 @@ Metriken je Familie/chromo (Mittel ueber Seeds): Sensitivitaet (TPR), Spezifitae
 Praezision, Youden-J, Zahl detektierter Kanaele. Fenster 180 s, Konstellation baseline.
 
 Aufruf:
-    conda run -n cedalion python detection.py        # voll (alle Kanaele, langsam)
-    conda run -n cedalion python detection.py test    # Mini-Test (Kanal-Subset)
+    conda run -n cedalion python -m drift_glm.analysis.detection        # voll (alle Kanaele, langsam)
+    conda run -n cedalion python -m drift_glm.analysis.detection test    # Mini-Test (Kanal-Subset)
 """
 from __future__ import annotations
 
@@ -34,11 +34,12 @@ import cedalion.data
 import cedalion.models.glm as glm
 from cedalion import units
 
-import pipeline as pl
-from sweep import drift_dm
+from drift_glm.core import pipeline as pl
+from drift_glm.analysis.sweep import drift_dm
+from drift_glm import paths
 
-RESULTS = Path(__file__).parent / "results"
-OUT = Path(__file__).parent / "figures"
+RESULTS = paths.RESULTS
+OUT = paths.FIGURES
 
 FAMILIES = ["none", "poly:1", "poly:3", "dct:0.01", "legendre:3", "bspline:5"]
 WINDOW = 180.0
@@ -48,10 +49,10 @@ ACTIVE_THR = 0.1    # Ground-Truth-aktiv: |beta_true| > 10% des Peaks
 
 
 def _progress(done, total, t0, last):
-    """Live-Fortschrittsdatei (nach jedem Fit) -> results/detection_progress.txt."""
+    """Live-Fortschrittsdatei (nach jedem Fit) -> results/logs/detection_progress.txt."""
     el = time.time() - t0
     eta = (el / done) * (total - done) if done else 0.0
-    (RESULTS / "detection_progress.txt").write_text(
+    (paths.LOGS / "detection_progress.txt").write_text(
         f"detection: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
@@ -87,8 +88,7 @@ def _metrics(pvals, truth_active):
 
 
 def main(mode="full"):
-    RESULTS.mkdir(exist_ok=True)
-    OUT.mkdir(exist_ok=True)
+    paths.ensure()
     families = ["poly:3", "none"] if mode == "test" else FAMILIES
     seeds = [0] if mode == "test" else SEEDS
     rec = cedalion.data.get_nn22_resting_state()

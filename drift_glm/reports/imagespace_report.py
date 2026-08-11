@@ -4,16 +4,15 @@ Getrennt von `sweep_report.py` und `realglm_report.py`, weil hier eine andere Da
 zugrunde liegt: `results/imageglm_summary.csv` und `results/msglm_summary.csv`.
 
 Aufruf:
-    conda run -n cedalion python imagespace_report.py            # alles, was da ist
-    conda run -n cedalion python imagespace_report.py hrf        # nur Abb. 19
-    conda run -n cedalion python imagespace_report.py cortex     # nur Abb. 20
-    conda run -n cedalion python imagespace_report.py tables     # nur Abb. 21-23
+    conda run -n cedalion python -m drift_glm.reports.imagespace_report            # alles, was da ist
+    conda run -n cedalion python -m drift_glm.reports.imagespace_report hrf        # nur Abb. 19
+    conda run -n cedalion python -m drift_glm.reports.imagespace_report cortex     # nur Abb. 20
+    conda run -n cedalion python -m drift_glm.reports.imagespace_report tables     # nur Abb. 21-23
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
@@ -21,9 +20,10 @@ import matplotlib.pyplot as plt   # noqa: E402
 import numpy as np                # noqa: E402
 import pandas as pd               # noqa: E402
 
-BASE = Path(__file__).parent
-RESULTS = BASE / "results"
-FIGURES = BASE / "figures"
+from drift_glm import paths       # noqa: E402
+
+RESULTS = paths.RESULTS
+FIGURES = paths.FIGURES
 
 HBO_COLOR, HBR_COLOR = "#c44e52", "#4c72b0"
 PROJ_LABEL = {"hrf": "geschätzte HRF", "residual": "Residuum",
@@ -45,12 +45,12 @@ def fig_hrf_per_channel(window_s: float = 368.0, family: str = "dct:0.02",
     und zum Kontrast drei ohne Aktivierung: dort MUSS die Schaetzung flach sein, und wenn
     sie es nicht ist, ist das ein Falsch-Positiv-Beleg, den kein Mittelwert sichtbar macht.
     """
-    import imageglm as ig
-    import pipeline as pl
-    import shortchannel as sc
+    from drift_glm.analysis import imageglm as ig
+    from drift_glm.core import pipeline as pl
+    from drift_glm.core import shortchannel as sc
     import cedalion.models.glm as glm
     from cedalion import units
-    from sweep import drift_dm
+    from drift_glm.analysis.sweep import drift_dm
 
     P = pl.build(window_s=window_s, seed=seed, activation_space="image")
     ts = P.conc_syn
@@ -128,9 +128,9 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
     je Projektion eine Spalte, je Hemisphaere eine Zeile.
     """
     import cedalion.vis.anatomy as vis
-    import imageglm as ig
-    import imagespace as ims
-    import pipeline as pl
+    from drift_glm.analysis import imageglm as ig
+    from drift_glm.core import imagespace as ims
+    from drift_glm.core import pipeline as pl
 
     P = pl.build(window_s=window_s, seed=seed, activation_space="image")
     head = ims.head()
@@ -196,7 +196,7 @@ def fig_image_families(csv: str = "imageglm_summary.csv"):
     """
     path = RESULTS / csv
     if not path.exists():
-        print(f"(uebersprungen: {path} fehlt -- 'python imageglm.py' laufen lassen)")
+        print(f"(uebersprungen: {path} fehlt -- 'python -m drift_glm.analysis.imageglm' laufen lassen)")
         return
     df = pd.read_csv(path)
     hbo = df[df.chromo == "HbO"]
@@ -254,7 +254,7 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
     """Abb. 22 -- kontralaterale Kontrolle; Abb. 23 -- Systemik-Achse."""
     path = RESULTS / csv
     if not path.exists():
-        print(f"(uebersprungen: {path} fehlt -- 'python msglm.py' laufen lassen)")
+        print(f"(uebersprungen: {path} fehlt -- 'python -m drift_glm.analysis.msglm' laufen lassen)")
         return
     df = pd.read_csv(path)
     d = df[df.chromo == "HbO"]
@@ -351,7 +351,7 @@ def _try(label, fn, *a, **kw):
 
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
-    FIGURES.mkdir(exist_ok=True)
+    paths.ensure()
     ok = True
     if what in ("all", "tables"):        # zuerst: billig und haengt nur an den CSVs
         ok &= _try("Abb. 21", fig_image_families)

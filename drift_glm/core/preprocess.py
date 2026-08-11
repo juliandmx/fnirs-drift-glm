@@ -95,7 +95,7 @@ MOTION_METHODS = ("none", "tddr", "wavelet", "tddr+wavelet")
 # was die Driftregressoren modellieren sollen, und kollidiert damit mit dem
 # Betreuungshinweis vom 2026-07-11 (bei Drift-Modellierung nicht hochpassfiltern).
 # Wavelet ist im Driftband neutral (100.0 %) und entfernt trotzdem die Spikes.
-# Nachpruefbar mit `band_power_ratio` bzw. `python preprocess.py tddr+wavelet`.
+# Nachpruefbar mit `band_power_ratio` bzw. `python -m drift_glm.core.preprocess tddr+wavelet`.
 DEFAULT_MOTION = "wavelet"
 
 # Die uebrigen Vorverarbeitungs-Parameter -- an EINER Stelle, damit sie nicht
