@@ -210,6 +210,87 @@ def calibrate_to_channel_peak(od_channel: xr.DataArray, geo3d, target_uM: float 
     return target_uM / peak
 
 
+#: Memo fuer `ground_truth`. Der Vorwaertsweg ist teuer -- `compute_stacked_sensitivity`
+#: baut bei nn22 eine Matrix (2 x 567) x (2 x 25 000), also ~450 MB -- haengt aber nur von
+#: Montage, Blob-Parametern und Kanalmenge ab. Im Sweep wird `pipeline.build` ~1800 mal
+#: aufgerufen; ohne diesen Memo waere der Vorwaertsweg der Kostentreiber des ganzen Laufs.
+_GT_MEMO: dict = {}
+
+
+def ground_truth(
+    dataset: str,
+    channels,
+    geo3d,
+    *,
+    labels=MOTOR_LANDMARKS,
+    spatial_scale_mm: float = 20.0,
+    hbr_scale: float = -0.4,
+    target_uM: float = 0.6,
+    separate_trial_types: bool = False,
+    dpf: float = 6.0,
+    model: str = HEAD_MODEL,
+) -> dict:
+    """Ground Truth im Bildraum, plus ihr Abbild im Kanalraum.
+
+    Das ist der Kern der Betreuungsvorgabe vom 2026-08-05: die Aktivierung wird im
+    Bildraum bei C3/C4 erzeugt und von dort in den Kanalraum getragen -- nicht umgekehrt.
+
+    Rueckgabe (dict):
+        `beta_true_map` -- (channel, chromo) in µM, dequantifiziert. Der Peak der
+            eingemischten Aktivierung je Kanal. Weil der HRF-Regressor auf Peak 1 normiert
+            ist, ist das exakt der GLM-Koeffizient, den ein fehlerfreies Verfahren
+            zurueckgeben muesste.
+        `img`         -- (vertex, chromo[, trial_type]) in µM: die Wahrheit auf dem
+            Kortex. Nur sie ist die eigentliche Ground Truth; `beta_true_map` ist ihr
+            Schatten im Kanalraum.
+        `chan_od`     -- (channel, wavelength[, trial_type]): dasselbe Muster in Optical
+            Density, also die Groesse, die tatsaechlich eingemischt wird.
+        `seeds`       -- {Landmarke: Vertexindex}, fuer den Lokalisationsfehler.
+        `factor`      -- der Kalibrierfaktor (s. `calibrate_to_channel_peak`).
+
+    `separate_trial_types=False` fasst C3 und C4 zu EINEM Regressor zusammen (bilaterale
+    Aktivierung, ein gemeinsamer Zeitverlauf). Das ist der Default, weil der ganze
+    Driftfamilien-Vergleich auf genau einem HRF-Regressor aufsetzt. Mit `True` bleiben die
+    beiden Seiten getrennt -- das ist die Variante fuer die Lateralisierungsfrage, die im
+    Kanalraum grundsaetzlich nicht beantwortbar ist (fehlende Landmarken im realen
+    Datensatz, siehe BESPRECHUNG Abb. 17).
+    """
+    labels = tuple(labels)
+    ch = tuple(str(c) for c in np.atleast_1d(channels))
+    key = (dataset, model, labels, float(spatial_scale_mm), float(hbr_scale),
+           float(target_uM), bool(separate_trial_types), float(dpf), ch)
+    if key in _GT_MEMO:
+        return _GT_MEMO[key]
+
+    hd = head(model)
+    img = spatial_activation(hd, labels, spatial_scale=spatial_scale_mm * units.mm,
+                             intensity_scale=1.0 * units.micromolar,
+                             hbr_scale=hbr_scale)
+    if not separate_trial_types:
+        # Bilateral als EIN Regressor: die beiden Bloebe ueberlappen nicht (verschiedene
+        # Hemisphaeren), die Summe ist also einfach das gemeinsame raeumliche Muster.
+        img = img.sum("trial_type")
+
+    Ab = brain_adot(adot(dataset, model), channels=ch)
+    chan_od = to_channel_space(Ab, img)
+
+    factor = calibrate_to_channel_peak(chan_od, geo3d, target_uM=target_uM, dpf=dpf)
+    img, chan_od = img * factor, chan_od * factor
+
+    # Kanalraum-Wahrheit in Konzentration: exakt der Peak, den das GLM schaetzen soll.
+    ts = chan_od.expand_dims("time").assign_coords(time=[0.0])
+    ts.time.attrs["units"] = "second"
+    dpf_da = xr.DataArray([dpf] * ts.sizes["wavelength"], dims="wavelength",
+                          coords={"wavelength": ts.wavelength})
+    beta = cedalion.nirs.cw.od2conc(ts, geo3d, dpf_da, spectrum="prahl")
+    beta = beta.isel(time=0, drop=True).pint.to("uM").pint.dequantify()
+
+    out = dict(beta_true_map=beta, img=img.pint.to("uM"), chan_od=chan_od,
+               seeds={lab: seed_vertex(hd, lab) for lab in labels}, factor=factor)
+    _GT_MEMO[key] = out
+    return out
+
+
 def c_meas_of(od: xr.DataArray) -> xr.DataArray:
     """Messvarianz je Kanal x Wellenlaenge als Rauschproxy fuer die Rekonstruktion.
 
