@@ -53,6 +53,7 @@ fnirs-drift-glm/              (dieses Repository — als Git-Repo neben ../cedal
       flex_basis.py             Formtreue mit flexibler HRF-Vorlage
       detection.py              Signifikanz je Kanal + FDR gegen die Ground Truth
       compare_preprocessing.py  Vorverarbeitungs-Varianten gegen die β-Rückgewinnung
+      recon_check.py            rauschfreie Kontrolle des Bildraum-Kreises + Regularisierung
     reports/                  Abbildungen und Tabellen AUS den Ergebnissen
       sweep_report.py           Abb. 6–10 + results/tables.md
       realglm_report.py         Abb. 15–18
@@ -98,7 +99,7 @@ $M drift_glm.analysis.sweep pilot           # alle Code-Pfade, ~5 min
 $M drift_glm.analysis.flex_basis test       # ~1 min
 $M drift_glm.analysis.detection test        # ~1 min
 $M drift_glm.core.imagespace                # Selbsttest: Adot, C3/C4-Seeds, Vorwärtsmodell
-$M drift_glm.core.imagespace check          # Regularisierung empirisch prüfen (rauschfrei)
+$M drift_glm.analysis.recon_check           # Regularisierung empirisch prüfen (rauschfrei)
 $M drift_glm.core.pipeline leakage          # wie viel HRF landet in den kurzen Kanälen?
 $M drift_glm.data.multisubject              # Inventar der 5 Probanden
 $M drift_glm.data.coregister                # Khan-Montage: Registrierung + Blocker-Bericht

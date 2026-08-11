@@ -602,7 +602,7 @@ r = 0,80 und 11,9 mm. *Das ist keine Feinheit der Auswertung, sondern die Voraus
 dafür, dass sie überhaupt etwas misst.*
 
 **Ergebnis C2 – Die Regularisierung entscheidet mehr als das Rauschmodell.** Rauschfrei
-geprüft (`python -m drift_glm.core.imagespace check`) hängt der Ortsfehler praktisch nur an einem
+geprüft (`python -m drift_glm.analysis.recon_check`) hängt der Ortsfehler praktisch nur an einem
 Parameter, `alpha_spatial`; der zweite (`alpha_meas`) verschiebt ihn kaum. Auf der dünnen
 28-Kanal-Montage:
 
