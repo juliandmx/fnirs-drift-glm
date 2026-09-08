@@ -330,11 +330,14 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                 # vom OOM-Killer beendet (12.08. bei 81/84, erneut 08.09.) -- Threads
                 # teilen sich den Speicher, Prozesse nicht.
                 jobs = [(f, h) for f in files for h in (None, *halves_wanted)]
-                # max_jobs=2 statt -1: jeder Kanal-Fit haelt transiente Kopien der
-                # (grossen) Designmatrix; mit 4 Threads wurde der Prozess bei 5,1 GB
-                # anon-rss vom OOM-Killer beendet (dmesg 08.09.), 2 Threads bleiben
-                # unter ~3 GB. Waehrend des Laufs nichts anderes Grosses starten.
-                nj, mj = (1, 2) if nm == "ar_irls" else (n_jobs, 1)
+                # AR-IRLS strikt sequenziell (1 Prozess, 1 Kanal-Thread): EIN einzelner
+                # Kanal-Fit auf der dct:0.02-Designmatrix (122 Spalten x 23 239 Samples)
+                # belegt gemessen 2,9 GB (Peak-RSS, 08.09.; unabhaengig von den
+                # GC-Schwellen, also echt gehaltener Speicher in statsmodels' IRLS).
+                # Auf der 7,8-GB-Maschine ist damit genau ein Fit gleichzeitig sicher --
+                # 3 Prozesse, 4 Threads und 2 Threads wurden nacheinander vom
+                # OOM-Killer beendet. Waehrend des Laufs nichts anderes Grosses starten.
+                nj, mj = (1, 1) if nm == "ar_irls" else (n_jobs, 1)
                 res = Parallel(n_jobs=nj, backend="loky")(
                     delayed(worker)(prepped[f][0], prepped[f][1], prepped[f][2],
                                     fam, sysm, nm, h, mj) for f, h in jobs)
