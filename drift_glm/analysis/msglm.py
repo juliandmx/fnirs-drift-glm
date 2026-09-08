@@ -220,7 +220,7 @@ def lateralisation(mean_beta: xr.DataArray, geo3d, chromo="HbO") -> dict:
     return out
 
 
-def _fit_one(conc, geo3d, stim, family, systemic, noise_model, half):
+def _fit_one(conc, geo3d, stim, family, systemic, noise_model, half, max_jobs=1):
     """Ein Proband, ein Fit. Ausgelagert, damit joblib ihn per Referenz picklen kann.
 
     Die Vorverarbeitung passiert bewusst NICHT hier: sie haengt weder an der Familie noch
@@ -228,7 +228,8 @@ def _fit_one(conc, geo3d, stim, family, systemic, noise_model, half):
     sie je Zelle laufen, waere sie bei 144 Zellen der Kostentreiber -- dieselbe Lehre wie
     in `realglm.py`.
     """
-    return first_level(conc, geo3d, stim, family, systemic, noise_model, half=half)
+    return first_level(conc, geo3d, stim, family, systemic, noise_model, half=half,
+                       max_jobs=max_jobs)
 
 
 def _out_path(mode: str) -> Path:
@@ -288,7 +289,24 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
               f"Vertices, alpha_meas={recon.alpha_meas:.3g}, "
               f"alpha_spatial={recon.alpha_spatial}", flush=True)
 
-    done, recs = 0, []
+    # Wiederaufnahme: bereits gerechnete Zellen aus einer frueheren (z.B. vom OOM-Killer
+    # beendeten) Tabelle uebernehmen statt sie neu zu rechnen. Der Volllauf am 12.08.
+    # brach bei 81/84 Zellen ab -- ohne Wiederaufnahme wuerde jeder Neustart die komplette
+    # OLS-Haelfte wiederholen, nur um an die 3 fehlenden AR-IRLS-Zellen zu kommen.
+    # Neu rechnen erzwingen: die Summary-CSV loeschen oder umbenennen.
+    out = _out_path(mode)
+    done_cells, recs = set(), []
+    if out.exists():
+        prev = pd.read_csv(out)
+        if {"family", "systemic", "noise_model"} <= set(prev.columns):
+            done_cells = {(r.family, r.systemic, r.noise_model) for r in
+                          prev[["family", "systemic", "noise_model"]]
+                          .drop_duplicates().itertuples(index=False)}
+            recs = prev.to_dict("records")
+            print(f"Resume: {len(done_cells)} Zellen aus {out.name} uebernommen "
+                  f"(neu rechnen: Datei loeschen)", flush=True)
+
+    done = 0
     halves_wanted = ("even", "odd") if with_halves else ()
     # Rauschmodell aussen: OLS zuerst, damit bei einem Abbruch die vollstaendige
     # OLS-Tabelle schon geschrieben ist und nicht die teure AR-IRLS-Haelfte fehlt.
@@ -296,13 +314,30 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
         fams_nm, sys_nm = grids[nm]
         for fam in fams_nm:
             for sysm in sys_nm:
+                if (fam, sysm, nm) in done_cells:
+                    done += 1
+                    print(f"  [{done}/{total}] {fam:14s} {sysm:16s} {nm:7s} "
+                          f"uebernommen (Resume)", flush=True)
+                    continue
                 tc = time.time()
                 # Vollfit und (falls gewuenscht) beide Haelften in EINEM Parallel-Aufruf:
                 # loky startet dann einmal statt dreimal Prozesse.
+                #
+                # AR-IRLS laeuft bewusst mit EINEM Prozess und stattdessen mit
+                # Thread-Parallelitaet UEBER DIE KANAELE (glm.fit, max_jobs=-1): drei
+                # parallele AR-IRLS-Prozesse auf der dct:0.02-Designmatrix (~150
+                # Spalten x 23 240 Samples) wurden auf dieser Maschine (7,8 GB) zweimal
+                # vom OOM-Killer beendet (12.08. bei 81/84, erneut 08.09.) -- Threads
+                # teilen sich den Speicher, Prozesse nicht.
                 jobs = [(f, h) for f in files for h in (None, *halves_wanted)]
-                res = Parallel(n_jobs=n_jobs, backend="loky")(
+                # max_jobs=2 statt -1: jeder Kanal-Fit haelt transiente Kopien der
+                # (grossen) Designmatrix; mit 4 Threads wurde der Prozess bei 5,1 GB
+                # anon-rss vom OOM-Killer beendet (dmesg 08.09.), 2 Threads bleiben
+                # unter ~3 GB. Waehrend des Laufs nichts anderes Grosses starten.
+                nj, mj = (1, 2) if nm == "ar_irls" else (n_jobs, 1)
+                res = Parallel(n_jobs=nj, backend="loky")(
                     delayed(worker)(prepped[f][0], prepped[f][1], prepped[f][2],
-                                    fam, sysm, nm, h) for f, h in jobs)
+                                    fam, sysm, nm, h, mj) for f, h in jobs)
                 got = dict(zip(jobs, res))
                 by_sub = {ms.subject_of(f): got[(f, None)] for f in files}
                 t, rej, mean = group_test(by_sub)
