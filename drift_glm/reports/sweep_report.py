@@ -267,7 +267,11 @@ def main():
                         bar.set_hatch(h)
                 ax.set_title(f"{ch} | Fenster {wv:g}s | baseline")
                 ax.set_ylabel("median adj. R²")
-                ax.set_ylim(0, 1)
+                # Negative Werte MITZEIGEN: unter AR-IRLS ist das bei kurzen Fenstern
+                # der Normalfall (Rohdatenraum vs. Prewhitening, s. Zusatz-Analyse 3).
+                # Boden bei -0.5; extremere Werte (poly bei 90 s) laufen aus dem Bild.
+                ax.set_ylim(-0.5, 1)
+                ax.axhline(0, color="k", lw=0.8)
                 ax.grid(axis="y", alpha=0.3)
         for j in range(len(wins)):
             axes[-1, j].set_xticks(x)
@@ -303,9 +307,12 @@ def main():
             rho = sstats.spearmanr(d.resid_rms_med, d.rmse_med)
             ax.set_title(f"{ch}: zwischen den Modellen (baseline) — "
                          f"Spearman ρ = {rho.statistic:+.2f}")
-            ax.set_xlabel("Residual-RMS [µM] (median)")
+            # Log-Skala: die AR-IRLS-Instabilitaet roher Polynome bei kurzen Fenstern
+            # erzeugt Residual-Ausreisser (bis ~40 µM), die sonst alles stauchen.
+            ax.set_xscale("log")
+            ax.set_xlabel("Residual-RMS [µM] (median, log)")
             ax.set_ylabel("RMSE β̂ vs. GT [µM] (median)")
-            ax.grid(alpha=0.3)
+            ax.grid(alpha=0.3, which="both")
             ax = axes[i, 1]
             g = (d.groupby("family")["resid_err_corr"].mean().reindex(fams))
             ax.bar(x, g.values, color=colors)

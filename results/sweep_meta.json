@@ -40,14 +40,16 @@
       "tddr+wavelet"
     ],
     "n_channels": 20,
-    "noise_model": "ar_irls",
+    "noise_models": [
+      "ar_irls"
+    ],
     "ar_order": 30
   },
   "n_cells": 1800,
-  "wall_s": 27129.9,
+  "wall_s": 24629.9,
   "cell_time_s": {
-    "min": 7.81,
-    "median": 12.77,
-    "max": 109.57
+    "min": 7.4,
+    "median": 11.22,
+    "max": 33.96
   }
 }

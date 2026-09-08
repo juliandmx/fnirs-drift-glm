@@ -513,8 +513,37 @@ stark ein (räumlich „flach") – das führte zu einem Trugschluss beim Global
 in **v2** durch den räumlichen Blob behoben. **v3** ergänzte B-Splines, lange Fenster und die
 beiden Zusatz-Analysen. **v4** ist der aktuelle Stand: 15 Driftfamilien × 3 Fenster ×
 5 Konstellationen (jetzt mit echter Short-Channel-Regression) × 2 Bewegungskorrekturen ×
-4 Wiederholungen = **1800 Auswertungen** in 7,5 Stunden. Die folgenden Zahlen stammen aus
-**v4**. Alle Tabellen dazu: `results/tables.md`.
+4 Wiederholungen = **1800 Auswertungen** in 7,5 Stunden. Alle Tabellen: `results/tables.md`.
+
+> **Stand v6 (08.09.2026) – das v4-Raster wurde komplett NEU gerechnet** und die Zahlen
+> unten sind entsprechend zu lesen: (a) mit der **Bildraum-Ground-Truth** (Kortex-Blob
+> unter C3/C4 statt Kanalraum-Blob) nach dem Ordnungs-Fix (siehe Warnblock in Teil C),
+> (b) mit den neuen Modellfit-Metriken (adj. R², Residual-RMS, `resid_err_corr`).
+> Die Kernzahlen des Neulaufs (baseline, Wavelet, sofern nicht anders gesagt):
+>
+> - **Fensterlänge dominiert weiter:** HbO-RMSE **0,38 → 0,20 → 0,08 µM** (90/180/368 s).
+> - **Systemik bleibt der größte Hebel:** HbO-RMSE im Mittel 0,22 (baseline) →
+>   **0,069 (short_avg)** / 0,076 (global) / 0,082 (short_maxcorr); der Baseline-Bias
+>   +0,05 µM verschwindet. Beste Einzelzellen: dct:0.01+short_avg (90 s, 0,080),
+>   bspline:5+short_avg (180 s, 0,052), dct:0.02+short_maxcorr (368 s, **0,041**).
+> - **Lange Fenster nivellieren die Familienwahl:** bei 368 s liegen butter/legendre:3/
+>   poly:3/none bei 0,082–0,083 µM praktisch gleichauf.
+> - **Neu – Instabilität roher Polynome unter AR-IRLS:** poly:5 bei 90 s hat
+>   adj. R² ≈ **−95** (Residual-RMS 5,1 µM, fast alles im Driftband) – das Prewhitening
+>   macht die rohen Potenzen numerisch instabil; Legendre/DCT sind die stabile Wahl
+>   (Abb. 25/27; deckt sich mit der Warnung im Cedalion-AR-IRLS-Docstring). Der β-RMSE
+>   bleibt davon erstaunlich unberührt – der Schaden landet in den Drift-Koeffizienten.
+> - **Erwartung „kleine Residuen ↔ kleine GT-Abweichung" (Abb. 26):** zwischen den
+>   Modellen gilt sie für HbO (Spearman ρ = **+0,62**), für HbR nicht (ρ ≈ 0);
+>   innerhalb der Zellen ist der Zusammenhang schwach positiv (corr ≈ +0,22/+0,24).
+>   Residuen sind also ein brauchbarer, aber kein hinreichender Modellfit-Indikator.
+> - **variance explained** (baseline, Median über Familien): HbR 0,15/0,45/0,55 für
+>   90/180/368 s; HbO erreicht 0,21 bei 368 s und ist bei 90 s unter AR-IRLS im Median
+>   negativ (siehe Zusatz-Analyse 3 – Rohdatenraum vs. Prewhitening).
+>
+> Die Erzähllinie der Ergebnisse 1–9 unten (v4, Kanalraum-Blob vom 04.08.) bleibt
+> qualitativ gültig; wo einzelne Zahlen abweichen, gelten die des Neulaufs bzw.
+> `results/tables.md`.
 
 **Ergebnis 1 – Systemische Störungen sind der größte Hebel (für HbO).**
 Ohne systemischen Regressor wird HbO deutlich **überschätzt** (Bias +0,104 µM auf eine
