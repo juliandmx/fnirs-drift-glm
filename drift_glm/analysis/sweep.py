@@ -11,6 +11,10 @@ Metriken (getrennt HbO/HbR), aggregiert UEBER SEEDS (echte MC-Bias/Varianz),
 danach ueber Kanaele zusammengefasst:
   - Bias, Varianz, RMSE von beta_hat vs. Ground Truth
   - HbO/HbR-Plausibilitaet (Korrelation der beta ueber Kanaele; rueckgew. Ratio)
+  - Modellfit-Guete je Fit (fitstats): R^2 / adj. R^2 (variance explained) und
+    Residual-RMS, plus `resid_err_corr` -- die Korrelation zwischen Residual-RMS und
+    |beta_hat - GT| ueber (seed, Kanal). Sie prueft die Erwartung aus den
+    Gespraechsnotizen 2026-09-08: kleine Residuen <-> kleine GT-Abweichung.
 
 Schaetzer: AR-IRLS (Default). Ergebnisse -> results/.
 
@@ -44,6 +48,7 @@ import cedalion.data
 import cedalion.models.glm as glm
 from cedalion import units
 
+from drift_glm.core import fitstats as fs
 from drift_glm.core import pipeline as pl
 from drift_glm.core import preprocess as prep
 from drift_glm.core import shortchannel as sc
@@ -343,9 +348,15 @@ def run(cfg: dict):
                         betas = glm.fit(ts_fam, dm, noise_model=nm,
                                         ar_order=cfg["ar_order"],
                                         max_jobs=-1).sm.params
+                        # Modellfit-Guete am selben Fit: R^2 (variance explained)
+                        # und Residual-RMS je Kanal -- die Groessen aus den
+                        # Gespraechsnotizen 2026-09-08. Kostet nur ein predict.
+                        fitq = fs.fit_metrics(ts_fam, betas, dm)
                         dt = time.time() - tc
-                        raw[(family, win, con, mc, nm)][seed] = \
-                            betas.sel(regressor=HRF_REG)
+                        raw[(family, win, con, mc, nm)][seed] = dict(
+                            bhat=betas.sel(regressor=HRF_REG),
+                            r2=fitq.r2, r2_adj=fitq.r2_adj,
+                            resid_rms=fitq.resid_rms)
                         timings.append(dt)
                         done += 1
                         print(f"[{done}/{n_cells}] {mc:13s} {nm:7s} win={win:g} "
@@ -362,7 +373,7 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     fams, wins = cfg["families"], cfg["windows"]
     cons, seeds = cfg["constellations"], cfg["seeds"]
     mcs, nms = cfg["motion_methods"], cfg["noise_models"]
-    sample = next(iter(raw.values()))[seeds[0]]
+    sample = next(iter(raw.values()))[seeds[0]]["bhat"]
     chrom = [str(c) for c in sample.chromo.values]
 
     # Kanal-Schnittmenge ueber ALLE Zellen: die Masken werden nach der Motion Correction
@@ -370,28 +381,31 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     # vorhanden ist -- sonst mischt sich ein Kanalauswahl-Effekt in den Achsenvergleich.
     common = None
     for by_seed in raw.values():
-        for da in by_seed.values():
-            s = {str(c) for c in da.channel.values}
+        for cell in by_seed.values():
+            s = {str(c) for c in cell["bhat"].channel.values}
             common = s if common is None else (common & s)
     chans = [str(c) for c in sample.channel.values if str(c) in common]
     if len(chans) < sample.sizes["channel"]:
         print(f"     Hinweis: {sample.sizes['channel'] - len(chans)} Kanaele nicht in "
               f"allen Zellen vorhanden -> auf {len(chans)} gemeinsame beschraenkt")
 
-    # 8D-Rohwerte beta_hat(family, window, constellation, motion, noise_model,
-    #                      seed, channel, chromo)
-    arr = np.full((len(fams), len(wins), len(cons), len(mcs), len(nms), len(seeds),
-                   len(chans), len(chrom)), np.nan)
+    # 8D-Rohwerte je Groesse: (family, window, constellation, motion, noise_model,
+    #                          seed, channel, chromo)
+    dims8 = ("family", "window_s", "constellation", "motion", "noise_model",
+             "seed", "channel", "chromo")
+    coords8 = dict(family=fams, window_s=wins, constellation=cons, motion=mcs,
+                   noise_model=nms, seed=seeds, channel=chans, chromo=chrom)
+    shape8 = tuple(len(coords8[d]) for d in dims8)
+    fields = ("bhat", "r2", "r2_adj", "resid_rms")
+    arrs = {k: np.full(shape8, np.nan) for k in fields}
     for (f, w, c, m, n), by_seed in raw.items():
         idx = (fams.index(f), wins.index(w), cons.index(c), mcs.index(m), nms.index(n))
         for si, s in enumerate(seeds):
-            arr[idx + (si,)] = (
-                by_seed[s].sel(channel=chans).transpose("channel", "chromo").values)
-    bhat = xr.DataArray(
-        arr, dims=("family", "window_s", "constellation", "motion", "noise_model",
-                   "seed", "channel", "chromo"),
-        coords=dict(family=fams, window_s=wins, constellation=cons, motion=mcs,
-                    noise_model=nms, seed=seeds, channel=chans, chromo=chrom))
+            for k in fields:
+                arrs[k][idx + (si,)] = (by_seed[s][k].sel(channel=chans)
+                                        .transpose("channel", "chromo").values)
+    bhat, r2x, r2ax, residx = (
+        xr.DataArray(arrs[k], dims=dims8, coords=coords8) for k in fields)
 
     # per-Kanal Ground-Truth (raeumlicher Blob), auf bhat-Koordinaten ausgerichtet
     bt = xr.DataArray(
@@ -402,7 +416,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     var = bhat.var("seed")
     rmse = np.sqrt(((bhat - bt) ** 2).mean("seed"))
 
-    ds = xr.Dataset(dict(bhat=bhat, bias=bias, var=var, rmse=rmse, beta_true_map=bt))
+    ds = xr.Dataset(dict(bhat=bhat, bias=bias, var=var, rmse=rmse, beta_true_map=bt,
+                         r2=r2x, r2_adj=r2ax, resid_rms=residx))
     ds.attrs["beta_true_peak_hbo"] = beta_true["HbO"]
     ds.attrs["beta_true_peak_hbr"] = beta_true["HbR"]
     paths.ensure()
@@ -428,6 +443,16 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                         b = bias.sel(**sel, chromo=ch)
                         v = var.sel(**sel, chromo=ch)
                         r = rmse.sel(**sel, chromo=ch)
+                        # Modellfit-Guete der Zelle + die pruefbare Erwartung aus den
+                        # Gespraechsnotizen: korrelieren kleine Residuen mit kleiner
+                        # GT-Abweichung? Gepoolt ueber (seed, Kanal) innerhalb der Zelle.
+                        rr = residx.sel(**sel, chromo=ch)
+                        ae = np.abs(bhat.sel(**sel, chromo=ch) - bt.sel(chromo=ch))
+                        xv, yv = rr.values.ravel(), ae.values.ravel()
+                        ok = np.isfinite(xv) & np.isfinite(yv)
+                        re_corr = (float(np.corrcoef(xv[ok], yv[ok])[0, 1])
+                                   if ok.sum() > 3 and xv[ok].std() > 0
+                                   and yv[ok].std() > 0 else float("nan"))
                         recs.append(dict(
                             family=f, window_s=w, constellation=c, motion=m,
                             noise_model=n, chromo=ch,
@@ -438,6 +463,10 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                             var_med=float(v.median()),
                             rmse_med=float(r.median()),
                             rmse_mean=float(r.mean()),
+                            r2_med=float(r2x.sel(**sel, chromo=ch).median()),
+                            r2_adj_med=float(r2ax.sel(**sel, chromo=ch).median()),
+                            resid_rms_med=float(rr.median()),
+                            resid_err_corr=re_corr,
                             hbo_hbr_corr=corr, hbr_hbo_ratio_med=ratio,
                         ))
     df = pd.DataFrame(recs).sort_values(["chromo", "window_s", "rmse_med"])
