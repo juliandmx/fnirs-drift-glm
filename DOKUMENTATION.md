@@ -457,6 +457,51 @@ Skript (`drift_glm/analysis/detection.py`) fittet über **alle** 544 Kanäle (nu
 bewertbar) und demonstriert damit die komplette Inferenz-Pipeline für die realen DOT-Daten.
 *(Cedalion: `.sm.params` + `.sm.regressor_variances()`; FDR über `statsmodels`.)*
 
+### Zusatz-Analyse 3: Modellfit ohne Wahrheit – variance explained und Residuen (Notizen 08.09.)
+
+Alle bisherigen Gütemaße vergleichen gegen die eingemischte Wahrheit – die es auf echten
+Daten nicht gibt. Zwei Maße funktionieren **ohne** Wahrheit und wurden deshalb ergänzt
+(`drift_glm/core/fitstats.py`, in Sweep und Realdaten-Auswertung eingebaut):
+
+- **Variance explained (R²):** Welcher Anteil des Auf und Ab der Messung wird vom Modell
+  erklärt? 1,0 = alles erklärt, 0 = nicht besser als eine flache Linie auf Mittelwerthöhe.
+  Weil ein Modell mit **mehr Spalten** mechanisch mehr erklärt (die DCT-Familie hat bei
+  langen Fenstern ein Vielfaches der Spalten von poly:1), wird das **adjustierte R²**
+  berichtet, das dafür bestraft.
+- **Residuum:** der Rest `Messung − Modellvorhersage`, also genau das, „was das Modell
+  nicht fitten konnte". Verdichtet zum **Residual-RMS** (in µM) je Kanal – und angeschaut
+  als Zeitspur und als Spektrum (`drift_glm/analysis/residuals.py`): Bleibt im Residuum
+  **niederfrequenter Drift** übrig (Anteil der Residualleistung unter 0,02 Hz,
+  `lowfreq_frac`), war das Driftmodell zu schwach.
+
+In der Simulation kommt die prüfbare Erwartung aus dem Betreuungsgespräch dazu: **je kleiner
+die Residuen, desto kleiner sollte die Abweichung von der Ground Truth sein.** Der Sweep
+berechnet dafür je Zelle die Korrelation zwischen Residual-RMS und |β̂ − Wahrheit| über
+Seeds × Kanäle (`resid_err_corr`, Abb. 26).
+
+**Zwei Ehrlichkeits-Hinweise, die in die Arbeit gehören:** (1) Für die **Filter-Arme**
+(Butterworth & Co.) bezieht sich R² auf die *gefilterte* Zeitreihe – ein Teil der Varianz ist
+dort schon entfernt, der Wert ist mit den Regressor-Familien nicht direkt vergleichbar (in
+den Abbildungen schraffiert). (2) Unter **AR-IRLS kann R² negativ werden** – kein Fehler,
+sondern ein Befund: AR-IRLS optimiert im *prewhitened* Raum, und rohe Polynome werden durch
+das Prewhitening numerisch instabil, sodass im Rohdatenraum ein Resttrend zurückbleibt
+(deutlich bei poly bei kurzen Fenstern; genau davor warnt auch Cedalions AR-IRLS-Docstring:
+„prefer Legendre polynomials or discrete cosine terms"). Mit OLS gelten die klassischen
+Eigenschaften (R² ≥ 0, mehr Spalten ⇒ nie schlechter) – als Invarianten getestet.
+
+### Zusatz-Analyse 4: HRF-Kurven gegenübergestellt – Simulation und echte Daten (Notizen 08.09.)
+
+„Wie unterscheiden sich die HRF-Schätzungen?" wird zweimal beantwortet, beide Male mit der
+**flexiblen** Formvorlage (sonst wäre jede Kurve nur ein skaliertes Abbild derselben Gamma-Form):
+
+- **Simulation** (`residuals.py`, Abb. 28): je Driftfamilie die zurückgewonnene HRF-Kurve
+  gegen die eingemischte Wahrheit, gemittelt über die Blob-Kanäle.
+- **Echte Daten** (`drift_glm/analysis/mshrf.py`, Abb. 29): auf dem Multisubject-Datensatz
+  (echte Short-Channels) je Familie die geschätzte HRF gegen das **Block-Mittel der Daten**
+  – die familienunabhängige Referenz, die zeigt, was in den Daten steckt, bevor ein Modell
+  sie zerlegt. Je Hand über die 3 stärksten **kontralateralen** Kanäle (aus den Daten
+  bestimmt, damit keine Familie bevorzugt wird). Der Khan-Datensatz folgt separat.
+
 ---
 
 ## 6. Was bisher herausgekommen ist
@@ -585,6 +630,19 @@ Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
 
 ### Teil C – Im Bildraum (Version 5)
 
+> ⚠️ **Korrektur 08.09.2026 – die Bildraum-Zahlen dieses Teils werden neu gerechnet.**
+> `od2conc` gibt Kanäle nicht in der Eingabereihenfolge zurück; dadurch verteilte die
+> positionale Zuweisung in `pipeline.build` die eingemischte Aktivierung auf **falsche
+> Kanäle** – `beta_true_map` behauptete einen breiten Blob, eingemischt war er woanders.
+> Betroffen ist alles, was seit dem Bildraum-Umbau (11.08.) mit `activation_space="image"`
+> gerechnet wurde, insbesondere `imageglm_summary.csv` (Bildraum-Rangliste und die
+> alpha_spatial-Tabelle in BESPRECHUNG A0). **Nicht** betroffen: die v3/v4-Zahlen aus
+> Teil A (Kanalraum-Blob, Juli/04.08.) und alle Realdaten-Auswertungen (Teil B, msglm).
+> Der Fix liegt in `imagespace.ground_truth` + `pipeline.build` und ist durch den
+> Regressionstest `test_activation_matches_beta_true_map` abgesichert; die Neurechnung
+> läuft über `./run_v6.sh` (Sweep v4 mit Bildraum-GT, flex, detection, imageglm, Reports).
+> Die Zahlen unten sind bis zum Abschluss der Neurechnung als **vorläufig ungültig** zu lesen.
+
 Hier wird eine Frage gestellt, die im Kanalraum gar nicht formulierbar ist: **landet die
 Aktivierung am richtigen Ort auf dem Kortex?** Ein Kanal ist ein Quell-Detektor-Paar, keine
 Hirnregion; erst die Rückrechnung in den Bildraum liefert einen Ort. Sie ist ein *inverses
@@ -660,6 +718,19 @@ künstlich auf Null gesetzten kurzen Kanäle der Vorversion.
    kann dadurch Fehler kaschieren, die im RMSE gut aussehen. Bias getrennt nach HbO und HbR
    prüfen.
 
+### Überblick und Demo-Strecke
+
+![Pipeline-Flowchart](figures/00_pipeline_flowchart.png)
+*Abb. 00 – Die gesamte Pipeline als Flussdiagramm (für die Arbeit auch als Vektor-PDF:
+`figures/00_pipeline_flowchart.pdf`): beide Stränge – Simulation mit bekannter Wahrheit und
+Realdaten – laufen durch identische Vorverarbeitung und identisches GLM; nur die
+Bewertungsmaßstäbe unterscheiden sich.*
+
+![Ground Truth neben Schätzung](figures/24_scalp_gt_vs_est.png)
+*Abb. 24 – Die Kernvisualisierung zur wichtigsten Metrik (Abweichung von der Ground Truth):
+links die eingemischte Wahrheit, Mitte die Schätzung – **mit derselben Farbskala**, nur so
+ist der Vergleich ehrlich –, rechts die Abweichung. Oben HbO, unten HbR.*
+
 ### Abbildungen zum Hauptsweep
 
 ![RMSE je Driftfamilie](figures/06_sweep_rmse_by_family.png)
@@ -692,6 +763,16 @@ Korrektur ist es exakt 100 %, bei TDDR nur noch rund 70 %. Rechts: was daraus f�
 Schätzfehler folgt. Der gute RMSE von TDDR entsteht dadurch, dass die Dämpfung eine
 Überschätzung aufhebt – nicht dadurch, dass besser geschätzt würde.*
 
+![Variance explained](figures/25_sweep_r2.png)
+*Abb. 25 – Modellfit ohne Wahrheit: adjustiertes R² je Familie × Fenster. Schraffiert die
+Filter-Arme, deren R² auf der gefilterten Zeitreihe liegt. Negative Werte unter AR-IRLS sind
+ein Befund, kein Fehler (siehe Zusatz-Analyse 3).*
+
+![Residuen gegen GT-Abweichung](figures/26_sweep_resid_vs_error.png)
+*Abb. 26 – Die geprüfte Erwartung aus dem Betreuungsgespräch: kleinere Residuen ↔ kleinere
+Abweichung von der Wahrheit? Links zwischen den Modellen (jeder Punkt eine Zelle, Spearman-ρ),
+rechts innerhalb der Zellen (Korrelation über Seeds × Kanäle, je Familie).*
+
 ### Abbildungen zu den Zusatz-Analysen
 
 ![Form-Treue je Familie](figures/12_flex_shape_corr.png)
@@ -701,6 +782,17 @@ Formvorlage. Hoch und über Familien ähnlich → die Drift-Wahl verzerrt die HR
 ![Rückgewonnene HRF-Formen](figures/13_flex_shape_curves.png)
 *Abb. 13 – Beispiel: rückgewonnene HRF-Kurven (flexible Basis) je Driftfamilie gegen die
 injizierte Ground-Truth-HRF (schwarz), ein Kanal.*
+
+![Residual-Analyse](figures/27_residual_analysis.png)
+*Abb. 27 – Was konnte das Modell nicht fitten? Links die Residual-Zeitspuren eines starken
+Kanals je Familie (oben grau die Daten selbst), rechts die Residual-Spektren mit markiertem
+Driftband (< 0,02 Hz). Ein Residuum mit viel Leistung im Driftband heißt: das Driftmodell
+hat Trend übrig gelassen.*
+
+![HRF-Schätzungen je Familie](figures/28_hrf_family_comparison.png)
+*Abb. 28 – Wie unterscheiden sich die HRF-Schätzungen? Je Familie die mit der flexiblen
+Formvorlage zurückgewonnene HRF (gestrichelt) gegen die eingemischte Wahrheit (dick, blass),
+gemittelt über die Blob-Kanäle; im Titel die Form-Korrelation.*
 
 ![Detektion nach FDR](figures/14_detection.png)
 *Abb. 14 – Aktivierungs-Detektion nach FDR-Korrektur (q = 0,05) je Driftfamilie:
@@ -761,6 +853,17 @@ belassen (durchgezogen) oder vorher abgezogen (gestrichelt). Der Unterschied ist
 kosmetisch – der abgezogene Anteil wird auf Daten geschätzt, die die gesuchte Antwort
 enthalten.*
 
+![HRF je Familie auf echten Daten](figures/29_ms_hrf_families.png)
+*Abb. 29 – Die Realdaten-Gegenüberstellung aus den Notizen 08.09.: je Driftfamilie die
+geschätzte HRF (flexible Formvorlage, mit echtem Short-Channel-Regressor) gegen das
+**Block-Mittel der Daten** (grau, ±1 SD über die Probanden) – je Hand die kontralaterale
+ROI, oben HbO, unten HbR. Grün die Stimulusdauer.*
+
+![Modellfit auf echten Daten](figures/30_ms_fit_quality.png)
+*Abb. 30 – Modellfit ohne Wahrheit auf den Realdaten: adjustiertes R² und Residual-RMS je
+Familie (±1 SD über Probanden). Schraffiert die Filter-Arme (R² auf der gefilterten
+Zeitreihe).*
+
 ---
 
 ## 7. Die Dateien im Überblick
@@ -791,10 +894,15 @@ der [`README`](README.md).
 | `drift_glm/reports/sweep_report.py` | Erzeugt aus den Sweep-Ergebnissen die **Abbildungen** und **Markdown-Ergebnistabellen** (`results/tables.md`). |
 | `drift_glm/analysis/flex_basis.py` | **Zusatz-Analyse 1:** flexible HRF-Formvorlage → Form-Treue (Formfehler unabhängig von der Höhe). |
 | `drift_glm/analysis/detection.py` | **Zusatz-Analyse 2:** Signifikanz je Kanal + FDR-Korrektur → Detektionsgüte gegen die Ground Truth. |
+| `drift_glm/core/fitstats.py` | **Modellfit-Gütemaße** (Notizen 08.09.): variance explained (R², adj. R²) und Residual-RMS je Kanal – schätzerunabhängig über `glm.predict` im Datenraum. |
+| `drift_glm/analysis/residuals.py` | **Zusatz-Analyse 3:** Residuen selbst anschauen – Zeitspuren + Spektren je Familie („was konnte das Modell nicht fitten?"), Driftband-Anteil, HRF-Formvergleich je Familie (Abb. 27/28). |
+| `drift_glm/analysis/mshrf.py` | **Zusatz-Analyse 4:** Multisubject – geschätzte HRF je Driftfamilie gegen das Block-Mittel der Daten (flexible Basis, echte Short-Channels), plus Fit-Metriken auf Realdaten (Abb. 29/30). |
+| `drift_glm/figstyle.py` | Familienfarben/-reihenfolge zentral – eine Familie trägt in jeder Abbildung dieselbe Farbe. |
+| `drift_glm/reports/flowchart.py` | Pipeline-Flowchart (Abb. 00) als PDF (Vektor, für LaTeX) + PNG. |
 | `drift_glm/reports/demo_recovery.py` | **End-to-end-Demo (Zahlen):** ein Durchlauf, gibt Fehlerkennzahlen aus. |
 | `drift_glm/reports/demo_figures.py` | **End-to-end-Demo (Bilder):** Designmatrix, Ein-Kanal-Fit, β̂-vs-Wahrheit, Kopf-Karten. |
 | `tests/` | Schnelle **Smoke-Tests** (pytest) für die Pipeline. |
-| `results/` | Ausgaben: `sweep_summary.csv`, `sweep_per_channel.nc`, `tables.md`, `flex_basis_summary.csv`, `detection_summary.csv`, `logs/*_progress.txt`. |
+| `results/` | Ausgaben: `sweep_summary.csv`, `sweep_per_channel.nc`, `tables.md`, `flex_basis_summary.csv`, `detection_summary.csv`, `residuals_summary.csv`, `mshrf_summary.csv`, `logs/*_progress.txt`. |
 | `figures/` | Alle erzeugten Abbildungen (PNG). |
 | `environment.lock.txt` | Exakte Versionen der Kern-Pakete (Reproduzierbarkeit). |
 | `README.md` | Knappe technische Ausführ-/Reproduktions-Anleitung. |
@@ -835,7 +943,20 @@ conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing    # ~1
 
 # 6) Auswertungs-Abbildungen + Ergebnistabellen erzeugen
 conda run -n cedalion python -m drift_glm.reports.sweep_report
+
+# 7) Neu seit 08.09. -- Modellfit-/Residual-/HRF-Analysen und Flowchart
+conda run -n cedalion python -m drift_glm.analysis.residuals        # Abb. 27/28, ~20 min
+conda run -n cedalion python -m drift_glm.analysis.mshrf            # Abb. 29/30, ~25 min
+conda run -n cedalion python -m drift_glm.reports.flowchart         # Abb. 00, Sekunden
+
+# 8) ODER alles als sequenzielle Kette (Speicher-Engpass beachtet, mit Lock):
+./run_v6.sh                       # alle Schritte; einzelne: ./run_v6.sh demo residuals
+tail -f results/logs/*_progress.txt
 ```
+
+> ⚠️ **Nicht parallel starten:** eine dct:0.02-AR-IRLS-Zelle hält pro Kanal-Fit 2,9 GB.
+> Auf der 7,8-GB-Maschine ist genau **ein** großer Lauf gleichzeitig sicher – deshalb die
+> sequenziellen Ketten (`run_v5.sh`/`run_v6.sh`) mit gegenseitigem Lock.
 
 **Stufe 2 – die realen Daten.** Sie liegen als SNIRF unter
 `../FingerTappingDataset_Published2025/` (Unterordner je Proband):

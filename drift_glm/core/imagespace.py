@@ -269,6 +269,11 @@ def calibrate_to_channel_peak(od_channel: xr.DataArray, geo3d, target_uM: float 
                           coords={"wavelength": ts.wavelength})
     conc = cedalion.nirs.cw.od2conc(ts, geo3d, dpf_da, spectrum=spectrum)
     conc = np.abs(conc.pint.to("uM").pint.dequantify())
+    # od2conc gibt die Kanaele NICHT in der Eingabereihenfolge zurueck (Befund 08.09.).
+    # `channel_mask` liegt in der Reihenfolge von `od_channel`; ohne Rueckordnung wuerde
+    # das positionale isel die Maske auf falsche Kanaele anwenden -- die Kalibrierung
+    # war dadurch an einem quasi-zufaelligen Kanal verankert.
+    conc = conc.sel(channel=od_channel.channel.values)
     if channel_mask is not None:
         conc = conc.isel(channel=np.flatnonzero(np.asarray(channel_mask, bool)))
     peak = float(conc.max())
@@ -340,6 +345,11 @@ def ground_truth(
 
     Ab = brain_adot(adot(dataset, model), channels=ch)
     chan_od = to_channel_space(Ab, img)
+    # Auch der Vorwaertsweg gibt die Kanaele nicht zwingend in der Eingabereihenfolge
+    # zurueck (dieselbe Falle wie bei od2conc, Befund 08.09.). Alles Weitere hier --
+    # die sees_cortex-Maske, die Kalibrierung, die Rueckgabe -- rechnet in der
+    # Reihenfolge von `channels`; deshalb sofort zurueckordnen.
+    chan_od = chan_od.sel(channel=list(ch))
 
     # Nur Kanaele, die den Kortex sehen, duerfen die Amplitude festlegen -- siehe
     # `calibrate_to_channel_peak`.
