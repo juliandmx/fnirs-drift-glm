@@ -105,9 +105,12 @@ def main(mode="full"):
             ts_all, btm = P.conc_syn, P.beta_true_map
         peak = abs(P.beta_true["HbO"])
         for fam in families:
-            dm_drift, butter = drift_dm(fam, P.conc)
-            ts_f = ts_all if butter is None else ts_all.cd.freq_filter(
-                butter * units.Hz, 0 * units.Hz, 4)
+            # drift_dm liefert seit v5 ein Filter-TUPEL (fmin, fmax) statt eines
+            # Skalars. In der aktuellen Familienliste gibt es keinen Filter-Arm,
+            # aber der alte Aufruf waere beim ersten butter:* abgestuerzt (08.09.).
+            dm_drift, filt = drift_dm(fam, P.conc)
+            ts_f = ts_all if filt is None else ts_all.cd.freq_filter(
+                filt[0] * units.Hz, filt[1] * units.Hz, 4)
             res = glm.fit(ts_f, P.dm_hrf & dm_drift, noise_model="ar_irls",
                           ar_order=30, max_jobs=-1)
             tvals = _hrf_tvalues(res)                        # (channel, chromo)

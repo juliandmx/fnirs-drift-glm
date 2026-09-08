@@ -90,9 +90,11 @@ def main(mode="full"):
         dm_flex_hrf = glm.design_matrix.hrf_regressors(P.conc, P.stim_df, flex)
         tvec = P.conc.time.values
         for fam in families:
-            dm_drift, butter = drift_dm(fam, P.conc)
-            ts_f = ts if butter is None else ts.cd.freq_filter(
-                butter * units.Hz, 0 * units.Hz, 4)
+            # drift_dm liefert seit v5 ein Filter-TUPEL (fmin, fmax) statt eines
+            # Skalars -- der alte Aufruf liess butter:0.01 hier abstuerzen (08.09.).
+            dm_drift, filt = drift_dm(fam, P.conc)
+            ts_f = ts if filt is None else ts.cd.freq_filter(
+                filt[0] * units.Hz, filt[1] * units.Hz, 4)
             betas = glm.fit(ts_f, dm_flex_hrf & dm_drift, noise_model="ar_irls",
                             ar_order=30, max_jobs=-1).sm.params
             hrf_mask = betas.regressor.str.startswith("HRF")
