@@ -23,27 +23,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from drift_glm import paths
+from drift_glm import figstyle, paths
 
 RES = paths.RESULTS
 OUT = paths.FIGURES
 
-ORDER = ["none", "poly:1", "poly:2", "poly:3", "poly:4", "poly:5",
-         "dct:0.005", "dct:0.01", "dct:0.02",
-         "legendre:1", "legendre:3", "legendre:5",
-         "bspline:5", "bspline:8", "butter:0.01"]
-
-
-def _color(fam):
-    if fam.startswith("poly"):
-        return plt.cm.Blues(0.4 + 0.12 * int(fam.split(":")[1]))
-    if fam.startswith("dct"):
-        return {"dct:0.005": "#f4a259", "dct:0.01": "#e76f51", "dct:0.02": "#bc4749"}[fam]
-    if fam.startswith("legendre"):
-        return plt.cm.Greens(0.4 + 0.15 * int(fam.split(":")[1]))
-    if fam.startswith("bspline"):
-        return {"bspline:5": "#8d6e63", "bspline:8": "#4e342e"}.get(fam, "#795548")
-    return {"none": "0.6", "butter:0.01": "#8338ec"}[fam]
+# Familien-Farben/-Reihenfolge zentral in figstyle (mehrere Module teilen sie sich).
+ORDER = figstyle.FAMILY_ORDER
+_color = figstyle.family_color
 
 
 def _order(df):
