@@ -44,8 +44,14 @@ if [ -e "$LOCK5" ] && kill -0 "$(cat "$LOCK5" 2>/dev/null)" 2>/dev/null; then
     exit 1
 fi
 echo $$ > "$LOCK"
-cleanup() { rm -f "$LOCK"; kill -- -$$ 2>/dev/null; }
-trap cleanup EXIT INT TERM
+# Beim regulaeren Ende NUR den Lock entfernen. Der fruehere `kill -- -$$` im EXIT-Trap
+# hat die eigene Prozessgruppe -- inklusive der aufrufenden Shell -- mitgerissen
+# (beobachtet 08.09.: bash-Segfault am Kettenende). Bei Signalen werden nur die
+# Kindprozesse beendet, und der Trap entschaerft sich selbst gegen Re-Entranz.
+cleanup() { trap - EXIT; rm -f "$LOCK"; }
+on_signal() { trap - EXIT INT TERM; rm -f "$LOCK"; pkill -TERM -P $$ 2>/dev/null; exit 143; }
+trap cleanup EXIT
+trap on_signal INT TERM
 
 source ~/anaconda3/etc/profile.d/conda.sh
 CR="conda run --no-capture-output -n cedalion python -u -m"

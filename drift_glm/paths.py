@@ -23,7 +23,7 @@ RESULTS = ROOT / "results"
 #: sich bei jedem Lauf. Getrennt von RESULTS, damit dort nur echte Ergebnisse liegen.
 LOGS = RESULTS / "logs"
 
-#: Erzeugte Abbildungen. Bewusst FLACH mit Nummernpraefix 01..23 in Lesereihenfolge --
+#: Erzeugte Abbildungen. Bewusst FLACH mit Nummernpraefix 00..30 in Lesereihenfolge --
 #: die Nummer ist die Ordnung, und die Zuordnung Nummer <-> Dateiname ist in
 #: BESPRECHUNG.md (Anhang B) dokumentiert. Unterordner wuerden diese Zuordnung brechen.
 FIGURES = ROOT / "figures"

@@ -63,8 +63,11 @@ fnirs-drift-glm/              (dieses Repository — als Git-Repo neben ../cedal
   tests/                      Smoke-Tests (pytest): test_smoke.py, test_imagespace.py
   results/                    Ergebnistabellen (CSV, NetCDF, tables.md) — versioniert
     logs/                     Fortschrittsdateien und Nachtlauf-Logs — NICHT versioniert
-  figures/                    Abbildungen, flach mit Nummernpräfix 01–23 in Lesereihenfolge
+  figures/                    Abbildungen, flach mit Nummernpräfix 00–30 in Lesereihenfolge
   run_v5.sh                   Nachtlauf: imageglm → msglm → Abbildungen, sequenziell
+  run_v6.sh                   Nachtlauf (Notizen 08.09.): demo → residuals → mshrf → Sweep-
+                              Re-Run (v4, Bildraum-GT + R²/Residual-Metriken) → flex →
+                              detection → imageglm → Reports → msglm-Rest, sequenziell
   environment.lock.txt        Versions-Sperrdatei (Reproduzierbarkeit)
   README.md                   Diese Datei (knappe technische Referenz)
   DOKUMENTATION.md            Vollständige, laienverständliche Projektdokumentation
