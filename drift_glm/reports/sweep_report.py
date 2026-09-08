@@ -6,6 +6,12 @@ Erzeugt PNGs in figures/:
    8) Konstellations-Effekt (RMSE je Familie x Konstellation)
    9) HbO/HbR-Plausibilitaet (rueckgew. Ratio je Familie)
   10) Motion-Correction-Achse: Bias UND RMSE (der RMSE allein taeuscht)
+  25) Variance explained (adj. R^2) je Familie x Fenster             -> Modellfit-Guete
+  26) Residuen vs. GT-Abweichung: prueft die Erwartung aus den Gespraechsnotizen
+      2026-09-08 (kleine Residuen <-> kleine Abweichung von der Ground Truth)
+
+Abb. 25/26 brauchen die Metrik-Spalten aus dem Sweep-Re-Run (r2_adj_med, resid_rms_med,
+resid_err_corr); auf einer aelteren sweep_summary.csv werden sie uebersprungen.
 
 Aufruf: conda run -n cedalion python -m drift_glm.reports.sweep_report
 """
@@ -84,6 +90,22 @@ def _write_tables(df):
            .reset_index().rename(columns={"rmse_med": "rmse_med_mean"}))
     lines += ["## Konstellations-Effekt (Mittel RMSE_med über Familien)", "",
               _md_table(con, list(con.columns)), ""]
+
+    if "r2_adj_med" in d.columns:
+        for ch in ["HbO", "HbR"]:
+            piv = (d[(d.chromo == ch) & (d.constellation == "baseline")]
+                   .pivot_table(index="family", columns="window_s",
+                                values="r2_adj_med"))
+            piv = piv.reindex([f for f in ORDER if f in piv.index]).reset_index()
+            piv.columns = ["family"] + [f"{int(w)}s" for w in piv.columns[1:]]
+            lines += [f"## Variance explained (adj. R²) je Familie × Fenster — {ch} "
+                      "(baseline; Filter-Arme: R² auf der gefilterten Zeitreihe)", "",
+                      _md_table(piv, list(piv.columns)), ""]
+        rc = (d.groupby(["chromo", "family"])["resid_err_corr"].mean()
+              .reset_index())
+        lines += ["## Residuen ↔ GT-Abweichung: corr(Residual-RMS, |β̂−GT|) "
+                  "über Seeds × Kanäle (Mittel über Fenster, baseline)", "",
+                  _md_table(rc, list(rc.columns)), ""]
 
     for fname, title in [("flex_basis_summary.csv", "Flexible Recovery-Basis (Form-Treue)"),
                          ("detection_summary.csv", "Detektion nach FDR (q=0.05)")]:
@@ -234,6 +256,89 @@ def main():
         print("\n=== Motion-Achse (Mittel über Familien × Fenster × Konstellationen) ===")
         print(df_all.groupby(["chromo", "motion"])[["bias_med", "rmse_med"]].mean()
               .to_string(float_format=lambda v: f"{v:+.4f}"))
+
+    # ---- Abb. 25: Variance explained (adj. R^2) je Familie x Fenster ----
+    # Modellfit-Guete OHNE Ground Truth -- die Metrik, die es auch auf realen Daten
+    # gibt. Adjustiert, weil die Familien verschieden viele Spalten haben (dct:0.02
+    # hat bei 368 s ein Vielfaches von poly:1 -- unadjustiert gewinnt sonst mechanisch
+    # die groesste Designmatrix). butter ist markiert: sein R^2 bezieht sich auf die
+    # GEFILTERTE Zeitreihe, ein Teil der Varianz ist dort schon entfernt.
+    if "r2_adj_med" in df.columns:
+        fig, axes = plt.subplots(2, len(wins), figsize=(6 * len(wins), 8),
+                                 sharex=True, sharey="row")
+        axes = np.atleast_2d(axes)
+        for i, ch in enumerate(["HbO", "HbR"]):
+            row = df[(df.chromo == ch) & (df.constellation == "baseline")]
+            for j, wv in enumerate(wins):
+                ax = axes[i, j]
+                d = row[row.window_s == wv].set_index("family").loc[fams]
+                hatches = ["//" if f.startswith(("butter", "lowpass", "bandpass"))
+                           else None for f in fams]
+                bars = ax.bar(x, d.r2_adj_med.values, color=colors)
+                for bar, h in zip(bars, hatches):
+                    if h:
+                        bar.set_hatch(h)
+                ax.set_title(f"{ch} | Fenster {wv:g}s | baseline")
+                ax.set_ylabel("median adj. R²")
+                ax.set_ylim(0, 1)
+                ax.grid(axis="y", alpha=0.3)
+        for j in range(len(wins)):
+            axes[-1, j].set_xticks(x)
+            axes[-1, j].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
+        fig.suptitle("Variance explained des GLM (adj. R²) je Driftfamilie — "
+                     "schraffiert: Filter-Arme (R² auf der gefilterten Zeitreihe)")
+        fig.tight_layout()
+        fig.savefig(OUT / "25_sweep_r2.png", dpi=130)
+        plt.close(fig)
+    else:
+        print("(Abb. 25 uebersprungen: sweep_summary.csv ohne r2_adj_med -- "
+              "Sweep neu laufen lassen)")
+
+    # ---- Abb. 26: Residuen vs. Abweichung von der Ground Truth ----
+    # Die pruefbare Erwartung: je kleiner die Residuen, desto kleiner die Abweichung.
+    # Links ZWISCHEN den Modellen (jeder Punkt eine Zelle: Familie x Fenster),
+    # rechts INNERHALB der Zellen (Korrelation ueber Seeds x Kanaele, aus dem Sweep).
+    if "resid_rms_med" in df.columns:
+        from scipy import stats as sstats
+        markers = {90.0: "o", 180.0: "s", 368.0: "^"}
+        fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+        for i, ch in enumerate(["HbO", "HbR"]):
+            d = df[(df.chromo == ch) & (df.constellation == "baseline")]
+            ax = axes[i, 0]
+            for f in fams:
+                for wv in wins:
+                    r = d[(d.family == f) & (d.window_s == wv)]
+                    if r.empty:
+                        continue
+                    ax.scatter(r.resid_rms_med, r.rmse_med, s=45, color=_color(f),
+                               marker=markers.get(wv, "o"), edgecolor="white",
+                               linewidth=0.6, zorder=3)
+            rho = sstats.spearmanr(d.resid_rms_med, d.rmse_med)
+            ax.set_title(f"{ch}: zwischen den Modellen (baseline) — "
+                         f"Spearman ρ = {rho.statistic:+.2f}")
+            ax.set_xlabel("Residual-RMS [µM] (median)")
+            ax.set_ylabel("RMSE β̂ vs. GT [µM] (median)")
+            ax.grid(alpha=0.3)
+            ax = axes[i, 1]
+            g = (d.groupby("family")["resid_err_corr"].mean().reindex(fams))
+            ax.bar(x, g.values, color=colors)
+            ax.axhline(0, color="k", lw=0.8)
+            ax.set_title(f"{ch}: innerhalb der Zellen (Korrelation über Seeds × Kanäle)")
+            ax.set_ylabel("corr(Residual-RMS, |β̂ − GT|)")
+            ax.set_ylim(-1, 1)
+            ax.set_xticks(x)
+            ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
+            ax.grid(axis="y", alpha=0.3)
+        handles = [plt.Line2D([], [], color="0.4", marker=m, ls="", label=f"{int(w)} s")
+                   for w, m in markers.items() if w in wins]
+        axes[0, 0].legend(handles=handles, title="Fenster", fontsize=8)
+        fig.suptitle("Erwartung geprüft: kleinere Residuen ↔ kleinere Abweichung von "
+                     "der Ground Truth?\n(Farben = Driftfamilien wie in Abb. 6–10)")
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(OUT / "26_sweep_resid_vs_error.png", dpi=130)
+        plt.close(fig)
+    else:
+        print("(Abb. 26 uebersprungen: sweep_summary.csv ohne resid_rms_med)")
 
     # ---- Text-Zusammenfassung ----
     print("=== Ranking nach RMSE_med (Mittel über baseline+motion, je chromo × Fenster) ===")

@@ -1,11 +1,15 @@
 """Visualisierung der Demo-Pipeline (siehe pipeline.py / demo_recovery.py).
 
 Erzeugt PNGs in figures/:
-  1) Designmatrix (normierter HRF-Regressor + Polynom-Drift)
-  2) Ein Kanal: Ruhesignal, eingespeiste Aktivierung, rueckgewonnene HRF
-  3) rueckgewonnenes vs. wahres beta pro Kanal (Blob-Gradient), OLS
-  4) Scalp-Plot der Abweichung (beta_hat - Ground Truth) pro Kanal, farbkodiert
-  5) Scalp-Plot der RELATIVEN Abweichung: rel. beta-Peak-Fehler + rel. Formfehler
+   1) Designmatrix (normierter HRF-Regressor + Polynom-Drift)
+   2) Ein Kanal: Ruhesignal, eingespeiste Aktivierung, rueckgewonnene HRF
+   3) rueckgewonnenes vs. wahres beta pro Kanal (Blob-Gradient), OLS
+   4) Scalp-Plot der Abweichung (beta_hat - Ground Truth) pro Kanal, farbkodiert
+   5) Scalp-Plot der RELATIVEN Abweichung: rel. beta-Peak-Fehler + rel. Formfehler
+  24) Scalp-Plot Ground Truth NEBEN der Schaetzung (gleiche Farbskala) + Abweichung --
+      die Kernvisualisierung aus den Gespraechsnotizen 2026-09-08 ("scalp plot ground
+      truth vs tats. result"): erst der direkte Vergleich zeigt, WO die Schaetzung das
+      raeumliche Muster trifft; Abb. 4/5 zeigen nur die Differenz.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.reports.demo_figures
@@ -174,6 +178,34 @@ def main():
               f"{float(np.abs(rel_beta).median()) * 100:.1f} %"
               f"  | median rel. Formfehler = {float(rel_shape.median()) * 100:.1f} %")
     fig.tight_layout(); fig.savefig(OUTDIR / "05_scalp_rel_abweichung.png", dpi=130); plt.close(fig)
+
+    # ---- Abb. 24: Ground Truth und Schaetzung NEBENEINANDER (+ Abweichung) ----
+    # GT und beta_hat teilen sich eine Farbskala je Chromophor -- nur so ist der
+    # Vergleich ehrlich (getrennte Autoskalen liessen jede Schaetzung "richtig"
+    # aussehen). Die Abweichung rechts hat ihre eigene, engere Skala.
+    print("Erzeuge Scalp-Plot Ground Truth vs. Schaetzung ...")
+    fig, ax = plt.subplots(2, 3, figsize=(16, 10))
+    for i, c in enumerate(["HbO", "HbR"]):
+        gt = P.beta_true_map.sel(chromo=c)
+        est = betas_ols.sel(regressor=main_hrf, chromo=c)
+        dev = est - gt
+        vlo, vhi = _sym_lim(np.concatenate([gt.values, est.values]))
+        for j, (da, title) in enumerate([
+                (gt, f"{c}: Ground Truth (eingemischter Peak)"),
+                (est, f"{c}: Schätzung β̂ (OLS)"),
+                (dev, f"{c}: Abweichung β̂ − GT")]):
+            lo, hi = (vlo, vhi) if j < 2 else _sym_lim(dev.values)
+            cedalion.vis.anatomy.scalp_plot(
+                P.conc, P.geo3d, da, ax[i, j],
+                vmin=lo, vmax=hi, cmap="RdBu_r",
+                min_dist=1.5 * cedalion.units.cm,
+                title=title, cb_label="[µM]",
+            )
+    fig.suptitle("Ground Truth und Schätzung im direkten Vergleich "
+                 "(gemeinsame Farbskala je Chromophor; rechts die Abweichung)")
+    fig.tight_layout()
+    fig.savefig(OUTDIR / "24_scalp_gt_vs_est.png", dpi=130)
+    plt.close(fig)
 
     print(f"\nFertig. Demo-Kanal: {demo_ch}  | Abbildungen in {OUTDIR}")
     for f in sorted(OUTDIR.glob("*.png")):
