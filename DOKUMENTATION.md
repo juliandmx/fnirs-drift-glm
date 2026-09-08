@@ -668,9 +668,15 @@ Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
 > alpha_spatial-Tabelle in BESPRECHUNG A0). **Nicht** betroffen: die v3/v4-Zahlen aus
 > Teil A (Kanalraum-Blob, Juli/04.08.) und alle Realdaten-Auswertungen (Teil B, msglm).
 > Der Fix liegt in `imagespace.ground_truth` + `pipeline.build` und ist durch den
-> Regressionstest `test_activation_matches_beta_true_map` abgesichert; die Neurechnung
-> läuft über `./run_v6.sh` (Sweep v4 mit Bildraum-GT, flex, detection, imageglm, Reports).
-> Die Zahlen unten sind bis zum Abschluss der Neurechnung als **vorläufig ungültig** zu lesen.
+> Regressionstest `test_activation_matches_beta_true_map` abgesichert. **Die Neurechnung
+> ist abgeschlossen (09.09., 01:20):** Sweep v6, flex, detection, imageglm und alle
+> Abbildungen (00–30) sind aktuell; die maßgeblichen Zahlen stehen in
+> `results/imageglm_summary.csv` / `tables.md` und den Abbildungen. Nur der
+> **Fließtext dieses Teils C** trägt noch die Zahlen des entwerteten Laufs vom 11.08. —
+> beim Verschriftlichen die CSVs/Abbildungen verwenden, nicht die Inline-Zahlen unten.
+> Auffälligster Unterschied nach dem Fix: die rauschfreie Obergrenze rekonstruiert mit
+> ~12 mm Lokalisationsfehler (vorher deutlich schlechter), und der Amplitudenfehler der
+> flexiblen Basis fällt von +30…70 % auf −3…+13 %.
 
 Hier wird eine Frage gestellt, die im Kanalraum gar nicht formulierbar ist: **landet die
 Aktivierung am richtigen Ort auf dem Kortex?** Ein Kanal ist ein Quell-Detektor-Paar, keine
