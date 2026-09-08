@@ -987,6 +987,14 @@ tail -f results/logs/*_progress.txt
 > Auf der 7,8-GB-Maschine ist genau **ein** großer Lauf gleichzeitig sicher – deshalb die
 > sequenziellen Ketten (`run_v5.sh`/`run_v6.sh`) mit gegenseitigem Lock.
 
+> **Bewusste Lücke (Entscheidung 08.09.):** In `msglm_summary.csv` fehlen die 3 Zellen
+> **dct:0.02 × AR-IRLS** (× none / short_avg_dm / short_avg_sub). Sie kosten ~19 h
+> Rechenzeit (~77 s je Kanal-Fit × 20 Kanäle × 15 Fits je Zelle, strikt sequenziell wegen
+> des 2,9-GB-Speicherbedarfs) und füllen nur die AR-IRLS-Linien von Abb. 23 an einer
+> Stelle auf – dct:0.02 liegt mit OLS vollständig vor, AR-IRLS für none/poly:3/butter.
+> Wer sie doch braucht: `./run_v6.sh msglm tables` (Resume überspringt die 81 fertigen
+> Zellen automatisch).
+
 **Stufe 2 – die realen Daten.** Sie liegen als SNIRF unter
 `../FingerTappingDataset_Published2025/` (Unterordner je Proband):
 
