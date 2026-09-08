@@ -355,6 +355,13 @@ def ground_truth(
                           coords={"wavelength": ts.wavelength})
     beta = cedalion.nirs.cw.od2conc(ts, geo3d, dpf_da, spectrum="prahl")
     beta = beta.isel(time=0, drop=True).pint.to("uM").pint.dequantify()
+    # od2conc gibt die Kanaele NICHT in der Eingabereihenfolge zurueck (beobachtet
+    # 08.09.: 1/561 Positionen stimmen ueberein). Alles andere hier (chan_od,
+    # sees_cortex) liegt in der Reihenfolge von `channels`; ohne Rueckordnung wuerde
+    # jede positionale Verwendung der Karte die Werte auf falsche Kanaele verteilen --
+    # genau das hat die Injektion in pipeline.build verwuerfelt (beta_true_map sagte
+    # "breiter Blob", eingemischt war er auf anderen Kanaelen).
+    beta = beta.sel(channel=list(ch))
 
     out = dict(beta_true_map=beta, img=img.pint.to("uM"), chan_od=chan_od,
                seeds={lab: seed_vertex(hd, lab) for lab in labels}, factor=factor,

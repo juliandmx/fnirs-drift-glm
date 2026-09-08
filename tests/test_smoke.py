@@ -173,6 +173,25 @@ def test_beta_true_map_is_spatial_blob(P):
     assert np.nanmin(hbr) < 0 < np.nanmax(hbo)
 
 
+def test_activation_matches_beta_true_map(P):
+    """Injektion und Ground-Truth-Karte muessen KANALWEISE zusammenpassen.
+
+    Regression zum Befund vom 08.09.2026: `ground_truth` lieferte die Kanalkarte in
+    od2conc-sortierter Reihenfolge (1/561 Positionen stimmten mit der conc-Ordnung
+    ueberein); die positionale Zuweisung in `build` verteilte die Injektion dadurch
+    auf falsche Kanaele -- beta_true_map behauptete einen breiten Blob, eingemischt
+    war er woanders. Alle GT-Vergleiche waeren damit wertlos. Weil der HRF-Regressor
+    auf Peak 1 normiert ist, muss der Zeit-Peak der eingemischten Aktivierung je
+    Kanal exakt |beta_true_map| sein -- fuer beide Chromophore.
+    """
+    for c in ("HbO", "HbR"):
+        want = np.abs(P.beta_true_map.sel(chromo=c))
+        got = np.abs(P.activation.sel(chromo=c)).max("time").sel(channel=want.channel)
+        assert np.allclose(got.values, want.values, rtol=1e-6, atol=1e-9), (
+            f"{c}: Injektion und GT-Karte kanalweise inkonsistent "
+            f"(max |diff| = {float(np.abs(got - want).max()):.4f} µM)")
+
+
 def test_hrf_regressor_peak_normalized(P):
     """Der HRF-Regressor ist auf Peak 1 normiert -> beta == injizierte Peak-Amplitude."""
     hrf = P.dm_hrf.common.sel(regressor=P.hrf_names[0])

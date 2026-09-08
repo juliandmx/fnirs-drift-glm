@@ -284,6 +284,13 @@ def build(
         bt = beta_true_map
         if "trial_type" in bt.dims:
             bt = bt.sel(trial_type=str(name).removeprefix("HRF ").strip())
+        # Explizit nach LABEL ausrichten, bevor .values positional zugewiesen wird.
+        # Der Bug vom 08.09.: ground_truth lieferte die Karte in od2conc-sortierter
+        # Kanalreihenfolge, die positionale Zuweisung hat die Injektion dadurch auf
+        # falsche Kanaele verteilt -- beta_true_map (Label-korrekt) und tatsaechlich
+        # eingemischte Aktivierung passten nicht mehr zusammen. ground_truth ordnet
+        # inzwischen selbst zurueck; diese Zeile haelt die Invariante unabhaengig davon.
+        bt = bt.sel(channel=betas_true.channel.values)
         for c in chromo:
             betas_true.loc[:, name, c] = bt.sel(chromo=c).values
 
