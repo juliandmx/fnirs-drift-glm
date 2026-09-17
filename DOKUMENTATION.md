@@ -477,8 +477,13 @@ Laufzeiten und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
   landmarkenfreie Registrierung (`data/coregister.py`) legt die Optoden im Median 2,2 mm auf
   die ICBM152-Kopfhaut, kann aber links und rechts nicht unterscheiden; die
   Sensitivitätsmatrix bräuchte eine Photonensimulation mit CUDA-GPU (nicht vorhanden). Der
-  Bildraum und die kontralaterale Kontrolle sind für diesen Datensatz nicht verfügbar; die
-  Konstellationen `short_*` und `motion` entfallen (keine kurzen Kanäle, kein Aux).
+  Bildraum bleibt für diesen Datensatz nicht verfügbar; die Konstellationen `short_*` und
+  `motion` entfallen (keine kurzen Kanäle, kein Aux). Die Hemisphäre je Kanal ist seit dem
+  17. September 2026 aus Khan et al., Tabelle 3, bekannt (`realdata.khan_hemisphere`); die
+  kontralaterale Kontrolle im Kanalraum ist damit möglich (`khan_lateralisation`, Abschnitt 9):
+  das |beta|-Maximum von HbO liegt in allen geprüften Konfigurationen links (C1-FC1), der
+  Lateralisierungsindex links minus rechts ist positiv (+0,017 bis +0,049 µM), die
+  signifikanten Kanäle sind aber nahezu bilateral (15/14 bei dct:0.02/AR-IRLS).
 - Abb. 20 (`20_cortex_truth_vs_recon.png`) enthält nur leere Achsenrahmen: das
   Offscreen-Rendering der Kortexoberfläche (pyvista) liefert unter WSL keine Pixel. Die
   Datei muss auf einem System mit funktionierendem OpenGL neu erzeugt werden
@@ -535,5 +540,13 @@ blieben unangetastet (Filter-Arm nur Daten, 50b-Subtraktion, TDDR-Achse, alpha_s
 - **C12 Regularisierungstabelle.** `recon_check` schreibt `results/recon_check_multisubject.csv`
   (17. September 2026, korrigierter Vorwärtsweg); die Werte stimmen mit der Konsolentabelle
   vom August überein (r 0,45-0,65; Peak-Verhältnis 0,89-2,02; Ort 8,6 / 14,6 / 13,2-14,0 mm).
+- **Ergebnisse der Ergänzungsläufe (17.09.).** Simulation: `butterxy:0.01` ist vom
+  Daten-Filter-Arm nicht unterscheidbar (HbO-RMSE baseline 0,358/0,191/0,083 gegen
+  0,357/0,189/0,082 µM bei 90/180/368 s). Khan: Reproduzierbarkeit `butter:0.01`
+  0,443 (AR-IRLS) / 0,364 (OLS), `butterxy:0.01` 0,521 / 0,528, `none` 0,494 / 0,461,
+  `dct:0.02` 0,566 / 0,564; der Nachteil des Filter-Arms auf dem periodischen Paradigma
+  ist also überwiegend die Inkonsistenz zwischen gefilterten Daten und ungefiltertem
+  Design. `lowpass:0.5` mit AR-IRLS kollabiert (beta_max 1e-5 µM, Reproduzierbarkeit
+  -0,08), mit OLS unauffällig (0,460).
 - **Nicht neu gerechnet:** voller Sweep, `realglm` voll, `imageglm`, `detection`;
   `hrf_retention.csv` (10.09.) ist der gültige Stand (Wavelet 100,00 %, TDDR 51-60 %).

@@ -1,0 +1,409 @@
+{
+  "created_utc": "2026-09-17T14:55:29.759592+00:00",
+  "git_commit": "4951a2ff1442053de3330087186fe07e782ee007",
+  "git_status": "M results/sweep_meta.json\n M results/sweep_per_channel.nc\n M results/sweep_summary.csv\n?? results/archive/sweep_2026-09-17_145501_808259_B1_before_merge_mapping.json\n?? results/archive/sweep_meta_2026-09-17_145501_808259_B1_before_merge.json\n?? results/archive/sweep_per_channel_2026-09-17_145501_808259_B1_before_merge.nc\n?? results/archive/sweep_summary_2026-09-17_145501_808259_B1_before_merge.csv\n?? results/sweep_butterxy_meta.json\n?? results/sweep_butterxy_per_channel.nc\n?? results/sweep_butterxy_summary.csv",
+  "cedalion_commit": "a7eb625312d15c54f294c1fb9017e43c3a419d7d",
+  "config": {
+    "analysis": "realglm",
+    "mode": "supplement",
+    "families": [
+      "lowpass:0.5",
+      "butterxy:0.01"
+    ],
+    "constellations": [
+      "baseline",
+      "global"
+    ],
+    "noise_models": [
+      "ar_irls",
+      "ols"
+    ],
+    "motion_method": "wavelet",
+    "ar_order": 30,
+    "n_files": 69
+  },
+  "data_files": [
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S01/S01R1_TRIM.snirf",
+      "bytes": 4013430,
+      "sha256": "d4334281ed80188393bab18fa8480d811ff6c80c183a7ce957b7f17e7e253587"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S01/S01R2_TRIM.snirf",
+      "bytes": 4016068,
+      "sha256": "5935e89b7b2f67cf5d0d15693fa83d10cdc97cc7771199d235ecf50e947736cc"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R1_TRIM.snirf",
+      "bytes": 4016434,
+      "sha256": "7ab78af2938b55ccb0678a7cc07489124388b9ea6e0a7ab4dd0a76d5badc83df"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R2_TRIM.snirf",
+      "bytes": 4022943,
+      "sha256": "d5511cfce6ac6f9b94755df5b9427550c66a1cef2cbe328e87c63d86c23063e2"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R3_TRIM.snirf",
+      "bytes": 4020416,
+      "sha256": "3a5b5d1457e77fa23f7b83fe60b4fb75f39b4feba08736f5924128d21eb2ab7f"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R4_TRIM.snirf",
+      "bytes": 4106046,
+      "sha256": "ebba7db41e9034469493fba2c2889128f10df152d482d61955213ebe1e8e5a4e"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R5_TRIM.snirf",
+      "bytes": 4105772,
+      "sha256": "5730d3f91b05afa3963db30e4a7561b669d8209961010ca261e294a2e5ed2154"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S02/S02R6_TRIM.snirf",
+      "bytes": 4107809,
+      "sha256": "921231bd2726ae0cc83975dd9dd18d2b0302d6abaefc73f633a69612714063f0"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S03/S03R1_TRIM.snirf",
+      "bytes": 4019432,
+      "sha256": "ac50c061de0a17a971dc5fcf748fb66581f59e642d15da3a758816d42d874ddd"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S03/S03R2_TRIM.snirf",
+      "bytes": 4021010,
+      "sha256": "314cdb2e072763546a7679a44d6e5db87f268cb46fbfd26cd3e1cb781db2a2b0"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S04/S04R1_TRIM.snirf",
+      "bytes": 4021175,
+      "sha256": "db8c5a64198b2c27c0eacec5cdfb436c69ac8d0a5908fb45122cfe1873bfa449"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S04/S04R2_TRIM.snirf",
+      "bytes": 4024411,
+      "sha256": "b2096cb5518bf563eed884b950df388ab603014a363fe6eac1e1042d6510a679"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S04/S04R3_TRIM.snirf",
+      "bytes": 4023987,
+      "sha256": "16081dbcb23e132a37a0570fb8f65075dfa178941863a5b013f13d9411777483"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S04/S04R4_TRIM.snirf",
+      "bytes": 4024574,
+      "sha256": "a9a12b9cf1a5e6cb27458f4d2ac8fcaf0a6a0722734217906a07e37ecf855ed7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S04/S04R5_TRIM.snirf",
+      "bytes": 4022255,
+      "sha256": "057c11717a65d8888090249376999b008364b53a5a8bb26ed0f2afcd2b0fc2d9"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S05/S05R1_TRIM.snirf",
+      "bytes": 4018914,
+      "sha256": "4db1794e85abab4bf42ddcc32b0f4b8125c7210078fc5696993bb90cc88690c7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S05/S05R2_TRIM.snirf",
+      "bytes": 4020229,
+      "sha256": "57a2e7d9bc135914280b9436d5bc2b796fea0aa65840177c52d2851c5c10f3a7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S05/S05R3_TRIM.snirf",
+      "bytes": 4017075,
+      "sha256": "c7b02d5f3e88deeafeb326c53e8fbcd7378eb5d2d94627352d808944f55c5cf2"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S06/S06R1_TRIM.snirf",
+      "bytes": 4016599,
+      "sha256": "a749006ea54f2636b6b34a93b4aebf5696b5138d62fcc46e6306221dc61068a9"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S06/S06R2_TRIM.snirf",
+      "bytes": 4024239,
+      "sha256": "ae58e0ba8bec93fb361c14233d9064e77aae9e0926119edd97016e9ff4279f33"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S06/S06R3_TRIM.snirf",
+      "bytes": 4027069,
+      "sha256": "40089420ae63da9be113e1a6cbd2baf8e4083100adf7c82973879a056c6d2c9f"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S07/S07R1_TRIM.snirf",
+      "bytes": 4020302,
+      "sha256": "f98c44694864b5905cf1effeef40ed219402e40744462ffaeae9f7ea84f860a6"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S07/S07S2_TRIM.snirf",
+      "bytes": 4018706,
+      "sha256": "1e7225fc125a8cce7258be8b7faf6964bdaeb687b52867aa93e11700e09c6125"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S08/S08R1_TRIM.snirf",
+      "bytes": 4001458,
+      "sha256": "105d13e27a0369edef9260c4fb3da42368b59fa771f8f628bc837838cd5a2db7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S08/S08R2_TRIM.snirf",
+      "bytes": 4014286,
+      "sha256": "f1c73d4a90dcdc5ce6767c599e11e4b26d8a14a26dac49078c0d8b8133228704"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S08/S08R3_TRIM.snirf",
+      "bytes": 4014451,
+      "sha256": "6ffea384517cf858f998bcc7f6f2f2c03bb1948de5065a0891356a8259e9efab"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S09/S09R1_TRIM.snirf",
+      "bytes": 4017214,
+      "sha256": "f64dcff4220ca3f422d716c250e61c1c5fe8aa066e530abe655c7140a6dfd58c"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S09/S09R2_TRIM.snirf",
+      "bytes": 4017001,
+      "sha256": "164993acfeb1278140a13f5d516acec8576db7ba89121944096c3371a0fa8f2d"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S09/S09R3_TRIM.snirf",
+      "bytes": 4019976,
+      "sha256": "fc038840a45e9e1d823baef808747d51834072810db55a2b55a9279b3113cf95"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S10/S10R1_TRIM.snirf",
+      "bytes": 4019493,
+      "sha256": "c818699c7b877b01ad5958d238e9ef0081c14830d42838a1a11a17175a41e141"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S10/S10R2_TRIM.snirf",
+      "bytes": 4022858,
+      "sha256": "b5c854ec97a55885fd578417122f50835a3e0a2474b9f89ff0c3ec35e23d67e6"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S10/S10R3_TRIM.snirf",
+      "bytes": 4021581,
+      "sha256": "568160568a6183e011f7f6bbfe4f92b3cb1171844e9067e77480364ff4250f6c"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S11/S11R1_TRIM.snirf",
+      "bytes": 4007836,
+      "sha256": "a5fbb83c3cc872c52dced2e61f7a2b86eff16112968e5781340f1d8299d7e32a"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S11/S11R2_TRIM.snirf",
+      "bytes": 4013731,
+      "sha256": "3c5c2d661357c57cba2c613543f38261376e387fc4e62b940c4f90db1e02590f"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S11/S11R3_TRIM.snirf",
+      "bytes": 4016323,
+      "sha256": "aace8cd1ce1cf4311160553c2dd55fc0eab1809376bdd528b3a079e7b715bc15"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S12/S12R1_TRIM.snirf",
+      "bytes": 4021585,
+      "sha256": "8ca6601e1339b066f5e8946e4dca5ffbff8917e57778edc488a6f0ba34322d50"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S12/S12R2_TRIM.snirf",
+      "bytes": 4020477,
+      "sha256": "715dc08a229bbf2446ebd16800f83d6445072e42cd38e0eeaf50744cc54ca40a"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S13/S13R1_TRIM.snirf",
+      "bytes": 4026508,
+      "sha256": "ab5039ca4a9422f69aad471264cf17151f8e01ab68503bd18154259573b12594"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S13/S13R2_TRIM.snirf",
+      "bytes": 4022010,
+      "sha256": "5d28574ccd6065a806abde82a828329125849484746f5f100a7ae1b8190fed26"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S13/S13R3_TRIM.snirf",
+      "bytes": 4025639,
+      "sha256": "fe3b43e3c53899234cfcb4f8a867b9d2166fad6034ee3c4877bd286bda65a57e"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S14/S14R1_TRIM.snirf",
+      "bytes": 4021864,
+      "sha256": "ccab76ffb24667378d7bba047f5688a1876e4cadeb62d2bf733006cc43c2b1e4"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S14/S14R2_TRIM.snirf",
+      "bytes": 4016956,
+      "sha256": "f10e6d0e6d6666a68f348bc09b9aa36bf69a56d8129faea351e53c07fc73bab3"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S14/S14R3_TRIM.snirf",
+      "bytes": 4019406,
+      "sha256": "89957469ecf36f9b29f7096e8d48cc6a331df28cf7e190defd0903da83ce0848"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S15/S15R1_TRIM.snirf",
+      "bytes": 4015874,
+      "sha256": "6d5cfbe1d22625e37582d92f5ebb209598228bcfc6cc5aaed2bd7224445a4068"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S16/S16R1_TRIM.snirf",
+      "bytes": 4012672,
+      "sha256": "369ca5e5e8fbf5976a5bb4e8149d6c4af09d2255aedaa757af4dd91b5629de1c"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S16/S16R2_TRIM.snirf",
+      "bytes": 4021354,
+      "sha256": "94060bf0e0202646f25ce755c917d8e319faaf7791183e05a2752d8ffb98c477"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S16/S16R3_TRIM.snirf",
+      "bytes": 4021862,
+      "sha256": "d966bb93392a4b2c173b81174a235d0fbd281162fe49e8e3945ebb0519c3f923"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S17/S17R1_TRIM.snirf",
+      "bytes": 4018312,
+      "sha256": "22bcb33d623164fda66a9bbd94a73e2d2d086ac25ad18a0855bc26cb2dc86a4e"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S17/S17R2_TRIM.snirf",
+      "bytes": 4022391,
+      "sha256": "fdf38ac5a334a8aed6229c82041a317b5ab4d2cf08436720cf019d33548efa83"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S17/S17R3_TRIM.snirf",
+      "bytes": 4023024,
+      "sha256": "80c6f4a7e53f748677327bfd1705a5687c721248c9901c728312294d07c13c6c"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S18/S18R1_TRIM.snirf",
+      "bytes": 4023299,
+      "sha256": "fbf065a4fc4dfa25264dfd07764f68b4e1d9ed06e6f287d93ecb9f4b590bc858"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S18/S18R2_TRIM.snirf",
+      "bytes": 4022467,
+      "sha256": "17a3aef6609462b7a570e687e520518efbf599a24a5d9643dbd20efb36da71f7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S19/S19R1_TRIM.snirf",
+      "bytes": 4675467,
+      "sha256": "00680390331f1ac415d6d89099d36d3f77b8bb4a20614d4a775069dcf2454a3b"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S19/S19R2_TRIM.snirf",
+      "bytes": 4680161,
+      "sha256": "e1a196cc2fd54e3673303748f42dfee7c1df5a40455a306deaf450edeb4d8cf6"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S20/S20R1_TRIM.snirf",
+      "bytes": 4096724,
+      "sha256": "ba3097c07df7cb234e5b508900e194b608ece0ad6b0e8c1b36d8b5bb5b5f9fd3"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S20/S20R2_TRIM.snirf",
+      "bytes": 4098896,
+      "sha256": "5dae30f8741edb6f7c005429152b18bade064c2ecb9fc8ed979fe594be1df297"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S20/S20R3_TRIM.snirf",
+      "bytes": 4105291,
+      "sha256": "0b1de92e1efb06f714d037d3f1512e59f9ba799ea660049a8224234a3fdfe654"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S21/S21R1_TRIM.snirf",
+      "bytes": 4017821,
+      "sha256": "50f7bd3a63d9a4b85824951d7964adddd4e8eeeab408c34a83002cb86aff0332"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S21/S21R2_TRIM.snirf",
+      "bytes": 4020508,
+      "sha256": "a0ca35b315ff318a3b893d70f393e3430ebaa70d7e9be754a181d0ac75a58b9e"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S21/S21R3_TRIM.snirf",
+      "bytes": 4019080,
+      "sha256": "89e189829a51c5e6b2d2f98906ac3d8490be9c90344aab6510cfc63d53ddb00b"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S22/S22R1_TRIM.snirf",
+      "bytes": 4018951,
+      "sha256": "2d772e39d838c64906a50e843667db53995642694d7915c48aba1b445ee56da9"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S22/S22R2_TRIM.snirf",
+      "bytes": 4017611,
+      "sha256": "bee87c5af2be3f6128571ae1a26e4a26e86fd23ec0e6e1771e4f7f3398aa4824"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S22/S22R3_TRIM.snirf",
+      "bytes": 4019392,
+      "sha256": "4fa809856a419b2e9c88e4ebc0f6a97f9897c93b5dd9cc10da6d692b4f42b0ea"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S23/S23R1_TRIM.snirf",
+      "bytes": 4019876,
+      "sha256": "e65dfa451bd533fcbe31776526ba83dada05cfdb4754819171ca5f145bf9cf67"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S24/S24R1_TRIM.snirf",
+      "bytes": 4013659,
+      "sha256": "406162629f811239748e9942b149a59923c322f84e4922d1f669eb0b0bd3ad25"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S24/S24R2_TRIM.snirf",
+      "bytes": 4015273,
+      "sha256": "c2da1fb8877c409163318aed290ea9c12c9ac974a7bd498657aadc1826c906b7"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S24/S24R3_TRIM.snirf",
+      "bytes": 4014648,
+      "sha256": "e24281079780bb9ea5dc33c77be39087b640f61d66c5591b039855d6cac93fc5"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S25/S25R1_TRIM.snirf",
+      "bytes": 10617468,
+      "sha256": "4fd069a0bee0b9f440dd4da53cf27aba067d6ccb2da50476e39ea6838a0985a9"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/FingerTappingDataset_Published2025/S25/S25R2_TRIM.snirf",
+      "bytes": 10765375,
+      "sha256": "cba2679b645da36e86b4e14989a08b459afbf665786f2e630fc4fa3a0c4e5c7a"
+    }
+  ],
+  "source_sha256": {
+    "drift_glm/__init__.py": "f8a9152e2f0ee7fe206d8995ff585c373565e4118d4fdcbcd52e93539d570c8a",
+    "drift_glm/analysis/__init__.py": "5423549c313757c028c51a52338c34aae544a8da246eba39e1bd5f0f3631a87b",
+    "drift_glm/analysis/compare_preprocessing.py": "ad10e97a8b770e30586be71f2a8b38f3c0b045b76a8d07e7390099eafed9aed9",
+    "drift_glm/analysis/detection.py": "89129c0065174341def709d8c79f66632e1475f3642882a18f52ce48ec689403",
+    "drift_glm/analysis/flex_basis.py": "c0b9e0da0bb821482d625e7e59df671d9151eb99771cbab85101cfac9a779dce",
+    "drift_glm/analysis/imageglm.py": "9157f408fea089bc8c2832d3b4d17df182a6299da1e3a1b98f11fc12f74a91c3",
+    "drift_glm/analysis/khan_lateralisation.py": "6278d7539739f6361e98ad9d22fe094f37df1f9117d486209fe653bd09497aed",
+    "drift_glm/analysis/msglm.py": "8e82ad64089dcb1b13350b28a00ad41ca85a2db1e3638c25d20ebf3bcfb092aa",
+    "drift_glm/analysis/mshrf.py": "f32c32958f05a5306a0f32921ca657d1e98eeb6b5c2e978961e97de2f66295f1",
+    "drift_glm/analysis/realglm.py": "15b0a3534691f060cd4c90de13d44d932b09089a5c6dc9ba1b37bff7f21a5a9e",
+    "drift_glm/analysis/recon_check.py": "e182e04e63967b12f54b9ea8bd1d310377b8fca7dfd192206291ce5981be3db4",
+    "drift_glm/analysis/residuals.py": "fbe0672082679f8ce9ebb105dc5593c2005e6f8ebef20669372f66ce310084d3",
+    "drift_glm/analysis/sweep.py": "c509e2e965ec29a1b323adbef9f074ce863dd03c2452bbc4a3012ae3ef1e6c1b",
+    "drift_glm/core/__init__.py": "6c88a60972e35abe6229b9605cac369b9c60ddc96e4ee29f4c049d385a10c832",
+    "drift_glm/core/filtering.py": "a257fbf441c6bc4c5a861fc12658fb08f222e13dd36b23e1513c14a5ff1092e0",
+    "drift_glm/core/fitstats.py": "a8d28cd287d8e953828175fd167646b18b3b31ebd0bb9dc9ffb73f6d6c600018",
+    "drift_glm/core/imagespace.py": "c52fcbcdc3ade87c5f428ece75afa67c885447042887eb2c93b145c502979eb2",
+    "drift_glm/core/pipeline.py": "6a0bf7de153cf53316a12974c9bc3f4b035caa52d81fa8e7c7dfbae777faee7a",
+    "drift_glm/core/preprocess.py": "26c82cd7d8ff9e39bc59e77c0c64c56769390bf620752b07a6154205bacacfdc",
+    "drift_glm/core/provenance.py": "d57973c59d13185c28af05ad649d029119b40fd61b62eba8b44c41ec74877046",
+    "drift_glm/core/shortchannel.py": "ea9ded267d7f382379bae4d26b2f329d6a8d1f500be45cd9acd2af79beac9e68",
+    "drift_glm/data/__init__.py": "8965c617cb16fe807adecfed681a4faf4e7fee9b6e1d756c9c9c747ecc197389",
+    "drift_glm/data/coregister.py": "6cac8ff7c5656399afc3c93b36b9a1893a2f98bb4b7f9166605e5dfddd9f6c81",
+    "drift_glm/data/multisubject.py": "3edb03795ea1ec37cedff3eb13c6ee823d1aa3100057d40390ec8868edef07e7",
+    "drift_glm/data/realdata.py": "25747c6ae189812bfc663a229ac5845c78ed7ba73b6179a10c2eb31777c62c6b",
+    "drift_glm/figstyle.py": "6591c85de6d0eb975987c93eeccb75148dd2e071b9e80fe5cbdaac40ea5c908a",
+    "drift_glm/paths.py": "13e9abc9ad0f5a236c612a4b7e11ac74e76bf1dee87b1a6fd453daee66f00f63",
+    "drift_glm/reports/__init__.py": "06bcc1611cf27df258efa5d4e748206b86f679bb5bc25fc0dc06713f92599770",
+    "drift_glm/reports/demo_figures.py": "6cad75f3b283b95ffd0fa717ae937753efa8992ec487cd5b90f602ebadb3c2d8",
+    "drift_glm/reports/flowchart.py": "228b85e8acbd1245528d12caed03565802c61ee50ef46c07bafb4b0783979e80",
+    "drift_glm/reports/imagespace_report.py": "013992725e668c43cb0c35a1f4c00672065e04bff8ad6c757b352a4fc4662306",
+    "drift_glm/reports/realglm_report.py": "4b1b87ab705739e75da7f425eac6737ad58a821bcf30aaaa3aaae8a5c6e98180",
+    "drift_glm/reports/sweep_report.py": "8efec57a0a447cb8472bc6932c78890b6c0d26477b52e76fbe4b3132f1081fb4"
+  },
+  "config_fingerprint": "f2a6680c9d5bafa9ccc827a75988ae47bd78a4e5ca62f5ef97268fd14ccdec3f",
+  "elapsed_seconds": 2082.2
+}
