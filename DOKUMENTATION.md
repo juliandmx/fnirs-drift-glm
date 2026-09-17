@@ -422,14 +422,22 @@ Das Paket `drift_glm/` hat vier Schichten mit Abhängigkeiten nur nach unten: `c
 (Vorverarbeitung, kurze Kanäle, Bildraum, Simulation, Fit-Metriken) -> `data`
 (Khan, Multisubject, Koregistrierung) -> `analysis` (Auswertungen, schreiben nach
 `results/`) -> `reports` (Abbildungen und Tabellen aus `results/`). `paths.py` hält alle
-Pfade, `figstyle.py` die Farben und Reihenfolge der Familien. `tests/` enthält 31
-pytest-Tests (`test_smoke.py` 12, `test_imagespace.py` 12, `test_fitstats.py` 7), darunter
-den Regressionstest `test_activation_matches_beta_true_map` für die Kanalreihenfolge.
+Pfade, `figstyle.py` die Farben und Reihenfolge der Familien. `tests/` enthält 55
+pytest-Tests in acht Modulen (`test_smoke.py`, `test_imagespace.py`, `test_fitstats.py`,
+`test_filtering.py`, `test_reliability.py`, `test_design_rank.py`, `test_provenance.py`,
+`test_khan_mapping.py`, `test_detection_guards.py`), darunter den Regressionstest
+`test_activation_matches_beta_true_map` für die Kanalreihenfolge.
 
-`run_v6.sh` führt alle Schritte sequenziell mit PID-Sperre aus (`demo residuals mshrf
-sweep sweeprep flex detection imageglm report msglm tables`); der Sweep schreibt seine CSV
-am Ende, `imageglm` und `msglm` nach jeder Zelle, `msglm` setzt fort. Aufrufe, Laufzeiten
-und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
+`run_v6.sh` führt alle Schritte sequenziell aus (`demo residuals mshrf sweep sweepxy
+sweeprep flex detection imageglm report msglm realglm tables`), mit atomarer `flock`-Sperre;
+ein fehlgeschlagener Schritt beendet die Kette, damit kein Bericht auf veralteten
+Ergebnisdateien läuft, und `results/logs/run_v6_status.json` hält den Status je Schritt.
+Jede Analyse schreibt neben ihrer CSV eine `.meta.json` (Git-Commit, Cedalion-Commit,
+SHA-256 der Quelldateien und Eingabedaten, Konfiguration; `core/provenance.py`); vorhandene
+Ergebnisdateien werden vor dem Ersetzen verifiziert nach `results/archive/` kopiert. Der
+Sweep schreibt seine Dateien am Ende (atomar), `imageglm` und `msglm` nach jeder Zelle;
+`msglm` setzt nur vollständige Zellen mit unverändertem Fingerabdruck fort. Aufrufe,
+Laufzeiten und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
 
 ## 8 Bekannte Einschränkungen
 
@@ -460,9 +468,11 @@ und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
   Alle Bildraum-Zahlen gelten nur innerhalb der Maske und für diese Regularisierung; die
   Schätzungen aus dem GLM lokalisieren in 23 von 24 HbO-Zellen an einer familienunabhängigen
   falschen Stelle. `imageglm` verwendet einen Seed.
-- `msglm_summary.csv` enthält 81 von 84 Zellen; dct:0.02 x AR-IRLS (x none / short_avg_dm /
-  short_avg_sub) fehlt (Laufzeit etwa 19 h wegen 2,9 GB je Kanalfit, strikt sequenziell).
-  `./run_v6.sh msglm tables` rechnet sie nach und überspringt die fertigen Zellen.
+- `msglm_summary.csv` enthält die 81 Zellen des erklärten Rasters (OLS: 12 Familien x 6
+  Systemik-Stufen; AR-IRLS: none / poly:3 / butter:0.01 x none / short_avg_dm /
+  short_avg_sub). dct:0.02 x AR-IRLS gehört seit dem 8. September 2026 nicht mehr zum
+  Raster (Laufzeit etwa 19 h wegen 2,9 GB je Kanalfit, strikt sequenziell) und wird von
+  `run_v6.sh` nicht mehr gestartet.
 - Khan ohne Landmarken und Sensitivitätsmatrix: `geo3d` enthält nur Optoden. Die
   landmarkenfreie Registrierung (`data/coregister.py`) legt die Optoden im Median 2,2 mm auf
   die ICBM152-Kopfhaut, kann aber links und rechts nicht unterscheiden; die
@@ -477,3 +487,53 @@ und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
   Zelle; `dct:0.005`/`dct:0.01` bei 90 s und `dct:0.005` bei 180 s sind mit `none`
   identisch und `poly:n` mit `legendre:n`, sodass das 15-Familien-Raster bei kurzen
   Fenstern weniger unabhängige Modelle enthält als Zeilen.
+
+## 9 Prüfung vom 11. September 2026 und Korrekturen (Branch `review-fixes`)
+
+Eine externe Prüfung (`../Pruefung_2026-09-10/PRUEFBERICHT_UND_AENDERUNGSVORSCHLAEGE.md`)
+fand keine Rechenfehler in den gespeicherten Hauptsimulationen, aber mehrere
+Vergleichbarkeits- und Interpretationsprobleme. Umsetzung am 17. September 2026
+(Protokoll: `../Pruefung_2026-09-10/CHANGELOG_REVIEW_FIXES.md`); Betreuungsvorgaben
+blieben unangetastet (Filter-Arm nur Daten, 50b-Subtraktion, TDDR-Achse, alpha_spatial
+0,001, R²/Residuen als Metriken, Auswertung nur über lange Kanäle).
+
+- **R01 Filter-Arm.** `butter:0.01` filtert wie bisher nur die Messung (gängige Praxis und
+  der Test, den die Betreuung wollte). Neu als Kontrollarm `butterxy:0.01`
+  (`core/filtering.apply_filter`): derselbe Nullphasenfilter auf y UND alle nichtkonstanten
+  Designspalten (HRF, Motion, Global, Short), Offset ungefiltert, voller Rang geprüft.
+  Gerechnet für den Sweep (120 Fits, `sweep butterxy` + `sweep merge`), den Khan-Datensatz
+  (`realglm supplement/merge`) und das OLS-Raster des Multisubject-Datensatzes
+  (`msglm butterxy`, eigene CSV `msglm_summary_butterxy.csv`).
+- **R02 Halbierungs-Reproduzierbarkeit.** Bisher wurden gerade und ungerade Trials in
+  getrennten Fits geschätzt, wobei die jeweils anderen Trials unmodelliert in den Daten
+  blieben (Omitted-Variable-Verzerrung). Jetzt EIN gemeinsames Modell mit getrennten
+  Even-/Odd-Regressoren je Bedingung über alle Trials (`msglm.first_level(half="joint")`);
+  Reliabilität = Korrelation der beiden HbO-Karten je Proband, Median über Probanden.
+  Der Vollfit (Gruppentest, Lateralisierung, Bildraum) ist davon unberührt; im Modus
+  `reliability --reuse-full-from <Archiv>` werden diese Spalten aus der archivierten
+  Tabelle übernommen und als unverändert geprüft. Alte Tabelle: `results/archive/
+  msglm_summary_*_2026-08-12_splitfit_reliability.csv`.
+- **R03 Subtraktion.** Docstring und Arbeit beschreiben die 50b-Variante jetzt korrekt:
+  Stufe 1 enthält HRF- und Short-Regressoren (ohne Offset/Drift, OLS), abgezogen wird nur
+  der Short-Anteil; Implementierung unverändert.
+- **R06 DCT-Konstante.** `drift_dm("dct:*")` hängt keinen zweiten Offset mehr an (Cedalions
+  k=0 ist die Konstante); nur bei floor(2Nf/fs)=0 bleibt ein expliziter Offset. Weil der
+  Spaltenraum identisch ist, sind beta und Vorhersagen unverändert; das adjustierte R² der
+  45 DCT-Zellen wurde offline aus dem gespeicherten R² neu berechnet
+  (`sweep migrate-dct`, Schema `one_constant_v2`, Original in `results/archive/`).
+  `fitstats` protokolliert zusätzlich den numerischen Designrang.
+- **R04/R05/R07/R08.** Kette bricht bei Fehlern ab (flock, Statusdatei); Metadaten und
+  Archiv für jede Analyse; `environment.yml` portabel; `detection` zählt ungültige
+  Inferenz (Varianz <= 0, nicht endlich) statt sie still umzuwandeln (`n_invalid`).
+- **L02 Khan-Hemisphären.** Khan et al. (2026), Tabelle 3, ordnet CH01-CH24 (S1-S8/D1-D8)
+  der linken und CH25-CH48 (S9-S16/D9-D16) der rechten Hemisphäre zu, mit
+  10-10-Positionen; die SNIRF-Kanalreihenfolge entspricht der Tabelle
+  (`realdata.khan_channel_table`, Test). `analysis/khan_lateralisation.py` berechnet
+  daraus Lateralisierungsindex, signifikante Kanäle je Seite und die Hemisphäre der
+  Maxima der Gruppenkarten (`results/khan_lateralisation.csv`); Abb. 17 ist jetzt
+  anatomisch orientiert (links = links, frontal oben).
+- **C12 Regularisierungstabelle.** `recon_check` schreibt `results/recon_check_multisubject.csv`
+  (17. September 2026, korrigierter Vorwärtsweg); die Werte stimmen mit der Konsolentabelle
+  vom August überein (r 0,45-0,65; Peak-Verhältnis 0,89-2,02; Ort 8,6 / 14,6 / 13,2-14,0 mm).
+- **Nicht neu gerechnet:** voller Sweep, `realglm` voll, `imageglm`, `detection`;
+  `hrf_retention.csv` (10.09.) ist der gültige Stand (Wavelet 100,00 %, TDDR 51-60 %).

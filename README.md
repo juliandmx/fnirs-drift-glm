@@ -67,12 +67,13 @@ fnirs-drift-glm/
       sweep_report.py           Abb. 6-10, 25, 26 und results/tables.md
       realglm_report.py         Abb. 15-18
       imagespace_report.py      Abb. 19-23
-  tests/                        31 pytest-Tests: test_smoke.py (12), test_imagespace.py (12),
-                                test_fitstats.py (7)
+  tests/                        55 pytest-Tests in acht Modulen (Smoke, Bildraum, Fit-Metriken,
+                                Filterung, Reliabilität, Designrang, Provenienz, Khan-Zuordnung)
   results/                      CSV, NetCDF, tables.md (versioniert); logs/ nicht versioniert
   figures/                      Abbildungen 00-30, flach mit Nummernpräfix
-  run_v6.sh                     sequenzielle Kette aller Schritte mit PID-Sperre
-  environment.lock.txt          Versionsstand der Umgebung
+  run_v6.sh                     sequenzielle Kette aller Schritte (flock-Sperre, Abbruch bei Fehler)
+  environment.lock.txt          Versionsstand der Umgebung (maschinenspezifisch)
+  environment.yml               portable Umgebungsbeschreibung
   README.md, DOKUMENTATION.md
 ../cedalion/                    Cedalion-Quelltext (dev), editierbar installiert
 ../FingerTappingDataset_Published2025/   Khan-Datensatz (SNIRF)
@@ -108,14 +109,21 @@ am Ende (Fortschrittsdatei nach jedem Fit); `imageglm` und `msglm` schreiben nac
 Zelle, `msglm` setzt einen abgebrochenen Lauf fort.
 
 ```bash
-$M drift_glm.analysis.sweep v4               # ~7 h    Kanalraum-Hauptstudie, 1800 Zellen
+$M drift_glm.analysis.sweep v4 --replace     # ~7 h    Kanalraum-Hauptstudie, 1800 Zellen (archiviert alte Ergebnisse)
+$M drift_glm.analysis.sweep butterxy         # ~25 min Kontrollarm (Daten + Design gefiltert), danach: sweep merge
+$M drift_glm.analysis.sweep migrate-dct      # einmalig: adj. R² der DCT-Zellen auf eine Konstante umgerechnet
 $M drift_glm.analysis.flex_basis             # ~1 h
 $M drift_glm.analysis.detection              # ~1,5 h  Fits über alle Kanäle
 $M drift_glm.analysis.residuals              # ~20 min
 $M drift_glm.analysis.compare_preprocessing  # ~15 min
 $M drift_glm.analysis.imageglm               # ~3 h    Bildraum, 24 Zellen à 420 s Fit
 $M drift_glm.analysis.realglm                # ~3,6 h  Khan, 3864 Fits
-$M drift_glm.analysis.msglm                  # ~5 h    OLS-Raster; dct:0.02 x AR-IRLS zusätzlich ~19 h
+$M drift_glm.analysis.realglm supplement     # ~30 min Ergänzungsarme lowpass:0.5, butterxy:0.01; danach: realglm merge
+$M drift_glm.analysis.khan_lateralisation    # ~10 min Hemisphären-Kontrolle der Gruppenkarten (Khan Tab. 3)
+$M drift_glm.analysis.msglm                  # ~5 h    81-Zellen-Raster (OLS voll, AR-IRLS none/poly:3/butter)
+$M drift_glm.analysis.msglm butterxy         # ~30 min OLS-Kontrollarm, eigene CSV
+$M drift_glm.analysis.msglm reliability --reuse-full-from results/archive/<msglm_summary_...>.csv --output results/msglm_summary.csv --no-resume
+                                             #          nur die gemeinsamen Even/Odd-Fits neu, Vollfit aus dem Archiv
 $M drift_glm.analysis.mshrf                  # ~25 min
 ```
 
@@ -137,9 +145,12 @@ tail -f results/logs/*_progress.txt
 ./run_v6.sh msglm tables                     # nur einzelne Schritte
 ```
 
-Schritte in dieser Reihenfolge: `demo residuals mshrf sweep sweeprep flex detection
-imageglm report msglm tables`. Die Kette läuft sequenziell mit PID-Sperre, weil der
-Speicher der Engpass ist (2,9 GB je dct:0.02-AR-IRLS-Kanalfit).
+Schritte in dieser Reihenfolge: `demo residuals mshrf sweep sweepxy sweeprep flex detection
+imageglm report msglm realglm tables`. Die Kette läuft sequenziell mit `flock`-Sperre, weil der
+Speicher der Engpass ist (2,9 GB je dct:0.02-AR-IRLS-Kanalfit); ein fehlgeschlagener Schritt
+beendet sie (`results/logs/run_v6_status.json`). Jede Analyse legt eine `.meta.json` mit
+Code-/Daten-Fingerabdruck neben ihre CSV und archiviert ersetzte Dateien unter
+`results/archive/`.
 
 ## Reproduzierbarkeit
 
