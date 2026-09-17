@@ -325,9 +325,11 @@ unter 0,02 Hz bei 368 s für HbO 0,22 (none, poly:1-5, legendre:3, bspline:5), 0
 
 ### 6.3 Vorverarbeitung (Abb. 11)
 
-`hrf_retention.csv` (Lauf vom 5. August 2026, Seeds 0-1): Anteil der eingemischten
-HRF-Amplitude, der die Bewegungskorrektur überlebt: ohne Korrektur und wavelet 100 %,
-tddr 51-60 % (HbO) und 53-60 % (HbR), tddr+wavelet identisch.
+`hrf_retention.csv` (Lauf vom 10. September 2026, Seeds 0-1, korrigierte Injektion):
+Anteil der eingemischten HRF-Amplitude, der die Bewegungskorrektur überlebt: ohne
+Korrektur 100,000 %, wavelet 100,000-100,002 %, tddr 51,5-60,0 % (HbO) und 52,8-60,2 %
+(HbR), tddr+wavelet identisch mit tddr. TDDR entfernt also 40-49 % der Antwort (nicht
+"ein Drittel"; ältere Notizen nannten 56-69 % Retention aus dem Lauf vom 5. August).
 
 `preprocessing_comparison.csv` (Lauf vom 5. August 2026 mit Kanalraum-Blob, 180 s, 3
 Seeds, baseline; wahres beta 0,395 / -0,158 µM): Bias HbO +0,199 (ohne Korrektur), +0,249

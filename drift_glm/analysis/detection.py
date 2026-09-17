@@ -22,6 +22,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import xarray as xr
 from scipy.stats import norm
 from statsmodels.stats.multitest import multipletests
 
@@ -60,14 +61,31 @@ def _hrf_tvalues(res):
 
     Cedalions .sm.p_values ist fuer die rohen Fit-Ergebnisse nicht implementiert; p wird
     zweiseitig aus der Normalverteilung abgeleitet, bei ~1600 Zeitpunkten unkritisch.
+    Ungueltige Inferenz (negative oder nichtendliche Varianz, SE = 0) wird NICHT still
+    umgewandelt, sondern als NaN zurueckgegeben und in `invalid_inference` gezaehlt.
     """
     beta = res.sm.params.sel(regressor="HRF Stim")
-    se = np.sqrt(np.abs(res.sm.regressor_variances().sel(regressor="HRF Stim")))
-    return beta / se        # (channel, chromo)
+    var = res.sm.regressor_variances().sel(regressor="HRF Stim")
+    v = np.asarray(var.values, dtype=float)
+    bad = ~np.isfinite(v) | (v <= 0)
+    se = np.sqrt(np.where(bad, np.nan, v))
+    t = beta / xr.DataArray(se, dims=var.dims, coords=var.coords)
+    return t.where(np.isfinite(t))        # (channel, chromo), NaN = ungueltig
+
+
+def invalid_inference(tvals) -> int:
+    """Zahl der Kanaele ohne gueltigen t-Wert (NaN nach `_hrf_tvalues`)."""
+    return int((~np.isfinite(np.asarray(tvals.values, dtype=float))).sum())
 
 
 def _metrics(pvals, truth_active):
-    reject, _, _, _ = multipletests(pvals, alpha=ALPHA, method="fdr_bh")
+    """Detektionsguete; Kanaele mit ungueltigem p (NaN) gelten als nicht detektiert und
+    werden separat gezaehlt (`n_invalid`), statt als p = 1 oder p = 0 einzugehen."""
+    pvals = np.asarray(pvals, dtype=float)
+    valid = np.isfinite(pvals)
+    reject = np.zeros(pvals.shape, dtype=bool)
+    if valid.any():
+        reject[valid], _, _, _ = multipletests(pvals[valid], alpha=ALPHA, method="fdr_bh")
     tp = int((reject & truth_active).sum())
     fp = int((reject & ~truth_active).sum())
     fn = int((~reject & truth_active).sum())
@@ -77,7 +95,8 @@ def _metrics(pvals, truth_active):
     prec = tp / (tp + fp) if (tp + fp) else float("nan")
     youden = (sens + spec - 1) if (sens == sens and spec == spec) else float("nan")
     return dict(TP=tp, FP=fp, FN=fn, TN=tn, sensitivity=sens, specificity=spec,
-                precision=prec, youden_J=youden, n_detected=int(reject.sum()))
+                precision=prec, youden_J=youden, n_detected=int(reject.sum()),
+                n_invalid=int((~valid).sum()))
 
 
 def main(mode="full"):
@@ -104,9 +123,13 @@ def main(mode="full"):
             res = glm.fit(ts_f, P.dm_hrf & dm_drift, noise_model="ar_irls",
                           ar_order=30, max_jobs=-1)
             tvals = _hrf_tvalues(res)                        # (channel, chromo)
+            n_bad = invalid_inference(tvals)
+            if n_bad:
+                print(f"  ! {n_bad} Kanal-t-Werte ungueltig (Varianz <= 0 oder nicht "
+                      f"endlich) bei {fam}, seed={seed}", flush=True)
             for c in ("HbO", "HbR"):
-                t = np.nan_to_num(np.asarray(tvals.sel(chromo=c).values, float), nan=0.0)
-                pvals = 2.0 * norm.sf(np.abs(t))             # zweiseitig, grosses df
+                t = np.asarray(tvals.sel(chromo=c).values, float)
+                pvals = 2.0 * norm.sf(np.abs(t))             # zweiseitig, grosses df; NaN bleibt NaN
                 truth = np.abs(btm.sel(chromo=c).values) > ACTIVE_THR * peak
                 m = _metrics(pvals, truth)
                 m.update(family=fam, chromo=c, seed=seed,
@@ -123,7 +146,8 @@ def main(mode="full"):
                 precision=("precision", "mean"),
                 youden_J=("youden_J", "mean"),
                 n_detected=("n_detected", "mean"),
-                n_truth_active=("n_truth_active", "mean"))
+                n_truth_active=("n_truth_active", "mean"),
+                n_invalid=("n_invalid", "sum"))
            .reset_index())
     agg.to_csv(RESULTS / "detection_summary.csv", index=False)
     print("\n=== Detektionsguete nach FDR (q=0.05), Mittel ueber Seeds ===")
