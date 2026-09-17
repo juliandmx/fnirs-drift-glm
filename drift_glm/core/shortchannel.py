@@ -83,12 +83,14 @@ def subtract_global_component(ts_long, ts_short, stim_df, basis, *,
                               noise_model: str = "ols"):
     """Den vom Short-Regressor erklaerten Anteil abziehen statt ihn im Modell zu lassen.
 
-    Variante aus Notebook 50b. Beim Regressor in der Designmatrix (`dm`) wird die HRF
-    gemeinsam mit dem Short-Regressor geschaetzt, also gegen ihn orthogonalisiert. Hier
-    wird der Anteil auf Daten geschaetzt, die die HRF enthalten; ist die Systemik
-    aufgabengekoppelt, nimmt der Abzug einen Teil der Antwort mit, den ein spaeterer Fit
-    nicht zurueckholen kann. Der Vorteil ist praktisch: die bereinigte Zeitreihe laesst
-    sich ohne GLM weiterverarbeiten (Blockmittel, Epochen, Bildraum).
+    Variante aus Notebook 50b: die erste Stufe enthaelt bereits HRF- und
+    Short-Regressoren, aber weder Offset noch Driftspalten. Nur der geschaetzte
+    Short-Anteil wird abgezogen. Der Default dieser ersten Stufe ist OLS, auch wenn
+    die aufrufende Analyse anschliessend AR-IRLS verwendet. Die zweite Stufe
+    schaetzt HRF und Drift auf der residualisierten Zeitreihe neu. Diese Unterschiede
+    verhindern eine allgemeine Gleichsetzung mit einem gemeinsamen Modell aus
+    HRF, Offset, Drift und Short-Regressor. Die bereinigte Zeitreihe laesst sich
+    anschliessend auch ohne GLM weiterverarbeiten (Blockmittel, Epochen, Bildraum).
 
     Rueckgabe: `ts_long` minus dem erklaerten Anteil.
     """
