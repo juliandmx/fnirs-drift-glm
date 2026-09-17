@@ -548,5 +548,13 @@ blieben unangetastet (Filter-Arm nur Daten, 50b-Subtraktion, TDDR-Achse, alpha_s
   ist also überwiegend die Inkonsistenz zwischen gefilterten Daten und ungefiltertem
   Design. `lowpass:0.5` mit AR-IRLS kollabiert (beta_max 1e-5 µM, Reproduzierbarkeit
   -0,08), mit OLS unauffällig (0,460).
+- **Ergebnis der Reliabilitäts-Neuberechnung (18:45).** Mit dem gemeinsamen Even/Odd-Modell
+  liegen die HbO-Split-Half-Reliabilitäten bei 0,73-0,96 (OLS) und 0,90-0,94 (AR-IRLS); ohne
+  Systemik führen dct:0.02 (0,958), butter:0.01 (0,941) und dct:0.01 (0,934), die übrigen
+  Familien liegen bei 0,79-0,81; der Global-Regressor senkt die Reliabilität (0,73-0,86),
+  Short-Regressoren heben sie (short_maxcorr 0,87-0,95); AR-IRLS liegt in 7 von 9 Zellen
+  über OLS. Die alte Rangfolge (DCT zuletzt, 0,14-0,58; Tabelle vom 12.08. im Archiv) war
+  ein Artefakt der getrennten Fits mit unmodellierten Trials. Vollfit-, Gruppen-,
+  Lateralisierungs- und Bildraumspalten sind unverändert (geprüft).
 - **Nicht neu gerechnet:** voller Sweep, `realglm` voll, `imageglm`, `detection`;
   `hrf_retention.csv` (10.09.) ist der gültige Stand (Wavelet 100,00 %, TDDR 51-60 %).
