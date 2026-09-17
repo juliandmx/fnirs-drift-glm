@@ -26,11 +26,11 @@ RESULTS = paths.RESULTS
 FIGURES = paths.FIGURES
 
 HBO_COLOR, HBR_COLOR = "#c44e52", "#4c72b0"
-PROJ_LABEL = {"hrf": "geschätzte HRF", "residual": "Residuum",
-              "cleaned": "Residuum + HRF"}
-SYS_LABEL = {"none": "ohne", "global_dm": "global (DM)", "short_avg_dm": "short avg (DM)",
-             "short_avg_sub": "short avg (abgezogen)",
-             "short_maxcorr_dm": "short maxcorr (DM)",
+PROJ_LABEL = {"hrf": "estimated HRF", "residual": "residual",
+              "cleaned": "residual + HRF"}
+SYS_LABEL = {"none": "none", "global_dm": "global (DM)", "short_avg_dm": "short avg (DM)",
+             "short_avg_sub": "short avg (subtracted)",
+             "short_maxcorr_dm": "short max-corr (DM)",
              "short_closest_dm": "short closest (DM)"}
 
 
@@ -97,16 +97,16 @@ def fig_hrf_per_channel(window_s: float = 368.0, family: str = "dct:0.02",
                     color=col, lw=1.2, ls="--")
         ax.axhline(0, color="k", lw=0.6)
         ax.axvline(0, color="k", lw=0.6, ls=":")
-        ax.set_title(f"{ch}   wahr {strength[j]:.3f} µM",
+        ax.set_title(f"{ch}   true {strength[j]:.3f} µM",
                      fontsize=8, color="k" if strength[j] > 0.05 else "#888888")
         ax.grid(alpha=0.25)
     for k in range(n, len(axes)):
         axes[k].set_axis_off()
     axes[0].set_ylabel(r"$\Delta c$ / µM")
-    fig.suptitle("Abb. 19 – HRF je Kanal: eingemischt (dick, blass) gegen geschätzt "
-                 "(dünn, gestrichelt)\n"
-                 f"rot HbO, blau HbR · {family}, {noise_model}, {window_s:.0f} s · "
-                 "die letzten drei Kanäle haben keine Aktivierung (Kontrolle)",
+    fig.suptitle("HRF per channel: injected (thick, pale) against estimated "
+                 "(thin, dashed)\n"
+                 f"red HbO, blue HbR · {family}, {noise_model}, {window_s:.0f} s · "
+                 "the last three channels carry no activation (control)",
                  fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     out = FIGURES / "19_hrf_per_channel.png"
@@ -140,7 +140,7 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
         truth = truth.sum("trial_type")
 
     pr = ig.fit_projections(P, family, "baseline", noise_model)
-    imgs = {"Wahrheit": truth}
+    imgs = {"truth": truth}
     for proj in ig.PROJECTIONS:
         od = ig.conc_map_to_od(pr[proj], P.geo3d, P.pre.od.wavelength, like=P.conc_syn)
         imgs[PROJ_LABEL[proj]] = recon.reconstruct(od, c_meas.sel(channel=od.channel))
@@ -168,10 +168,10 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
                 P.pre.od, head.landmarks, m, head.brain, axes[i_row, i_col],
                 camera_pos=cam, cmap="RdBu_r", vmin=-lim, vmax=+lim,
                 cb_label=r"$\Delta$ HbO / µM", title=None)
-            axes[i_row, i_col].set_title(f"{name} · Blick von {cam}", fontsize=9)
-    fig.suptitle("Abb. 20 – Aktivierung auf dem Kortex: eingemischt und aus dem "
-                 f"GLM-Ergebnis rekonstruiert ({family}, {noise_model})\n"
-                 "grau: ausserhalb der Sensitivität der Montage", fontsize=10)
+            axes[i_row, i_col].set_title(f"{name} · view from {cam}", fontsize=9)
+    fig.suptitle("Activation on the cortex: injected and reconstructed from the "
+                 f"GLM result ({family}, {noise_model})\n"
+                 "grey: outside the sensitivity of the montage", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     out = FIGURES / "20_cortex_truth_vs_recon.png"
     fig.savefig(out, dpi=130)
@@ -199,9 +199,9 @@ def fig_image_families(csv: str = "imageglm_summary.csv"):
         print(f"(uebersprungen: {path} enthaelt nur die Obergrenze)")
         return
 
-    metrics = [("img_r", "Korrelation mit der Wahrheit", "höher = besser"),
-               ("img_loc_err_mm", "Lokalisationsfehler [mm]", "niedriger = besser"),
-               ("img_hit_frac", "Anteil am richtigen Ort", "höher = besser")]
+    metrics = [("img_r", "correlation with the truth", "higher is better"),
+               ("img_loc_err_mm", "localisation error [mm]", "lower is better"),
+               ("img_hit_frac", "near-truth mass fraction", "higher is better")]
     projs = [p for p in ("hrf", "residual", "cleaned") if p in set(d.projection)]
     cons = list(dict.fromkeys(d.constellation))
     fams = list(dict.fromkeys(d.family))
@@ -220,19 +220,19 @@ def fig_image_families(csv: str = "imageglm_summary.csv"):
                        label=PROJ_LABEL.get(proj, proj))
             if not ref.empty and np.isfinite(ref[col].mean()):
                 ax.axhline(ref[col].mean(), color="k", ls="--", lw=1.2,
-                           label="Obergrenze (rauschfrei)")
+                           label="noise-free reference")
             ax.grid(axis="y", alpha=0.3)
             ax.axhline(0, color="k", lw=0.6)
             if i_con == 0:
                 ax.set_ylabel(f"{label}\n({hint})", fontsize=9)
             if i_m == 0:
-                ax.set_title(f"Konstellation: {con}", fontsize=10)
+                ax.set_title(f"constellation: {con}", fontsize=10)
         axes[-1][i_con].set_xticks(x)
         axes[-1][i_con].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
     axes[0][0].legend(ncol=max(len(projs), 1) + 1, fontsize=8, loc="upper left",
                       framealpha=0.9)
-    fig.suptitle("Abb. 21 – Driftfamilien im Bildraum (HbO): Korrelation, "
-                 "Lokalisationsfehler, Trefferanteil", fontsize=11)
+    fig.suptitle("Drift families in image space (HbO): correlation, "
+                 "localisation error, near-truth mass", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     out = FIGURES / "21_image_families.png"
     fig.savefig(out, dpi=130)
@@ -256,8 +256,8 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
     ax = axes[0]
     x = np.arange(len(sysl))
-    for k, (col, lab) in enumerate((("lat_right", "Tapping rechts → links erwartet"),
-                                    ("lat_left", "Tapping links → rechts erwartet"))):
+    for k, (col, lab) in enumerate((("lat_right", "right-hand tapping → left expected"),
+                                    ("lat_left", "left-hand tapping → right expected"))):
         if col not in d:
             continue
         g = d.groupby("systemic")[col].mean().reindex(sysl)
@@ -265,28 +265,28 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
     ax.axhline(0, color="k", lw=1)
     ax.set_xticks(x)
     ax.set_xticklabels([SYS_LABEL[s] for s in sysl], rotation=25, ha="right", fontsize=8)
-    ax.set_ylabel("β kontralateral − ipsilateral [µM]")
-    ax.set_title("Kanalraum: Lateralisierung\n"
-                 "(positiv = kontralateral stärker)")
+    ax.set_ylabel("β contralateral − ipsilateral [µM]")
+    ax.set_title("Channel space: lateralisation\n"
+                 "(positive = contralateral stronger)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(fontsize=8)
 
     ax = axes[1]
     if "loc_err_mm" in d:
-        for k, (col, lab) in enumerate((("loc_err_mm", "zur erwarteten Landmarke"),
-                                        ("loc_err_wrong_mm", "zur Gegenseite"))):
+        for k, (col, lab) in enumerate((("loc_err_mm", "to the expected landmark"),
+                                        ("loc_err_wrong_mm", "to the opposite side"))):
             g = d.groupby("systemic")[col].mean().reindex(sysl)
             ax.bar(x + (k - 0.5) * 0.38, g.values, width=0.36, label=lab)
         ax.set_xticks(x)
         ax.set_xticklabels([SYS_LABEL[s] for s in sysl], rotation=25, ha="right",
                            fontsize=8)
-        ax.set_ylabel("Abstand des Maximums [mm]")
-        ax.set_title("Bildraum: Ort des Maximums\n(Abstand zur erwarteten Landmarke "
-                     "und zur Gegenseite)")
+        ax.set_ylabel("distance of the |β| maximum [mm]")
+        ax.set_title("Image space: location of the maximum\n(distance to the expected "
+                     "landmark and to the opposite side)")
         ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=8)
-    fig.suptitle("Abb. 22 – Kontralaterale Kontrolle auf dem Multisubject-Datensatz "
-                 "(5 Probanden, HbO)", fontsize=11)
+    fig.suptitle("Contralateral control on the multisubject dataset "
+                 "(5 subjects, HbO, mean over families)", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     out = FIGURES / "22_ms_lateralisation.png"
     fig.savefig(out, dpi=130)
@@ -301,9 +301,9 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
         return
     fams = list(dict.fromkeys(d.family))
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.6))
-    for ax, (col, lab) in zip(axes, (("reliability_r", "Reproduzierbarkeit (Halbierung)"),
-                                     ("n_significant", "signifikante Kanäle"),
-                                     ("beta_max", "größtes β [µM]"))):
+    for ax, (col, lab) in zip(axes, (("reliability_r", "split-half reliability"),
+                                     ("n_significant", "significant channels"),
+                                     ("beta_max", "largest β [µM]"))):
         xx = np.arange(len(fams))
         for k, s in enumerate(sum(map(list, pairs), [])):
             g = d[d.systemic == s].groupby("family")[col].mean().reindex(fams)
@@ -314,8 +314,8 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
         ax.set_title(lab, fontsize=10)
         ax.grid(alpha=0.3)
     axes[0].legend(fontsize=8)
-    fig.suptitle("Abb. 23 – Global-Component-Subtraktion: derselbe Regressor in der "
-                 "Designmatrix (durchgezogen) gegen vorher abgezogen (gestrichelt)",
+    fig.suptitle("Global-component subtraction: the same regressor in the design "
+                 "matrix (solid) against subtracted beforehand (dashed)",
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.9))
     out = FIGURES / "23_global_component.png"

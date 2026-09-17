@@ -1,4 +1,4 @@
-"""Pipeline-Flowchart als Abbildung fuer die Arbeit (Abb. 00).
+"""Pipeline-Flowchart als Abbildung fuer die Arbeit (Abb. 00; englische Beschriftung).
 
 Erzeugt figures/00_pipeline_flowchart.pdf (Vektor, fuer LaTeX) und .png (Vorschau) mit
 reinem matplotlib, ohne Zusatzabhaengigkeit. Gezeigt werden beide Straenge (Simulation mit
@@ -66,90 +66,90 @@ def main():
     wl = wr = 0.45
     xm, wm = 0.03, 0.94          # breite (gemeinsame) Boxen
 
-    # --- Zeile 1: Datenquellen -------------------------------------------------
+    # --- row 1: data sources ------------------------------------------------------
     _box(ax, xl, 0.925, wl, 0.062,
-         "Strang A — Simulation (Ground Truth bekannt)\n"
-         "nn22-Ruhedaten: 544 Kanäle, ≈9 Hz, 368 s\n"
-         "Analysefenster 90 / 180 / 368 s, mehrere Seeds", C_DATA)
+         "Strand A — simulation (ground truth known)\n"
+         "nn22 resting state: 520 channels, ≈9 Hz, 368 s\n"
+         "analysis windows 90 / 180 / 368 s, several seeds", C_DATA)
     _box(ax, xr, 0.925, wr, 0.062,
-         "Strang B — Realdaten (ohne Ground Truth)\n"
-         "Khan: 25 Probanden, 48 Kanäle · Multisubject:\n"
-         "5 Probanden, 28 Kanäle, 8 echte Short-Channels", C_DATA)
+         "Strand B — real data (no ground truth)\n"
+         "Khan: 25 subjects, 48 channels · multisubject:\n"
+         "5 subjects, 28 channels, 8 genuine short channels", C_DATA)
 
-    # --- Seitenpfad: Ground Truth / Injektion (nur Strang A) --------------------
+    # --- side path: ground truth / injection (strand A only) -----------------------
     _box(ax, xl, 0.790, wl, 0.100,
-         "Synthetische Aktivierung (Ground Truth)\n"
-         "Gauß-Blob auf dem Kortex unter C3/C4 (ICBM152)\n"
-         "→ Vorwärtsmodell (Sensitivität A) → Kanalraum\n"
-         "→ Rückrechnung in optische Dichte\n"
-         "β_true je Kanal und auf dem Kortex bekannt", C_GT)
+         "Synthetic activation (ground truth)\n"
+         "Gaussian blob on the cortex beneath C3/C4 (ICBM152)\n"
+         "→ forward model (sensitivity A) → channel space\n"
+         "→ converted back to optical density\n"
+         "β_true known per channel and on the cortex", C_GT)
 
-    # --- Gemeinsame Vorverarbeitung ---------------------------------------------
+    # --- shared preprocessing ------------------------------------------------------
     _box(ax, xm, 0.700, wm, 0.052,
-         "Intensität → optische Dichte (OD)\n"
-         "Strang A: Injektion der Aktivierung in die OD, vor der Motion Correction",
+         "Intensity → optical density (OD)\n"
+         "Strand A: activation injected into the OD before motion correction",
          C_PREP)
     _box(ax, xm, 0.628, wm, 0.042,
-         "Motion Correction auf OD\n"
-         "TDDR und/oder Wavelet (eigene Vergleichsachse)", C_PREP)
+         "Motion correction on OD\n"
+         "TDDR and/or wavelet (separate comparison axis)", C_PREP)
     _box(ax, xm, 0.556, wm, 0.042,
-         "Kanal-Pruning und Konzentration\n"
-         "SNR-, Amplituden-, Abstandsmaske → Beer-Lambert → Δ[HbO], Δ[HbR] in µM",
+         "Channel pruning and concentration\n"
+         "SNR, amplitude and distance masks → Beer–Lambert → Δ[HbO], Δ[HbR] in µM",
          C_PREP)
 
-    # --- GLM ---------------------------------------------------------------------
+    # --- GLM ------------------------------------------------------------------------
     _box(ax, xm, 0.408, wm, 0.118,
-         "GLM je Kanal × Chromophor\n"
-         "Designmatrix  =  HRF-Regressor (Gamma, Peak = 1; Formanalyse: flexible"
-         " Gauß-Basis)\n"
-         "⊕  Driftfamilie (unabhängige Variable): Polynom n=1…5 · Legendre 1/3/5 ·"
-         " DCT 0,005/0,01/0,02 Hz · B-Spline 5/8 · none\n"
-         "     Alternative statt Regressoren: Butterworth-Hochpass (bzw. Tief-/Bandpass)"
-         " auf der Zeitreihe\n"
-         "⊕  Systemik: Global-Mean · Short-Channel (avg / maxcorr / closest; in der DM"
-         " oder vorab abgezogen)   ⊕  Motion-Regressoren\n"
-         "Schätzer: AR-IRLS (AR-Ordnung 30) und OLS", C_GLM)
+         "GLM per channel × chromophore\n"
+         "Design matrix  =  HRF regressor (gamma, peak = 1; shape analysis: flexible"
+         " Gaussian basis)\n"
+         "⊕  drift family (independent variable): polynomial n = 1…5 · Legendre 1/3/5 ·"
+         " DCT 0.005/0.01/0.02 Hz · B-spline 5/8 · none\n"
+         "     alternative to regressors: Butterworth high-pass (or low-/band-pass) on the"
+         " time series; control: data and design filtered alike\n"
+         "⊕  systemic: global mean · short channel (avg / max-corr / closest; in the DM"
+         " or subtracted beforehand)   ⊕  motion regressors\n"
+         "Estimators: AR-IRLS (AR order up to 30) and OLS", C_GLM)
 
-    # --- Auswertung ---------------------------------------------------------------
+    # --- evaluation -----------------------------------------------------------------
     _box(ax, xl, 0.235, wl, 0.130,
-         "Auswertung Strang A (gegen Ground Truth)\n"
-         "RMSE / Bias / Varianz von β̂ (über Seeds)\n"
-         "Scalp-Plots: GT neben Schätzung, Abweichung\n"
-         "Detektion: t-Test je Kanal + FDR (Sensitivität/Spezifität)\n"
-         "HRF-Form: flexible Basis vs. injizierte HRF\n"
-         "Modellfit: R², Residuen (↔ GT-Abweichung)\n"
-         "Bildraum: Rekonstruktion → Ort des Maximums", C_EVAL)
+         "Evaluation, strand A (against the ground truth)\n"
+         "RMSE / bias / variance of β̂ (over seeds)\n"
+         "scalp plots: truth next to estimate, deviation\n"
+         "detection: t-test per channel + FDR (sensitivity/specificity)\n"
+         "HRF shape: flexible basis vs. injected HRF\n"
+         "model fit: R², residuals (↔ deviation from the truth)\n"
+         "image space: reconstruction → location of the maximum", C_EVAL)
     _box(ax, xr, 0.235, wr, 0.130,
-         "Auswertung Strang B (wahrheitsfreie Kriterien)\n"
-         "Split-Half-Reproduzierbarkeit der β-Karten\n"
-         "Kontralaterale Erwartung: Tapping links → C4,\n"
-         "rechts → C3 (Kanalraum und Bildraum)\n"
-         "Modellfit: R², Residuen\n"
-         "HRF-Kurven je Driftfamilie (flexible Basis)\n"
-         "gegen das Block-Mittel der Daten", C_EVAL)
+         "Evaluation, strand B (truth-free criteria)\n"
+         "run-to-run / split-half reproducibility of the β maps\n"
+         "contralateral expectation: left-hand tapping → C4,\n"
+         "right-hand tapping → C3 (channel and image space)\n"
+         "model fit: R², residuals\n"
+         "HRF curves per drift family (flexible basis)\n"
+         "against the block average of the data", C_EVAL)
 
-    # --- Ergebnis ------------------------------------------------------------------
+    # --- outcome --------------------------------------------------------------------
     _box(ax, xm, 0.125, wm, 0.052,
-         "Vergleich der Driftregressor-Familien\n"
-         "je Fensterlänge und Regressor-Konstellation → Nutzungsempfehlung",
+         "Comparison of the drift-regressor families\n"
+         "per window length and regressor constellation → recommendation for practice",
          C_EVAL)
 
-    # --- Pfeile ---------------------------------------------------------------------
+    # --- arrows ---------------------------------------------------------------------
     a_x = xl + wl / 2
     b_x = xr + wr / 2
-    _arrow(ax, (a_x, 0.925), (a_x, 0.890))                     # A: Daten -> GT/Injektion
+    _arrow(ax, (a_x, 0.925), (a_x, 0.890))                     # A: data -> truth/injection
     _arrow(ax, (a_x, 0.790), (a_x, 0.752),
-           label="Injektion in die OD")                        # GT -> OD-Stufe
-    _arrow(ax, (b_x, 0.925), (b_x, 0.752))                     # B: Daten -> OD-Stufe
+           label="injection into the OD")                      # truth -> OD stage
+    _arrow(ax, (b_x, 0.925), (b_x, 0.752))                     # B: data -> OD stage
     for y0, y1 in [(0.700, 0.670), (0.628, 0.598), (0.556, 0.526)]:
         _arrow(ax, (0.5, y0), (0.5, y1))
-    _arrow(ax, (a_x, 0.408), (a_x, 0.365))                     # GLM -> Auswertung A
-    _arrow(ax, (b_x, 0.408), (b_x, 0.365))                     # GLM -> Auswertung B
+    _arrow(ax, (a_x, 0.408), (a_x, 0.365))                     # GLM -> evaluation A
+    _arrow(ax, (b_x, 0.408), (b_x, 0.365))                     # GLM -> evaluation B
     _arrow(ax, (a_x, 0.235), (a_x, 0.177))
     _arrow(ax, (b_x, 0.235), (b_x, 0.177))
 
-    ax.set_title("Verarbeitungspipeline: Simulation (Strang A) und Realdaten (Strang B)\n"
-                 "mit gemeinsamer Vorverarbeitung und gemeinsamem GLM",
+    ax.set_title("Processing pipeline: simulation (strand A) and real data (strand B)\n"
+                 "with shared preprocessing and shared GLM",
                  fontsize=11.5, pad=14)
 
     fig.tight_layout()

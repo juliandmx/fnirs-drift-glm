@@ -152,22 +152,38 @@ def main(mode="full"):
     agg.to_csv(RESULTS / "detection_summary.csv", index=False)
     print("\n=== Detektionsguete nach FDR (q=0.05), Mittel ueber Seeds ===")
     print(agg.round(3).to_string(index=False))
+    _fig14(agg, families)
+    print(f"\n-> {RESULTS/'detection_summary.csv'} | Abb. 14 in {OUT}")
 
+
+def _fig14(agg, families):
+    """Abb. 14: Sensitivitaet und Spezifitaet je Familie (englische Beschriftung)."""
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
     for j, c in enumerate(["HbO", "HbR"]):
         d = agg[agg.chromo == c].set_index("family").reindex(families)
         x = np.arange(len(families))
         ax[j].bar(x - 0.2, d.sensitivity.values, width=0.4,
-                  label="Sensitivität (TPR)", color="C0")
+                  label="sensitivity (TPR)", color="C0")
         ax[j].bar(x + 0.2, d.specificity.values, width=0.4,
-                  label="Spezifität (TNR)", color="C1")
+                  label="specificity (TNR)", color="C1")
         ax[j].set_xticks(x); ax[j].set_xticklabels(families, rotation=60, ha="right", fontsize=8)
-        ax[j].set_ylim(0, 1.05); ax[j].set_title(f"{c}: Detektion nach FDR (q=0.05)")
+        ax[j].set_ylim(0, 1.05); ax[j].set_title(f"{c}: detection after FDR (q = 0.05)")
         ax[j].grid(axis="y", alpha=0.3); ax[j].legend(fontsize=8)
-    fig.suptitle("Aktivierungs-Detektion je Driftfamilie (Signifikanz + FDR vs. Ground Truth)")
+    fig.suptitle("Activation detection per drift family (significance + FDR against the ground truth)")
     fig.tight_layout(); fig.savefig(OUT / "14_detection.png", dpi=130); plt.close(fig)
-    print(f"\n-> {RESULTS/'detection_summary.csv'} | Abb. 14 in {OUT}")
+
+
+def plot_from_results():
+    """Abb. 14 nur neu zeichnen, aus results/detection_summary.csv."""
+    agg = pd.read_csv(RESULTS / "detection_summary.csv")
+    fams = [f for f in FAMILIES if f in set(agg.family)]
+    _fig14(agg, fams)
+    print(f"-> {OUT / '14_detection.png'} (aus CSV)")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "full")
+    arg = sys.argv[1] if len(sys.argv) > 1 else "full"
+    if arg == "plot":
+        plot_from_results()
+    else:
+        main(arg)

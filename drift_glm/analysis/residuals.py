@@ -189,37 +189,37 @@ def _fig27(families, windows, traces, spectra):
         # Fenstern laesst einen zurueck) nicht in die Nachbarspur laeuft.
         step = float(np.percentile(np.abs(y0 - y0.mean()), 99)) * 1.7
         ax.plot(t, (y0 - y0.mean()) + step, color="0.75", lw=0.7)
-        ax.text(t[-1], step, " Daten", va="center", fontsize=8, color="0.4")
+        ax.text(t[-1], step, " data", va="center", fontsize=8, color="0.4")
         for k, fam in enumerate(families):
             _, r, _ = traces[(win, fam)]
             off = -k * step
             ax.plot(t, r + off, color=figstyle.family_color(fam), lw=0.8)
             ax.text(t[-1], off, f" {fam}", va="center", fontsize=8,
                     color=figstyle.family_color(fam))
-        ax.set_title(f"Residuum des staerksten Kanals (HbO) | Fenster {win:g} s\n"
-                     "oben grau: gefittete Zeitreihe (mittelwertbereinigt)")
-        ax.set_xlabel("Zeit [s]")
+        ax.set_title(f"Residual of the strongest channel (HbO) | window {win:g} s\n"
+                     "top, grey: fitted time series (mean removed)")
+        ax.set_xlabel("time [s]")
         ax.set_yticks([])
-        ax.set_ylabel(f"Familien, versetzt um {step:.2f} µM")
+        ax.set_ylabel(f"families, offset by {step:.2f} µM")
         ax.margins(x=0.12)
 
         ax = axes[i, 1]
         f_ref, p_ref = spectra[(win, "__data__")]
-        ax.loglog(f_ref[1:], p_ref[1:], color="0.75", lw=1.6, label="Daten (vor Fit)")
+        ax.loglog(f_ref[1:], p_ref[1:], color="0.75", lw=1.6, label="data (before the fit)")
         for fam in families:
             f, p = spectra[(win, fam)]
             ax.loglog(f[1:], p[1:], color=figstyle.family_color(fam), lw=1.1,
                       label=fam)
         ax.axvspan(f_ref[1] * 0.5, DRIFT_FMAX, color="0.85", alpha=0.5, zorder=0)
-        ax.text(DRIFT_FMAX, ax.get_ylim()[0], "Driftband ", ha="right", va="bottom",
+        ax.text(DRIFT_FMAX, ax.get_ylim()[0], "drift band ", ha="right", va="bottom",
                 fontsize=8, color="0.35")
-        ax.set_title(f"Residual-Leistungsspektrum (Median über Kanäle, HbO) | "
-                     f"Fenster {win:g} s")
-        ax.set_xlabel("Frequenz [Hz]")
+        ax.set_title(f"Residual power spectrum (median over channels, HbO) | "
+                     f"window {win:g} s")
+        ax.set_xlabel("frequency [Hz]")
         ax.set_ylabel("PSD [µM²/Hz]")
         ax.grid(alpha=0.3, which="both")
         ax.legend(fontsize=7, ncol=2)
-    fig.suptitle("Residuen im Zeit- und Frequenzraum je Driftfamilie (AR-IRLS, baseline)")
+    fig.suptitle("Residuals in time and frequency per drift family (AR-IRLS, baseline)")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(OUT / "27_residual_analysis.png", dpi=130)
     plt.close(fig)
@@ -241,7 +241,7 @@ def _fig28(families, hrf_curves, win):
             ax.plot(e["reltime"], e[f"est_{c}"], color=col, lw=1.3, ls="--")
         ax.axhline(0, color="k", lw=0.6)
         ax.axvline(0, color="k", lw=0.6, ls=":")
-        ax.set_title(f"{fam}   Form-r = {e['shape_r']:+.3f}", fontsize=9,
+        ax.set_title(f"{fam}   shape r = {e['shape_r']:+.3f}", fontsize=9,
                      color=figstyle.family_color(fam))
         ax.grid(alpha=0.25)
     for k in range(len(families), len(axes)):
@@ -249,10 +249,10 @@ def _fig28(families, hrf_curves, win):
     for r in range(nrow):
         axes[r * ncol].set_ylabel(r"$\Delta c$ [µM]")
     for k in range(len(families) - ncol, len(families)):
-        axes[k].set_xlabel("Zeit nach Stimulus-Onset [s]")
-    fig.suptitle("Rückgewonnene HRF je Driftfamilie (flexible Basis, gestrichelt) gegen "
-                 "die eingemischte Ground Truth (dick, blass)\nrot HbO, blau HbR, "
-                 f"Fenster {win:g} s, Mittel über die Blob-Kanäle", fontsize=11)
+        axes[k].set_xlabel("time after stimulus onset [s]")
+    fig.suptitle("Recovered HRF per drift family (flexible basis, dashed) against "
+                 "the injected ground truth (thick, pale)\nred HbO, blue HbR, "
+                 f"window {win:g} s, mean over the blob channels", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(OUT / "28_hrf_family_comparison.png", dpi=130)
     plt.close(fig)

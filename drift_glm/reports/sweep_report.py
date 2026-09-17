@@ -135,14 +135,14 @@ def main():
             d = row[row.window_s == w].set_index("family").loc[fams]
             ax.bar(x, d.rmse_med.values, color=colors)
             best = d.rmse_med.idxmin()
-            ax.set_title(f"{ch} | Fenster {w:g}s | baseline  (best: {best})")
-            ax.set_ylabel("RMSE_med [µM]")
+            ax.set_title(f"{ch} | window {w:g} s | baseline  (best: {best})")
+            ax.set_ylabel("median RMSE [µM]")
             ax.set_ylim(0, ymax)
             ax.grid(axis="y", alpha=0.3)
     axes[-1, 0].set_xticks(x); axes[-1, 0].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
     if len(wins) > 1:
         axes[-1, 1].set_xticks(x); axes[-1, 1].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-    fig.suptitle("Driftregressor-Vergleich: RMSE der β-Rückgewinnung (AR-IRLS, MC über Seeds)")
+    fig.suptitle("Drift-regressor comparison: RMSE of the β recovery (AR-IRLS, Monte Carlo over seeds)")
     fig.tight_layout(); fig.savefig(OUT / "06_sweep_rmse_by_family.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 7: Bias-Varianz-Zerlegung (baseline, laengstes Fenster) ----
@@ -152,13 +152,13 @@ def main():
         d = df[(df.chromo == ch) & (df.window_s == w) & (df.constellation == "baseline")]
         d = d.set_index("family").loc[fams]
         ax = axes[i]
-        ax.bar(x - 0.2, d.absbias_med.values, width=0.4, label="|Bias|_med", color="#e76f51")
-        ax.bar(x + 0.2, np.sqrt(d.var_med.values), width=0.4, label="Std_med (√Var)", color="#457b9d")
-        ax.set_title(f"{ch} | Fenster {w:g}s | baseline")
+        ax.bar(x - 0.2, d.absbias_med.values, width=0.4, label="median |bias|", color="#e76f51")
+        ax.bar(x + 0.2, np.sqrt(d.var_med.values), width=0.4, label="median SD (√var)", color="#457b9d")
+        ax.set_title(f"{ch} | window {w:g} s | baseline")
         ax.set_ylabel("[µM]"); ax.set_xticks(x)
         ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
         ax.grid(axis="y", alpha=0.3); ax.legend()
-    fig.suptitle("Bias-Varianz-Zerlegung je Driftfamilie")
+    fig.suptitle("Bias-variance decomposition per drift family")
     fig.tight_layout(); fig.savefig(OUT / "07_sweep_bias_var.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 8: Konstellations-Effekt (RMSE je Familie x Konstellation) ----
@@ -175,12 +175,12 @@ def main():
             d = d.set_index("family").reindex(fams)
             ax.bar(x + (k - (len(cons) - 1) / 2) * width, d.rmse_med.values,
                    width=width * 0.92, label=con)
-        ax.set_title(f"{ch} | Fenster {w:g}s")
-        ax.set_ylabel("RMSE_med [µM]"); ax.grid(axis="y", alpha=0.3)
+        ax.set_title(f"{ch} | window {w:g} s")
+        ax.set_ylabel("median RMSE [µM]"); ax.grid(axis="y", alpha=0.3)
         ax.legend(ncol=min(len(cons), 5), fontsize=8)
     axes[-1].set_xticks(x); axes[-1].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-    fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: RMSE je Driftfamilie "
-                 "und Regressor-Konstellation")
+    fig.suptitle("Effect of the regressor constellation on the β recovery: RMSE per drift "
+                 "family and constellation")
     fig.tight_layout(); fig.savefig(OUT / "08_sweep_constellation_effect.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 9: HbO/HbR-Plausibilitaet (rueckgew. Ratio) ----
@@ -191,12 +191,12 @@ def main():
         d = df[(df.chromo == "HbO") & (df.window_s == wv) & (df.constellation == "baseline")]
         d = d.set_index("family").loc[fams]
         ax.bar(x, d.hbr_hbo_ratio_med.values, color=colors)
-        ax.axhline(-0.4, color="k", ls="--", lw=1.5, label="wahres Ratio (−0.4)")
-        ax.set_title(f"Fenster {wv:g}s | baseline")
+        ax.axhline(-0.4, color="k", ls="--", lw=1.5, label="true ratio (−0.4)")
+        ax.set_title(f"window {wv:g} s | baseline")
         ax.set_ylabel("median(β_HbR / β_HbO)")
         ax.set_xticks(x); ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
         ax.grid(axis="y", alpha=0.3); ax.legend()
-    fig.suptitle("HbO/HbR-Plausibilität: rückgewonnenes Amplituden-Ratio (Ziel −0.4)")
+    fig.suptitle("HbO/HbR plausibility: recovered amplitude ratio (target −0.4)")
     fig.tight_layout(); fig.savefig(OUT / "09_sweep_plausibility.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 10: Motion-Achse -- Bias und RMSE, getrennt nach Chromophor ----
@@ -214,18 +214,18 @@ def main():
                 g = g.reindex([f for f in fams if f in g.index])
                 pos = np.arange(len(g)) + (k - (len(motions) - 1) / 2) * width
                 ax.bar(pos, g.bias_med.values, width=width * 0.92,
-                       label=f"{mm} · Bias", alpha=0.85)
+                       label=f"{mm} · bias", alpha=0.85)
                 ax.plot(pos, g.rmse_med.values, "k_", markersize=7,
                         label="RMSE" if k == 0 else None)
             truth = float(df_all[df_all.chromo == ch].beta_true_peak.iloc[0])
             ax.axhline(0, color="k", lw=0.8)
-            ax.set_title(f"{ch} | baseline | Wahrheit {truth:+.3f} µM")
-            ax.set_ylabel("Bias_med [µM]  (Striche: RMSE_med)")
+            ax.set_title(f"{ch} | baseline | truth {truth:+.3f} µM")
+            ax.set_ylabel("median bias [µM]  (ticks: median RMSE)")
             ax.set_xticks(np.arange(len(g)))
             ax.set_xticklabels(g.index, rotation=60, ha="right", fontsize=8)
             ax.grid(axis="y", alpha=0.3)
             ax.legend(fontsize=8)
-        fig.suptitle("Motion Correction als Achse: Bias und RMSE je Driftfamilie")
+        fig.suptitle("Motion correction as an axis: bias and RMSE per drift family")
         fig.tight_layout(); fig.savefig(OUT / "10_sweep_motion_axis.png", dpi=130)
         plt.close(fig)
 
@@ -251,8 +251,8 @@ def main():
                 for bar, h in zip(bars, hatches):
                     if h:
                         bar.set_hatch(h)
-                ax.set_title(f"{ch} | Fenster {wv:g}s | baseline")
-                ax.set_ylabel("median adj. R²")
+                ax.set_title(f"{ch} | window {wv:g} s | baseline")
+                ax.set_ylabel("median adjusted R²")
                 # Negative Werte mitzeigen (unter AR-IRLS bei kurzen Fenstern normal, R^2
                 # im Rohdatenraum nach Prewhitening); Boden bei -0.5, Extremwerte laufen aus.
                 ax.set_ylim(-0.5, 1)
@@ -261,8 +261,8 @@ def main():
         for j in range(len(wins)):
             axes[-1, j].set_xticks(x)
             axes[-1, j].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-        fig.suptitle("Variance explained des GLM (adj. R²) je Driftfamilie — "
-                     "schraffiert: Filter-Arme (R² auf der gefilterten Zeitreihe)")
+        fig.suptitle("Variance explained by the GLM (adjusted R²) per drift family — "
+                     "hatched: filter arms (R² on the filtered series)")
         fig.tight_layout()
         fig.savefig(OUT / "25_sweep_r2.png", dpi=130)
         plt.close(fig)
@@ -289,29 +289,29 @@ def main():
                                marker=markers.get(wv, "o"), edgecolor="white",
                                linewidth=0.6, zorder=3)
             rho = sstats.spearmanr(d.resid_rms_med, d.rmse_med)
-            ax.set_title(f"{ch}: zwischen den Modellen (baseline) — "
+            ax.set_title(f"{ch}: between models (baseline) — "
                          f"Spearman ρ = {rho.statistic:+.2f}")
             # Log-Skala: die AR-IRLS-Instabilitaet roher Polynome bei kurzen Fenstern
             # erzeugt Residual-Ausreisser (bis ~40 µM), die sonst alles stauchen.
             ax.set_xscale("log")
-            ax.set_xlabel("Residual-RMS [µM] (median, log)")
-            ax.set_ylabel("RMSE β̂ vs. GT [µM] (median)")
+            ax.set_xlabel("residual RMS [µM] (median, log scale)")
+            ax.set_ylabel("RMSE of β̂ vs. truth [µM] (median)")
             ax.grid(alpha=0.3, which="both")
             ax = axes[i, 1]
             g = (d.groupby("family")["resid_err_corr"].mean().reindex(fams))
             ax.bar(x, g.values, color=colors)
             ax.axhline(0, color="k", lw=0.8)
-            ax.set_title(f"{ch}: innerhalb der Zellen (Korrelation über Seeds × Kanäle)")
-            ax.set_ylabel("corr(Residual-RMS, |β̂ − GT|)")
+            ax.set_title(f"{ch}: within cells (correlation over seeds × channels)")
+            ax.set_ylabel("corr(residual RMS, |β̂ − truth|)")
             ax.set_ylim(-1, 1)
             ax.set_xticks(x)
             ax.set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
             ax.grid(axis="y", alpha=0.3)
         handles = [plt.Line2D([], [], color="0.4", marker=m, ls="", label=f"{int(w)} s")
                    for w, m in markers.items() if w in wins]
-        axes[0, 0].legend(handles=handles, title="Fenster", fontsize=8)
-        fig.suptitle("Residual-RMS gegen Abweichung von der Ground Truth\n"
-                     "(Farben = Driftfamilien wie in Abb. 6–10)")
+        axes[0, 0].legend(handles=handles, title="window", fontsize=8)
+        fig.suptitle("Residual RMS against deviation from the ground truth\n"
+                     "(colours = drift families as in the other sweep figures)")
         fig.tight_layout(rect=(0, 0, 1, 0.94))
         fig.savefig(OUT / "26_sweep_resid_vs_error.png", dpi=130)
         plt.close(fig)

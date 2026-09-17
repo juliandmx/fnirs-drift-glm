@@ -129,22 +129,22 @@ def main(mode="full"):
         ax[j].set_xticks(range(len(families)))
         ax[j].set_xticklabels(families, rotation=60, ha="right", fontsize=8)
         ax[j].set_ylim(0, 1); ax[j].axhline(1.0, color="k", ls=":", lw=1)
-        ax[j].set_title(f"{c}: Form-Treue (Pearson r, rueckgew. vs. wahre HRF)")
+        ax[j].set_title(f"{c}: shape fidelity (Pearson r, recovered vs. true HRF)")
         ax[j].set_ylabel("median r"); ax[j].grid(axis="y", alpha=0.3)
-    fig.suptitle("Form-Treue der rueckgewonnenen HRF je Driftfamilie (flexible Basis, GaussianKernels)")
+    fig.suptitle("Shape fidelity of the recovered HRF per drift family (flexible basis, Gaussian kernels)")
     fig.tight_layout(); fig.savefig(OUT / "12_flex_shape_corr.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 13: Beispiel-Formspuren rueckgewonnen vs injiziert ----
     fig, ax = plt.subplots(figsize=(12, 5))
     fam0 = families[0]
     t0, _, true0 = shape_curves[fam0]
-    ax.plot(t0, true0, color="k", lw=2.5, label="injizierte HRF (Ground Truth)")
+    ax.plot(t0, true0, color="k", lw=2.5, label="injected HRF (ground truth)")
     for fam in families:
         t, rc, _ = shape_curves[fam]
-        ax.plot(t, rc, lw=1.1, alpha=0.8, label=f"rueckgew. ({fam})")
-    ax.set_xlabel("Zeit [s]"); ax.set_ylabel("Δ HbO [µM]")
-    ax.set_title("Rueckgewonnene HRF (flexible Basis) je Driftfamilie vs. injizierte HRF "
-                 "(ein Beispielkanal)")
+        ax.plot(t, rc, lw=1.1, alpha=0.8, label=f"recovered ({fam})")
+    ax.set_xlabel("time [s]"); ax.set_ylabel("Δ HbO [µM]")
+    ax.set_title("Recovered HRF (flexible basis) per drift family vs. injected HRF "
+                 "(one example channel)")
     ax.legend(ncol=3, fontsize=7)
     fig.tight_layout(); fig.savefig(OUT / "13_flex_shape_curves.png", dpi=130); plt.close(fig)
     print(f"\n-> {RESULTS/'flex_basis_summary.csv'}  | Abb. 12/13 in {OUT}")

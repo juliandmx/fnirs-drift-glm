@@ -188,7 +188,7 @@ def _fig29(families, curves, ref, n_subjects):
             ax = axes[i, j]
             t, m, s = ref[(tt, c)]
             ax.fill_between(t, m - s, m + s, color="0.85")
-            ax.plot(t, m, color="0.35", lw=2.6, label="Daten (Block-Mittel)")
+            ax.plot(t, m, color="0.35", lw=2.6, label="data (block average)")
             for fam in families:
                 t, m, _ = curves[fam][(tt, c)]
                 ax.plot(t, m, color=figstyle.family_color(fam), lw=1.2, label=fam)
@@ -197,16 +197,16 @@ def _fig29(families, curves, ref, n_subjects):
             ax.axvline(0, color="k", lw=0.6, ls=":")
             ax.grid(alpha=0.25)
             if i == 0:
-                ax.set_title(f"{tt}, kontralaterale ROI", fontsize=10)
+                ax.set_title(f"{tt}, contralateral ROI", fontsize=10)
             if j == 0:
                 ax.set_ylabel(f"Δ{c} [µM]")
             if i == 1:
-                ax.set_xlabel("Zeit nach Stimulus-Onset [s]")
+                ax.set_xlabel("time after stimulus onset [s]")
     axes[0, 0].legend(fontsize=6.5, ncol=2)
-    fig.suptitle("Multisubject-Fingertapping: geschätzte HRF je Driftfamilie "
-                 "(flexible Basis, +short_avg, OLS)\nDatenreferenz grau (±1 SD über "
-                 f"{n_subjects} Probanden), Stimulusdauer grün, ROI: {ROI_N} stärkste "
-                 "kontralaterale Kanäle", fontsize=11)
+    fig.suptitle("Multisubject finger tapping: estimated HRF per drift family "
+                 "(flexible basis, + short_avg, OLS)\ndata reference in grey (±1 SD over "
+                 f"{n_subjects} subjects), stimulus duration in green, ROI: the {ROI_N} "
+                 "strongest contralateral channels", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(OUT / "29_ms_hrf_families.png", dpi=130)
     plt.close(fig)
@@ -220,8 +220,8 @@ def _fig30(families, df, n_subjects):
     colors = [figstyle.family_color(f) for f in fams]
     fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
     for i, c in enumerate(["HbO", "HbR"]):
-        for j, (col, label) in enumerate([("r2_adj_med", "median adj. R²"),
-                                          ("resid_rms_med", "Residual-RMS [µM]")]):
+        for j, (col, label) in enumerate([("r2_adj_med", "median adjusted R²"),
+                                          ("resid_rms_med", "residual RMS [µM]")]):
             ax = axes[i, j]
             g = df[df.chromo == c].groupby("family")[col]
             mean, std = g.mean().reindex(fams), g.std().reindex(fams)
@@ -237,8 +237,8 @@ def _fig30(families, df, n_subjects):
     for j in range(2):
         axes[-1, j].set_xticks(x)
         axes[-1, j].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-    fig.suptitle(f"Modellfit auf den Realdaten ({n_subjects} Probanden, ±1 SD): "
-                 "adj. R² und Residual-RMS je Driftfamilie\nschraffiert: Filter-Arme",
+    fig.suptitle(f"Model fit on the real data ({n_subjects} subjects, ±1 SD): "
+                 "adjusted R² and residual RMS per drift family\nhatched: filter arms",
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(OUT / "30_ms_fit_quality.png", dpi=130)

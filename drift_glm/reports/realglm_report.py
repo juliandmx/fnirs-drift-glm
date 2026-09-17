@@ -77,15 +77,15 @@ def fig15_reliability(df):
         ax.bar(x + (k - 0.5) * 0.4, v_plot, width=0.38,
                color=[_color(f) for f in fams], alpha=1.0 if k == 0 else 0.55,
                hatch=hatch, edgecolor="white",
-               label=f"{nm}" + (" (schraffiert)" if k else ""))
+               label=f"{nm}" + (" (hatched)" if k else ""))
         for xi, (dg, f) in enumerate(zip(deg, fams)):
             if dg:
                 ax.text(xi + (k - 0.5) * 0.4, 0.02, "n.a.", ha="center",
                         fontsize=8, rotation=90, color="#c44e52")
     ax.set_xticks(x); ax.set_xticklabels(fams, rotation=55, ha="right", fontsize=9)
-    ax.set_ylabel("Median-Korrelation der β-Karten zwischen Durchgängen")
-    ax.set_title("Reproduzierbarkeit je Driftfamilie — 25 Probanden, 74 Durchgangspaare\n"
-                 "(höher = stabilere Schätzung; „n.a.\" = mit AR-IRLS nicht auswertbar)")
+    ax.set_ylabel("median correlation of the β maps between runs")
+    ax.set_title("Reproducibility per drift family — 25 subjects, 74 run pairs\n"
+                 "(higher = more stable estimate; \"n.a.\" = not evaluable with AR-IRLS)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
     fig.tight_layout(); fig.savefig(OUT / "15_real_reliability.png", dpi=130)
     plt.close(fig)
@@ -105,10 +105,10 @@ def fig16_significant(df):
                    color="#4c72b0" if k == 0 else "#dd8452")
         ax.set_xticks(x); ax.set_xticklabels(fams, rotation=55, ha="right", fontsize=8)
         ax.set_title(f"{nm}"); ax.grid(axis="y", alpha=0.3)
-    axes[0].set_ylabel("signifikante Kanäle von 48 (FDR, q = 0,05)")
+    axes[0].set_ylabel("significant channels of 48 (FDR, q = 0.05)")
     axes[0].legend()
-    fig.suptitle("Aktivierungs-Detektion auf den realen Daten: signifikante Kanäle "
-                 "je Driftfamilie und Konstellation")
+    fig.suptitle("Activation detection on the real data: significant channels "
+                 "per drift family and constellation")
     fig.tight_layout(); fig.savefig(OUT / "16_real_significant.png", dpi=130)
     plt.close(fig)
 
@@ -118,8 +118,8 @@ def fig18_plausibility(df):
     d = df[(df.chromo == "HbO") & (~df.degeneriert)]
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
     for ax, (col, ttl, ref) in zip(axes, [
-            ("hbr_hbo_ratio", "HbR/HbO-Verhältnis", -0.4),
-            ("hbo_hbr_corr", "Korrelation HbO ↔ HbR", None)]):
+            ("hbr_hbo_ratio", "HbR/HbO ratio", -0.4),
+            ("hbo_hbr_corr", "correlation HbO ↔ HbR", None)]):
         for k, nm in enumerate(["ar_irls", "ols"]):
             for j, con in enumerate(["baseline", "global"]):
                 s = d[(d.noise_model == nm) & (d.constellation == con)][col]
@@ -127,13 +127,13 @@ def fig18_plausibility(df):
                            color="#4c72b0" if j == 0 else "#dd8452", s=28)
         if ref is not None:
             ax.axhline(ref, ls="--", color="k", lw=1,
-                       label=f"physiologisch erwartet ({ref})")
+                       label=f"value used in the simulation ({ref})")
             ax.legend(fontsize=8)
         ax.set_xticks(range(4))
         ax.set_xticklabels(["ar_irls\nbaseline", "ar_irls\nglobal",
                             "ols\nbaseline", "ols\nglobal"], fontsize=8)
         ax.set_title(ttl); ax.grid(axis="y", alpha=0.3)
-    fig.suptitle("Plausibilität auf den realen Daten (je Punkt eine Driftfamilie)")
+    fig.suptitle("Plausibility on the real data (one point per drift family)")
     fig.tight_layout(); fig.savefig(OUT / "18_real_plausibility.png", dpi=130)
     plt.close(fig)
 
@@ -239,19 +239,19 @@ def _draw_fig17(ds, conc, geo3d):
         m = np.asarray(ds["beta"].sel(chromo=ch).values, float)
         lim = float(np.nanpercentile(np.abs(m), 98)) or 1.0
         _montage_plot(xy, m, ax[0, j], vmin=-lim, vmax=lim, cmap="RdBu_r",
-                      title=f"{ch}: Gruppen-β über {ds.attrs.get('n_subjects', '?')} "
-                            f"Probanden", cb_label="β [µM]")
+                      title=f"{ch}: group β over {ds.attrs.get('n_subjects', '?')} "
+                            f"subjects", cb_label="β [µM]")
         tv = np.asarray(ds["t"].sel(chromo=ch).values, float)
         tl = float(np.nanpercentile(np.abs(tv), 98)) or 1.0
         n_sig = int(np.asarray(ds["significant"].sel(chromo=ch).values).sum())
         _montage_plot(xy, tv, ax[1, j], vmin=-tl, vmax=tl, cmap="RdBu_r",
-                      title=f"{ch}: t-Wert  ({n_sig} von {len(tv)} signifikant "
-                            f"nach FDR)", cb_label="t")
+                      title=f"{ch}: t value  ({n_sig} of {len(tv)} significant "
+                            f"after FDR)", cb_label="t")
     fig.suptitle(
-        f"Reale Daten, Finger-Tapping rechte Hand — {ds.attrs.get('family')} / "
+        f"Real data, right-hand finger tapping — {ds.attrs.get('family')} / "
         f"{ds.attrs.get('constellation')} / {ds.attrs.get('noise_model')}\n"
-        "Montage-Layout aus den Optodenpositionen; Orientierung nach Khan et al. Tab. 3 "
-        "(linke Hemisphäre links, frontal oben)", fontsize=10)
+        "montage layout from the optode positions; orientation from Khan et al., Table 3 "
+        "(left hemisphere on the left, frontal at the top)", fontsize=10)
     fig.tight_layout(); fig.savefig(OUT / "17_real_scalp.png", dpi=130)
     plt.close(fig)
 

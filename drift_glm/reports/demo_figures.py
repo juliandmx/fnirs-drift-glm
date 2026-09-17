@@ -56,13 +56,13 @@ def main():
     dmc = P.dm_full.common.sel(chromo="HbO")
     t = dmc.time.values
     axes[0].plot(t, dmc.sel(regressor=main_hrf).values, color="C3")
-    axes[0].set_title(f"HRF-Regressor ('{main_hrf}', Gamma-Basis, auf Peak=1 normiert)")
+    axes[0].set_title(f"HRF regressor ('{main_hrf}', gamma basis, normalised to peak = 1)")
     axes[0].set_ylabel("a.u.")
     for r in dmc.regressor.values:
         if str(r).startswith("Drift"):
             axes[1].plot(t, dmc.sel(regressor=r).values, label=str(r))
-    axes[1].set_title("Polynom-Drift-Regressoren")
-    axes[1].set_xlabel("Zeit [s]"); axes[1].set_ylabel("a.u."); axes[1].legend(ncol=5, fontsize=8)
+    axes[1].set_title("Polynomial drift regressors")
+    axes[1].set_xlabel("time [s]"); axes[1].set_ylabel("a.u."); axes[1].legend(ncol=5, fontsize=8)
     fig.tight_layout(); fig.savefig(OUTDIR / "01_designmatrix.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 2: Ein Kanal, AR-IRLS-Fit ----
@@ -82,20 +82,20 @@ def main():
         act = P.activation.sel(channel=demo_ch, chromo=c).values
         pr = pred.sel(channel=demo_ch, chromo=c).values
         prh = pred_hrf.sel(channel=demo_ch, chromo=c).values
-        ax[i].plot(t, syn, color="0.55", lw=0.7, label="Ruhe + eingespeiste HRF")
+        ax[i].plot(t, syn, color="0.55", lw=0.7, label="resting data + injected HRF")
         ax[i].plot(t, pr, color="0.75", lw=1.0, ls=":",
-                   label="GLM-Fit gesamt (HRF+Drift)")
+                   label="full GLM fit (HRF + drift)")
         ax[i].plot(t, act, color="C3", lw=1.8,
-                   label="eingespeiste HRF (Ground Truth)")
+                   label="injected HRF (ground truth)")
         ax[i].plot(t, prh, color="C0", lw=1.5,
-                   label="rueckgewonnene HRF (AR-IRLS)")
+                   label="recovered HRF (AR-IRLS)")
         for _, row in P.stim_df.iterrows():
             ax[i].axvspan(row["onset"], row["onset"] + row["duration"], color="C2", alpha=0.08)
         bt = float(P.beta_true_map.sel(channel=demo_ch, chromo=c))
         bh = float(betas_hat.sel(channel=demo_ch, regressor=main_hrf, chromo=c))
-        ax[i].set_title(f"{c} | Kanal {demo_ch} | Peak_true={bt:+.3f}  beta_hat={bh:+.3f} µM")
+        ax[i].set_title(f"{c} | channel {demo_ch} | true peak = {bt:+.3f}, β̂ = {bh:+.3f} µM")
         ax[i].set_ylabel(f"Δ{c} [µM]"); ax[i].legend(loc="upper right", fontsize=8)
-    ax[1].set_xlabel("Zeit [s]")
+    ax[1].set_xlabel("time [s]")
     fig.tight_layout(); fig.savefig(OUTDIR / "02_kanal_fit.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 3: rueckgewonnenes vs. wahres beta pro Kanal (Blob-Gradient) ----
@@ -105,9 +105,9 @@ def main():
         est = betas_ols.sel(regressor=main_hrf, chromo=c).values
         ax[j].scatter(true, est, s=8, alpha=0.4, color="C0")
         lim = [min(true.min(), est.min()), max(true.max(), est.max())]
-        ax[j].plot(lim, lim, "k--", lw=1, label="Identität (β̂ = GT)")
-        ax[j].set_title(f"{c}: β̂ vs. Ground Truth über {len(true)} Kanäle (OLS)")
-        ax[j].set_xlabel("wahres β [µM]"); ax[j].set_ylabel("β̂ [µM]")
+        ax[j].plot(lim, lim, "k--", lw=1, label="identity (β̂ = truth)")
+        ax[j].set_title(f"{c}: β̂ vs. ground truth over {len(true)} channels (OLS)")
+        ax[j].set_xlabel("true β [µM]"); ax[j].set_ylabel("β̂ [µM]")
         ax[j].legend(fontsize=8)
     fig.tight_layout(); fig.savefig(OUTDIR / "03_beta_recovery.png", dpi=130); plt.close(fig)
 
@@ -122,8 +122,8 @@ def main():
             P.conc, P.geo3d, dev, ax[j],
             vmin=vlo, vmax=vhi, cmap="RdBu_r",
             min_dist=1.5 * cedalion.units.cm,
-            title=f"{c}: Abweichung β̂ − Ground Truth (OLS)",
-            cb_label="β̂ − GT [µM]",
+            title=f"{c}: deviation β̂ − truth (OLS)",
+            cb_label="β̂ − truth [µM]",
         )
     fig.tight_layout(); fig.savefig(OUTDIR / "04_scalp_abweichung.png", dpi=130); plt.close(fig)
 
@@ -148,16 +148,16 @@ def main():
         # Feste Farbgrenzen bei +/-100 % statt Perzentilen: interpretierbare Marke und
         # vergleichbar ueber Teilbilder und Laeufe; gesaettigte Kanaele stehen im Titel.
         n_clip = int((np.abs(rb.values) > 100.0).sum())
-        clip_note = f"  ({n_clip} Kanal/Kanaele > 100 %)" if n_clip else ""
+        clip_note = f"  ({n_clip} channel(s) > 100 %)" if n_clip else ""
         cedalion.vis.anatomy.scalp_plot(
             P.conc, P.geo3d, rb, ax[0, j],
             vmin=-100.0, vmax=100.0, cmap="RdBu_r", min_dist=1.5 * cedalion.units.cm,
-            title=f"{c}: rel. β-Peak-Fehler{clip_note}", cb_label="(β̂−GT)/GT [%]",
+            title=f"{c}: relative β-peak error{clip_note}", cb_label="(β̂ − truth)/truth [%]",
         )
         cedalion.vis.anatomy.scalp_plot(
             P.conc, P.geo3d, rs, ax[1, j],
             vmin=0.0, vmax=100.0, cmap="YlOrRd", min_dist=1.5 * cedalion.units.cm,
-            title=f"{c}: rel. Formfehler", cb_label="RMSE_t(HRF)/Peak [%]",
+            title=f"{c}: relative shape error", cb_label="RMSE_t(HRF)/peak [%]",
         )
         print(f"  {c}: median |rel. β-Fehler| = "
               f"{float(np.abs(rel_beta).median()) * 100:.1f} %"
@@ -174,9 +174,9 @@ def main():
         dev = est - gt
         vlo, vhi = _sym_lim(np.concatenate([gt.values, est.values]))
         for j, (da, title) in enumerate([
-                (gt, f"{c}: Ground Truth (eingemischter Peak)"),
-                (est, f"{c}: Schätzung β̂ (OLS)"),
-                (dev, f"{c}: Abweichung β̂ − GT")]):
+                (gt, f"{c}: ground truth (injected peak)"),
+                (est, f"{c}: estimate β̂ (OLS)"),
+                (dev, f"{c}: deviation β̂ − truth")]):
             lo, hi = (vlo, vhi) if j < 2 else _sym_lim(dev.values)
             cedalion.vis.anatomy.scalp_plot(
                 P.conc, P.geo3d, da, ax[i, j],
@@ -184,8 +184,8 @@ def main():
                 min_dist=1.5 * cedalion.units.cm,
                 title=title, cb_label="[µM]",
             )
-    fig.suptitle("Ground Truth und Schätzung im direkten Vergleich "
-                 "(gemeinsame Farbskala je Chromophor; rechts die Abweichung)")
+    fig.suptitle("Ground truth and estimate side by side "
+                 "(shared colour scale per chromophore; deviation on the right)")
     fig.tight_layout()
     fig.savefig(OUTDIR / "24_scalp_gt_vs_est.png", dpi=130)
     plt.close(fig)

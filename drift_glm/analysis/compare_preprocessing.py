@@ -49,6 +49,12 @@ VARIANTS = {
 
 RETENTION_METHODS = ("none", "wavelet", "tddr", "tddr+wavelet")
 
+#: Anzeigenamen der Varianten (die Schluessel bleiben als Datenbezeichner in der CSV).
+VARIANT_LABEL = {"alt: snr=10, ohne MC": "old chain: SNR > 10, no MC",
+                 "neu: ohne MC": "new chain: no MC",
+                 "neu: wavelet": "new chain: wavelet",
+                 "neu: tddr+wavelet": "new chain: TDDR + wavelet"}
+
 
 def hrf_retention(stage, methods=RETENTION_METHODS, seeds=(0, 1)):
     """Anteil der eingemischten HRF-Amplitude, der die Bewegungskorrektur ueberlebt.
@@ -93,9 +99,9 @@ def figure(df, ret):
                color="#c44e52" if k == 0 else "#4c72b0")
     ax.axhline(100, ls="--", color="k", lw=1)
     ax.set_xticks(x); ax.set_xticklabels(g.index, rotation=20, ha="right")
-    ax.set_ylabel("erhaltene HRF-Amplitude [%]")
-    ax.set_title("Erhalt der eingemischten HRF-Amplitude je Bewegungskorrektur\n"
-                 "(am Ort des wahren Maximums)")
+    ax.set_ylabel("retained HRF amplitude [%]")
+    ax.set_title("Retention of the injected HRF amplitude per motion correction\n"
+                 "(at the location of the true maximum)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
 
     # rechts: Folge fuer die Schaetzung (Bias, aus dem Vergleichslauf)
@@ -110,13 +116,15 @@ def figure(df, ret):
                color="#c44e52" if k == 0 else "#4c72b0")
         truth = float(d.beta_true_med.iloc[0]) if len(d) else np.nan
         ax.axhline(0, color="k", lw=1)
-    ax.set_xticks(x); ax.set_xticklabels(order, rotation=20, ha="right", fontsize=8)
-    ax.set_ylabel("Bias [µM]")
-    ax.set_title("Bias der beta-Schätzung je Vorverarbeitungsvariante\n"
-                 "(Konstellation baseline)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([VARIANT_LABEL.get(o, o) for o in order], rotation=20, ha="right",
+                       fontsize=8)
+    ax.set_ylabel("bias [µM]")
+    ax.set_title("Bias of the β estimate per preprocessing variant\n"
+                 "(baseline constellation)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
 
-    fig.suptitle("Bewegungskorrektur: Erhalt der HRF-Amplitude und Bias der Schätzung")
+    fig.suptitle("Motion correction: retention of the HRF amplitude and bias of the estimate")
     fig.tight_layout()
     fig.savefig(paths.FIGURES / "11_preprocessing_effect.png", dpi=130)
     plt.close(fig)
@@ -218,5 +226,16 @@ def main(seeds):
         print()
 
 
+def plot_from_results():
+    """Abb. 11 nur neu zeichnen, aus den gespeicherten CSVs (ohne Neuberechnung)."""
+    df = pd.read_csv(RESULTS / "preprocessing_comparison.csv")
+    ret = pd.read_csv(RESULTS / "hrf_retention.csv")
+    figure(df, ret)
+    print(f"-> {paths.FIGURES / '11_preprocessing_effect.png'} (aus CSV)")
+
+
 if __name__ == "__main__":
-    main([0] if len(sys.argv) > 1 and sys.argv[1] == "test" else [0, 1, 2])
+    if len(sys.argv) > 1 and sys.argv[1] == "plot":
+        plot_from_results()
+    else:
+        main([0] if len(sys.argv) > 1 and sys.argv[1] == "test" else [0, 1, 2])
