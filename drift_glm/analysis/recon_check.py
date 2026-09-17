@@ -11,13 +11,17 @@ Aufruf:
 from __future__ import annotations
 
 import sys
+import time
 
 import numpy as np
+import pandas as pd
 
 import cedalion.dot as dot
 
 from drift_glm.core import imagespace as ims
 from drift_glm.core import preprocess as prep
+from drift_glm.core.provenance import build_run_metadata, write_csv_atomic, write_metadata_atomic
+from drift_glm import paths
 
 
 def reference_od(dataset: str):
@@ -89,8 +93,13 @@ def recon_check(dataset: str = "multisubject_fingertapping", *,
             j = idx[int(np.nanargmax(np.abs(hm)))]
             loc = min(float(np.linalg.norm(xyz[j] - xyz[s]))
                       for s in gt["seeds"].values())
-            rows.append(dict(alpha_spatial=aspat, alpha_meas=a_used, r=r,
-                             peak=float(np.abs(hm).max()), loc_err_mm=loc))
+            rows.append(dict(dataset=dataset, n_channels=len(chans),
+                             n_visible_vertices=int(mask.sum()),
+                             alpha_spatial=aspat, alpha_meas_mode=str(am), alpha_meas=a_used,
+                             r=r, peak=float(np.abs(hm).max()),
+                             truth_peak=float(np.abs(tm).max()),
+                             peak_ratio=float(np.abs(hm).max() / np.abs(tm).max()),
+                             loc_err_mm=loc, target_uM=target_uM))
             print(f"{str(aspat):>10s} {a_used:10.4g} {r:+7.3f} "
                   f"{np.abs(hm).max():9.3f} {np.abs(hm).max() / np.abs(tm).max():10.3f} "
                   f"{loc:9.1f}", flush=True)
@@ -98,5 +107,34 @@ def recon_check(dataset: str = "multisubject_fingertapping", *,
     return rows
 
 
+def main(dataset: str = "multisubject_fingertapping") -> pd.DataFrame:
+    """Kontrolle rechnen und als CSV + Metadaten unter results/ ablegen (R05/C12).
+
+    Dateien: `results/recon_check_<dataset-kurz>.csv` und `..._meta.json`; die Tabelle
+    im Anhang der Arbeit (tab:alpha) wird daraus erzeugt, nicht aus Konsolenausgaben.
+    """
+    paths.ensure()
+    t0 = time.time()
+    rows = recon_check(dataset)
+    frame = pd.DataFrame(rows)
+    short = {"multisubject_fingertapping": "multisubject", "nn22_resting": "nn22"}.get(
+        dataset, dataset)
+    out = paths.RESULTS / f"recon_check_{short}.csv"
+    data_files = []
+    if dataset == "multisubject_fingertapping":
+        from drift_glm.data import multisubject as ms
+        data_files = [ms.paths()[0]]
+    meta = build_run_metadata(
+        dict(analysis="recon_check", dataset=dataset, target_uM=0.6,
+             alpha_meas_grid=["est", 0.001, 1.0], alpha_spatial_grid=[None, 0.001, 0.01],
+             metric_chromo="HbO", channels=sorted(set(frame.dataset)) and
+             list(pd.unique(frame.n_channels))), data_files)
+    meta["elapsed_seconds"] = time.time() - t0
+    write_csv_atomic(frame, out)
+    write_metadata_atomic(meta, out.with_name(out.stem + "_meta.json"))
+    print(f"Saved {out} ({time.time() - t0:.1f}s)")
+    return frame
+
+
 if __name__ == "__main__":
-    recon_check(*sys.argv[1:2])       # Default: die guenstige 28-Kanal-Montage
+    main(*sys.argv[1:2])              # Default: die guenstige 28-Kanal-Montage
