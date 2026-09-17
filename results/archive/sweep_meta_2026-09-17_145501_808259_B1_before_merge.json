@@ -15,8 +15,7 @@
       "none",
       "butter:0.01",
       "bspline:5",
-      "bspline:8",
-      "butterxy:0.01"
+      "bspline:8"
     ],
     "windows": [
       90.0,
@@ -46,8 +45,8 @@
     ],
     "ar_order": 30
   },
-  "n_cells": 1920,
-  "wall_s": 29945.800000000003,
+  "n_cells": 1800,
+  "wall_s": 24629.9,
   "cell_time_s": {
     "min": 7.4,
     "median": 11.22,
@@ -479,68 +478,5 @@
         "sha256": "0ceb0eb111b1d00e2477c1bef7ec13fdbf511c9ea1662652153721e858d1be60"
       }
     ]
-  },
-  "additional_runs": [
-    {
-      "prefix": "sweep_butterxy",
-      "metadata": {
-        "config": {
-          "families": [
-            "butterxy:0.01"
-          ],
-          "windows": [
-            90.0,
-            180.0,
-            368.0
-          ],
-          "constellations": [
-            "baseline",
-            "motion",
-            "global",
-            "short_avg",
-            "short_maxcorr"
-          ],
-          "seeds": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "motion_methods": [
-            "wavelet",
-            "tddr+wavelet"
-          ],
-          "n_channels": 20,
-          "noise_models": [
-            "ar_irls"
-          ],
-          "ar_order": 30
-        },
-        "n_cells": 120,
-        "wall_s": 5315.9,
-        "cell_time_s": {
-          "min": 8.1,
-          "median": 10.4,
-          "max": 55.07
-        }
-      }
-    }
-  ],
-  "archive_before_merge": [
-    {
-      "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_per_channel.nc",
-      "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_per_channel_2026-09-17_145501_808259_B1_before_merge.nc",
-      "sha256": "1b37942eb4c371fd144da1bc52fb34e1c11db8137126fadcc529af24d93c1770"
-    },
-    {
-      "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_summary.csv",
-      "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_summary_2026-09-17_145501_808259_B1_before_merge.csv",
-      "sha256": "5391e79957f888e06cadb81b2620bec916826583477270821a5ac540299b2b22"
-    },
-    {
-      "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_meta.json",
-      "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_meta_2026-09-17_145501_808259_B1_before_merge.json",
-      "sha256": "e536f3e81fd7a5319bd57a59a7774f9205d7023c58070909ae548be1a4fd8b0c"
-    }
-  ]
+  }
 }

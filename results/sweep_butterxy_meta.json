@@ -1,0 +1,41 @@
+{
+  "config": {
+    "families": [
+      "butterxy:0.01"
+    ],
+    "windows": [
+      90.0,
+      180.0,
+      368.0
+    ],
+    "constellations": [
+      "baseline",
+      "motion",
+      "global",
+      "short_avg",
+      "short_maxcorr"
+    ],
+    "seeds": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "motion_methods": [
+      "wavelet",
+      "tddr+wavelet"
+    ],
+    "n_channels": 20,
+    "noise_models": [
+      "ar_irls"
+    ],
+    "ar_order": 30
+  },
+  "n_cells": 120,
+  "wall_s": 5315.9,
+  "cell_time_s": {
+    "min": 8.1,
+    "median": 10.4,
+    "max": 55.07
+  }
+}

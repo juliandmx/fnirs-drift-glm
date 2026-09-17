@@ -12,8 +12,8 @@
 | HbO | 180 | baseline | poly:3 | 0.186 | 0.084 | 0.031 |
 | HbO | 180 | global | dct:0.005 | 0.057 | 0.024 | 0.002 |
 | HbO | 180 | motion | butter:0.01 | 0.185 | 0.079 | 0.033 |
-| HbO | 180 | short_avg | bspline:5 | 0.052 | 0.033 | 0.002 |
-| HbO | 180 | short_maxcorr | poly:5 | 0.065 | 0.043 | 0.001 |
+| HbO | 180 | short_avg | butterxy:0.01 | 0.051 | 0.031 | 0.002 |
+| HbO | 180 | short_maxcorr | butterxy:0.01 | 0.059 | 0.033 | 0.001 |
 | HbO | 368 | baseline | butter:0.01 | 0.082 | 0.034 | 0.005 |
 | HbO | 368 | global | dct:0.005 | 0.049 | 0.018 | 0.001 |
 | HbO | 368 | motion | none | 0.080 | 0.030 | 0.005 |
@@ -28,7 +28,7 @@
 | HbR | 180 | global | none | 0.041 | 0.028 | 0.001 |
 | HbR | 180 | motion | butter:0.01 | 0.027 | 0.017 | 0.000 |
 | HbR | 180 | short_avg | dct:0.005 | 0.075 | 0.047 | 0.003 |
-| HbR | 180 | short_maxcorr | poly:4 | 0.042 | 0.027 | 0.001 |
+| HbR | 180 | short_maxcorr | butterxy:0.01 | 0.042 | 0.027 | 0.001 |
 | HbR | 368 | baseline | dct:0.005 | 0.030 | 0.011 | 0.000 |
 | HbR | 368 | global | dct:0.02 | 0.024 | 0.009 | 0.000 |
 | HbR | 368 | motion | legendre:3 | 0.027 | 0.009 | 0.000 |
@@ -54,6 +54,7 @@
 | bspline:5 | 0.394 | 0.210 | 0.084 |
 | bspline:8 | 0.489 | 0.211 | 0.085 |
 | butter:0.01 | 0.357 | 0.189 | 0.082 |
+| butterxy:0.01 | 0.358 | 0.191 | 0.083 |
 
 ## RMSE_med je Familie × Fenster — HbR (baseline)
 
@@ -74,16 +75,17 @@
 | bspline:5 | 0.062 | 0.036 | 0.032 |
 | bspline:8 | 0.081 | 0.043 | 0.034 |
 | butter:0.01 | 0.061 | 0.030 | 0.030 |
+| butterxy:0.01 | 0.059 | 0.038 | 0.033 |
 
 ## Konstellations-Effekt (Mittel RMSE_med über Familien)
 
 | chromo | constellation | rmse_med_mean |
 | --- | --- | --- |
-| HbO | baseline | 0.221 |
+| HbO | baseline | 0.220 |
 | HbO | global | 0.076 |
 | HbO | motion | 0.219 |
 | HbO | short_avg | 0.069 |
-| HbO | short_maxcorr | 0.082 |
+| HbO | short_maxcorr | 0.081 |
 | HbR | baseline | 0.044 |
 | HbR | global | 0.049 |
 | HbR | motion | 0.044 |
@@ -100,15 +102,16 @@
 | poly:3 | -0.822 | 0.261 | 0.209 |
 | poly:4 | -0.687 | 0.219 | 0.214 |
 | poly:5 | -94.976 | -0.299 | 0.193 |
-| dct:0.005 | -0.093 | -0.003 | 0.279 |
-| dct:0.01 | -0.094 | 0.330 | 0.319 |
-| dct:0.02 | 0.031 | 0.348 | 0.381 |
+| dct:0.005 | -0.093 | -0.002 | 0.279 |
+| dct:0.01 | -0.093 | 0.330 | 0.319 |
+| dct:0.02 | 0.032 | 0.348 | 0.381 |
 | legendre:1 | -0.018 | 0.183 | 0.132 |
 | legendre:3 | -0.822 | 0.261 | 0.209 |
 | legendre:5 | -94.976 | -0.299 | 0.193 |
 | bspline:5 | -0.842 | 0.192 | 0.219 |
 | bspline:8 | -6416.471 | -1.269 | 0.123 |
 | butter:0.01 | -0.450 | 0.088 | 0.039 |
+| butterxy:0.01 | -0.475 | 0.085 | 0.034 |
 
 ## Variance explained (adj. R²) je Familie × Fenster — HbR (baseline; Filter-Arme: R² auf der gefilterten Zeitreihe)
 
@@ -121,14 +124,15 @@
 | poly:4 | 0.399 | 0.512 | 0.566 |
 | poly:5 | 0.388 | 0.552 | 0.651 |
 | dct:0.005 | -0.017 | -0.191 | 0.547 |
-| dct:0.01 | -0.018 | 0.472 | 0.693 |
-| dct:0.02 | 0.146 | 0.572 | 0.765 |
+| dct:0.01 | -0.017 | 0.472 | 0.693 |
+| dct:0.02 | 0.147 | 0.572 | 0.765 |
 | legendre:1 | 0.103 | 0.226 | 0.461 |
 | legendre:3 | 0.271 | 0.354 | 0.535 |
 | legendre:5 | 0.388 | 0.552 | 0.651 |
 | bspline:5 | 0.397 | 0.513 | 0.555 |
 | bspline:8 | 0.361 | 0.604 | 0.689 |
 | butter:0.01 | -0.015 | 0.074 | 0.224 |
+| butterxy:0.01 | 0.008 | 0.134 | 0.220 |
 
 ## Residuen ↔ GT-Abweichung: corr(Residual-RMS, |β̂−GT|) über Seeds × Kanäle (Mittel über Fenster, baseline)
 
@@ -137,6 +141,7 @@
 | HbO | bspline:5 | 0.109 |
 | HbO | bspline:8 | 0.060 |
 | HbO | butter:0.01 | 0.165 |
+| HbO | butterxy:0.01 | 0.250 |
 | HbO | dct:0.005 | 0.233 |
 | HbO | dct:0.01 | 0.260 |
 | HbO | dct:0.02 | 0.157 |
@@ -152,6 +157,7 @@
 | HbR | bspline:5 | 0.183 |
 | HbR | bspline:8 | 0.199 |
 | HbR | butter:0.01 | 0.270 |
+| HbR | butterxy:0.01 | 0.384 |
 | HbR | dct:0.005 | -0.036 |
 | HbR | dct:0.01 | 0.106 |
 | HbR | dct:0.02 | 0.310 |
