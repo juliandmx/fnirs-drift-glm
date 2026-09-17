@@ -221,6 +221,75 @@ def preprocess_recording(rec, *, motion_method=prep.DEFAULT_MOTION,
                     amp_range=amp_range, sd_range=prep.DEFAULT_SD_RANGE, dpf=dpf), amp_range
 
 
+# --------------------------------------------------------------------------------------
+# Hemisphaeren-Zuordnung nach Khan et al. (2026), Tabelle 3. Die SNIRF-Dateien tragen keine
+# Landmarken, das Paper listet aber alle 48 Kanaele mit Quelle, Detektor und
+# 10-10-Position: CH01-CH24 (S01-S08 / D01-D08) linke, CH25-CH48 (S09-S16 / D09-D16)
+# rechte Hemisphaere. Die Kanalreihenfolge der Dateien entspricht der Tabelle
+# (S1D1 = CH01 ... S16D16 = CH48; geprueft in tests/test_khan_mapping.py).
+KHAN_OPTODE_1010 = {
+    "S1": "F1", "S2": "C1", "S3": "FC3", "S4": "CP3", "S5": "F5", "S6": "C5",
+    "S7": "FT7", "S8": "TP7",
+    "S9": "FT8", "S10": "TP8", "S11": "F6", "S12": "C6", "S13": "FC4", "S14": "CP4",
+    "S15": "F2", "S16": "C2",
+    "D1": "FC1", "D2": "CP1", "D3": "F3", "D4": "C3", "D5": "FC5", "D6": "CP5",
+    "D7": "F7", "D8": "T7",
+    "D9": "F8", "D10": "T8", "D11": "FC6", "D12": "CP6", "D13": "F4", "D14": "C4",
+    "D15": "FC2", "D16": "CP2",
+}
+KHAN_TABLE3 = [  # (Quelle, Detektor) in der Reihenfolge CH01..CH48
+    ("S1", "D1"), ("S1", "D3"), ("S2", "D1"), ("S2", "D2"), ("S2", "D4"), ("S3", "D1"),
+    ("S3", "D3"), ("S3", "D4"), ("S3", "D5"), ("S4", "D2"), ("S4", "D4"), ("S4", "D6"),
+    ("S5", "D3"), ("S5", "D5"), ("S5", "D7"), ("S6", "D4"), ("S6", "D5"), ("S6", "D6"),
+    ("S6", "D8"), ("S7", "D5"), ("S7", "D7"), ("S7", "D8"), ("S8", "D6"), ("S8", "D8"),
+    ("S9", "D9"), ("S9", "D10"), ("S9", "D11"), ("S10", "D10"), ("S10", "D12"),
+    ("S11", "D9"), ("S11", "D11"), ("S11", "D13"), ("S12", "D10"), ("S12", "D11"),
+    ("S12", "D12"), ("S12", "D14"), ("S13", "D11"), ("S13", "D13"), ("S13", "D14"),
+    ("S13", "D15"), ("S14", "D12"), ("S14", "D14"), ("S14", "D16"), ("S15", "D13"),
+    ("S15", "D15"), ("S16", "D14"), ("S16", "D15"), ("S16", "D16"),
+]
+
+
+def _split_channel(label: str) -> tuple[str, str]:
+    import re
+    m = re.fullmatch(r"(S\d+)(D\d+)", str(label))
+    if not m:
+        raise ValueError(f"Kanalname {label!r} hat nicht die Form S<i>D<j>")
+    return m.group(1), m.group(2)
+
+
+def khan_hemisphere(channels) -> np.ndarray:
+    """+1 fuer linke, -1 fuer rechte Hemisphaere je Kanal (Khan et al. 2026, Tab. 3)."""
+    out = []
+    for ch in channels:
+        s, d = _split_channel(ch)
+        left_s, left_d = int(s[1:]) <= 8, int(d[1:]) <= 8
+        if left_s != left_d:
+            raise ValueError(f"Kanal {ch} verbindet beide Hemisphaeren; nicht in Tabelle 3")
+        out.append(1.0 if left_s else -1.0)
+    return np.asarray(out, dtype=float)
+
+
+def khan_channel_table(channels=None) -> pd.DataFrame:
+    """Tabelle 3 als DataFrame: channel, ch_no, source/detector mit 10-10-Position,
+    hemisphere ('left'/'right'). Mit `channels` wird auf diese Kanaele eingeschraenkt
+    (jeder muss in Tabelle 3 stehen)."""
+    rows = []
+    for i, (src, det) in enumerate(KHAN_TABLE3, start=1):
+        rows.append(dict(channel=f"{src}{det}", ch_no=i, source=src, detector=det,
+                         source_1010=KHAN_OPTODE_1010[src],
+                         detector_1010=KHAN_OPTODE_1010[det],
+                         hemisphere="left" if i <= 24 else "right"))
+    table = pd.DataFrame(rows)
+    if channels is not None:
+        wanted = [str(c) for c in channels]
+        missing = sorted(set(wanted) - set(table.channel))
+        if missing:
+            raise ValueError(f"Kanaele nicht in Khan Tabelle 3: {missing}")
+        table = table.set_index("channel").loc[wanted].reset_index()
+    return table
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         path = Path(sys.argv[1])

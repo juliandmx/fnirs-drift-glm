@@ -39,7 +39,8 @@ OUT = paths.FIGURES
 
 ORDER = ["none", "poly:1", "poly:2", "poly:3", "poly:5",
          "dct:0.005", "dct:0.01", "dct:0.02", "legendre:1", "legendre:3",
-         "bspline:5", "bspline:8", "butter:0.01", "bandpass:0.01-0.5"]
+         "bspline:5", "bspline:8", "butter:0.01", "butterxy:0.01",
+         "lowpass:0.5", "bandpass:0.01-0.5"]
 
 
 def _color(fam):
@@ -48,6 +49,7 @@ def _color(fam):
     if fam.startswith("legendre"): return "#55a868"
     if fam.startswith("bspline"):  return "#8172b3"
     if fam == "none":              return "#937860"
+    if fam.startswith("butterxy"): return "#7b2d8e"   # konsistenter Filter-Kontrollarm
     return "#c44e52"               # Filter-Alternativen
 
 
@@ -137,11 +139,12 @@ def fig18_plausibility(df):
 
 
 def _montage_xy(conc, geo3d):
-    """2D-Layout der Kanaele aus den Optodenpositionen (Hauptkomponenten-Projektion).
+    """2D-Layout der Kanaele aus den Optodenpositionen, anatomisch orientiert.
 
     Cedalions `scalp_plot` braucht die Landmarken Nz/LPA/RPA, die dieser Datensatz nicht
-    hat. Die Projektion ist deshalb nicht anatomisch orientiert: links/rechts und
-    vorn/hinten sind nicht bestimmt, die Abbildung zeigt nur die raeumliche Struktur.
+    hat. Die Hauptkomponenten-Projektion wird deshalb ueber die Kanalzuordnung aus Khan
+    et al. (2026), Tabelle 3 (`realdata.khan_hemisphere`, 10-10-Positionen) ausgerichtet:
+    linke Hemisphaere links (negatives x), frontale Positionen (F*, FC*, FT*) oben.
     """
     g = geo3d.pint.dequantify() if hasattr(geo3d, "pint") else geo3d
     pos = {str(l): np.asarray(v, float) for l, v in zip(g.label.values, g.values)}
@@ -149,7 +152,17 @@ def _montage_xy(conc, geo3d):
                     for s, d in zip(conc.source.values, conc.detector.values)])
     c = mid - mid.mean(0)
     _, _, vt = np.linalg.svd(c, full_matrices=False)
-    return c @ vt[:2].T          # (channel, 2)
+    xy = c @ vt[:2].T          # (channel, 2)
+    chans = [str(ch) for ch in conc.channel.values]
+    side = rd.khan_hemisphere(chans)                       # +1 links
+    if np.mean(xy[side > 0, 0]) > np.mean(xy[side < 0, 0]):
+        xy[:, 0] *= -1
+    table = rd.khan_channel_table(chans)
+    frontal = np.array([lab.startswith("F") for lab in table.source_1010]) \
+        | np.array([lab.startswith("F") for lab in table.detector_1010])
+    if np.mean(xy[frontal, 1]) < np.mean(xy[~frontal, 1]):
+        xy[:, 1] *= -1
+    return xy
 
 
 def _montage_plot(xy, values, ax, *, vmin, vmax, cmap, title, cb_label):
@@ -218,6 +231,10 @@ def fig17_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
 def _draw_fig17(ds, conc, geo3d):
     xy = _montage_xy(conc, geo3d)
     fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+    for a in ax.ravel():
+        a.text(0.02, 0.98, "L", transform=a.transAxes, fontsize=13, fontweight="bold",
+               va="top"); a.text(0.98, 0.98, "R", transform=a.transAxes, fontsize=13,
+                                 fontweight="bold", va="top", ha="right")
     for j, ch in enumerate(["HbO", "HbR"]):
         m = np.asarray(ds["beta"].sel(chromo=ch).values, float)
         lim = float(np.nanpercentile(np.abs(m), 98)) or 1.0
@@ -233,8 +250,8 @@ def _draw_fig17(ds, conc, geo3d):
     fig.suptitle(
         f"Reale Daten, Finger-Tapping rechte Hand — {ds.attrs.get('family')} / "
         f"{ds.attrs.get('constellation')} / {ds.attrs.get('noise_model')}\n"
-        "Montage-Layout aus den Optodenpositionen (Hauptkomponenten-Projektion, "
-        "nicht anatomisch orientiert)", fontsize=10)
+        "Montage-Layout aus den Optodenpositionen; Orientierung nach Khan et al. Tab. 3 "
+        "(linke Hemisphäre links, frontal oben)", fontsize=10)
     fig.tight_layout(); fig.savefig(OUT / "17_real_scalp.png", dpi=130)
     plt.close(fig)
 

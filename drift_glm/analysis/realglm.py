@@ -16,8 +16,8 @@ Aufruf:
 
 from __future__ import annotations
 
+import argparse
 import importlib
-import sys
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -33,6 +33,9 @@ import cedalion.models.glm as glm
 from cedalion import units
 
 from drift_glm.core import pipeline as pl
+from drift_glm.core.filtering import apply_filter
+from drift_glm.core.provenance import (archive_file, build_run_metadata, write_csv_atomic,
+                                       write_metadata_atomic)
 from drift_glm.data import realdata as rd
 from drift_glm.analysis.sweep import drift_dm
 from drift_glm import paths
@@ -45,6 +48,14 @@ FAMILIES = ["none", "poly:1", "poly:2", "poly:3", "poly:5",
             "dct:0.005", "dct:0.01", "dct:0.02",
             "legendre:1", "legendre:3", "bspline:5", "bspline:8",
             "butter:0.01", "bandpass:0.01-0.5"]
+
+#: Ergaenzungsarme (Modus `supplement`, danach `merge`): der Tiefpass 0,5 Hz allein, den
+#: die Betreuung ausdruecklich testen wollte (Chat 1.8.2026, 11:45), und der konsistente
+#: Filter-Kontrollarm `butterxy:0.01`, der Daten UND alle nichtkonstanten Designspalten mit
+#: demselben Filter behandelt (core/filtering.py). Der bestehende Arm `butter:0.01`
+#: (nur Daten gefiltert, gaengige Praxis) bleibt unveraendert.
+SUPPLEMENTAL_FAMILIES = ["lowpass:0.5", "butterxy:0.01"]
+SUMMARY_KEY = ["family", "constellation", "noise_model", "chromo"]
 
 #: Tiefpass- und Bandpass-Familien sind mit AR-IRLS nicht auswertbar: ein Tiefpass bei
 #: 0.5 Hz (fs = 3.9 Hz) nimmt dem Residuum oberhalb der Grenze praktisch alle Leistung,
@@ -86,15 +97,18 @@ def first_level(conc, stim, family, constellation, noise_model, ar_order=30,
     dm_hrf, _ = pl._normalize_hrf_to_unit_peak(dm_hrf, hrf_names)
 
     dm_drift, filt = drift_dm(family, conc)
-    ts = conc
-    if filt is not None:
-        # Filter-Alternative im Konzentrationsraum
-        ts = conc.cd.freq_filter(filt[0] * units.Hz, filt[1] * units.Hz, 4)
+    consistent = family.startswith("butterxy:")
+    # Bestehende Filter-Arme bilden den Global-Regressor aus der gefilterten Zeitreihe
+    # (unveraendert). Der konsistente Kontrollarm baut X ungefiltert auf und filtert dann
+    # y und alle nichtkonstanten Spalten mit demselben Nullphasenfilter (apply_filter).
+    nuisance_ts = (conc.cd.freq_filter(filt[0] * units.Hz, filt[1] * units.Hz, 4)
+                   if filt is not None and not consistent else conc)
 
     dm = dm_hrf & dm_drift
     if constellation == "global":
-        dm = dm & glm.design_matrix.global_mean_regressor(ts)
+        dm = dm & glm.design_matrix.global_mean_regressor(nuisance_ts)
 
+    ts, dm = apply_filter(conc, dm, filt, filter_design=consistent)
     res = glm.fit(ts, dm, noise_model=noise_model, ar_order=ar_order,
                   max_jobs=max_jobs)
     return res.sm.params.sel(regressor=hrf_names[0])
@@ -129,8 +143,10 @@ def group_test(beta_by_subject: dict[str, xr.DataArray]):
 def split_run_reliability(beta_by_run: dict[str, dict[str, xr.DataArray]], chromo="HbO"):
     """Reproduzierbarkeit: Korrelation der beta-Karten zwischen Durchgaengen.
 
-    Je Proband mit mindestens zwei Durchgaengen die Pearson-Korrelation der
-    Kanal-beta-Karten aller Durchgangspaare, danach Median ueber Probanden.
+    Pearson-Korrelation der Kanal-beta-Karten fuer jedes Durchgangspaar innerhalb eines
+    Probanden, danach EIN Median ueber alle Paare (gepoolt, nicht erst je Proband): ein
+    Proband mit sechs Durchgaengen traegt 15 Paare bei, einer mit zwei Durchgaengen eines.
+    Rueckgabe (Median, Zahl der Paare).
     """
     rs = []
     for runs in beta_by_run.values():
@@ -145,17 +161,40 @@ def split_run_reliability(beta_by_run: dict[str, dict[str, xr.DataArray]], chrom
     return (float(np.median(rs)), len(rs)) if rs else (float("nan"), 0)
 
 
-def main(mode="full"):
+def _out_path(mode: str, output=None) -> Path:
+    if output is not None:
+        return Path(output)
+    suffix = {"test": "_test", "supplement": "_supplement"}.get(mode, "")
+    return RESULTS / f"realglm_summary{suffix}.csv"
+
+
+def main(mode="full", *, families=None, output=None):
+    """Raster rechnen. `mode`: full (14 Familien), test (2 Probanden), supplement
+    (`SUPPLEMENTAL_FAMILIES`, eigene CSV, danach `merge_supplement`). Vorhandene
+    Ergebnisdateien werden nicht ueberschrieben, sondern vorher archiviert; neben der CSV
+    entsteht `<name>.meta.json` mit Code-/Daten-Fingerabdruck (core/provenance.py).
+    """
     paths.ensure()
     files = rd.find_files()
     if not files:
         print(f"Keine Daten in {rd.DATA_DIR}"); return
 
-    families = FAMILIES if mode != "test" else ["poly:3", "none"]
+    if families is None:
+        families = {"test": ["poly:3", "none"],
+                    "supplement": list(SUPPLEMENTAL_FAMILIES)}.get(mode, list(FAMILIES))
+    families = list(families)
     noise_models = NOISE_MODELS if mode != "test" else ["ols"]
     if mode == "test":
         subs = sorted({rd.subject_of(f) for f in files})[:2]
         files = [f for f in files if rd.subject_of(f) in subs]
+    out = _out_path(mode, output)
+    for old in (out, out.with_suffix(".meta.json")):
+        if old.exists():
+            print(f"Archiviere {old.name} -> {archive_file(old, 'before-realglm-rerun')}")
+    meta = build_run_metadata(dict(analysis="realglm", mode=mode, families=families,
+                                   constellations=CONSTELLATIONS, noise_models=noise_models,
+                                   motion_method=MOTION_METHOD, ar_order=30,
+                                   n_files=len(files)), files)
 
     print(f"realglm [{mode}]: {len(files)} Dateien, {len(families)} Familien, "
           f"{len(CONSTELLATIONS)} Konstellationen, {len(noise_models)} Rauschmodelle",
@@ -230,9 +269,9 @@ def main(mode="full"):
                     row["hbo_hbr_corr"] = corr
 
     df = pd.DataFrame(recs)
-    out = RESULTS / ("realglm_summary_test.csv" if mode == "test"
-                     else "realglm_summary.csv")
-    df.to_csv(out, index=False)
+    meta["elapsed_seconds"] = round(time.time() - t0, 1)
+    write_csv_atomic(df, out)
+    write_metadata_atomic(meta, out.with_suffix(".meta.json"))
     print(f"\n[OK] {total} Fits in {(time.time() - t0) / 60:.1f} min -> {out}")
 
     d = df[(df.chromo == "HbO") & (df.noise_model == noise_models[0])]
@@ -243,5 +282,48 @@ def main(mode="full"):
            .to_string(float_format=lambda x: f"{x:.3f}"))
 
 
+def merge_supplement(addition="realglm_summary_supplement.csv", base="realglm_summary.csv"):
+    """Ergaenzungsarme an die Haupttabelle anhaengen: Archivkopie der Basis, keine
+    doppelten Zellen (SUMMARY_KEY), gleiche Spalten, atomares Schreiben, Metadaten."""
+    base_p, add_p = RESULTS / base, RESULTS / addition
+    b, a = pd.read_csv(base_p), pd.read_csv(add_p)
+    if set(b.columns) != set(a.columns):
+        raise ValueError(f"Spalten unterscheiden sich: {set(b.columns) ^ set(a.columns)}")
+    kb = set(map(tuple, b[SUMMARY_KEY].itertuples(index=False)))
+    ka = set(map(tuple, a[SUMMARY_KEY].itertuples(index=False)))
+    if kb & ka:
+        raise ValueError(f"Zellen bereits vorhanden, nichts ersetzt: {sorted(kb & ka)[:4]}")
+    if len(ka) != len(a):
+        raise ValueError("Ergaenzung enthaelt doppelte Zellen")
+    archived = archive_file(base_p, "before-merge-" + add_p.stem)
+    merged = pd.concat([b, a[b.columns]], ignore_index=True)
+    write_csv_atomic(merged, base_p)
+    meta_p = base_p.with_suffix(".meta.json")
+    meta = {}
+    if meta_p.exists():
+        import json
+        meta = json.loads(meta_p.read_text())
+        archive_file(meta_p, "before-merge-" + add_p.stem)
+    add_meta_p = add_p.with_suffix(".meta.json")
+    meta.setdefault("merged_supplements", []).append(dict(
+        addition=str(add_p), rows=int(len(a)), archived_base=str(archived),
+        addition_meta=(__import__("json").loads(add_meta_p.read_text())
+                       if add_meta_p.exists() else None)))
+    write_metadata_atomic(meta, meta_p)
+    print(f"[OK] {len(a)} Zeilen aus {add_p.name} an {base_p.name} angehaengt "
+          f"(Archiv: {archived})")
+    return merged
+
+
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "full")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", nargs="?", default="full",
+                        choices=["full", "test", "supplement", "merge"])
+    parser.add_argument("--families", nargs="+")
+    parser.add_argument("--output")
+    parser.add_argument("--addition", default="realglm_summary_supplement.csv")
+    args = parser.parse_args()
+    if args.mode == "merge":
+        merge_supplement(args.addition)
+    else:
+        main(args.mode, families=args.families, output=args.output)
