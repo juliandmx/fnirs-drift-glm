@@ -14,9 +14,13 @@ Aufruf:
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
-import sys
+import os
+import shutil
 import time
+from datetime import datetime, timezone
 from collections import defaultdict
 from pathlib import Path
 
@@ -33,6 +37,7 @@ from drift_glm.core import fitstats as fs
 from drift_glm.core import pipeline as pl
 from drift_glm.core import preprocess as prep
 from drift_glm.core import shortchannel as sc
+from drift_glm.core.filtering import apply_filter
 from drift_glm import paths
 
 RESULTS = paths.RESULTS
@@ -57,7 +62,7 @@ BASE_FAMILIES = ["poly:1", "poly:2", "poly:3", "poly:4", "poly:5",
                  "none", "butter:0.01"]
 
 # Hauptstudie (~8-9 h). Motion Correction ist eine eigene Achse, weil TDDR das Driftband
-# und die eingemischte HRF daempft (auf ~70 %), Wavelet nicht; gekreuzt mit der
+# und die eingemischte HRF daempft, Wavelet nicht; gekreuzt mit der
 # Konstellation "motion" zeigt sich, ob sich Korrektur und Motion-Regressoren doppeln.
 # 15 Familien x 3 Fenster x 5 Konstellationen x 2 Motion x 4 Seeds = 1800 Fits.
 V4 = dict(
@@ -70,6 +75,9 @@ V4 = dict(
     noise_models=["ar_irls"],
     ar_order=30,
 )
+
+# Additional methodological control only: 1 x 3 x 5 x 2 x 4 = 120 fits.
+BUTTERXY = dict(V4, families=["butterxy:0.01"])
 
 
 def drift_dm(family: str, conc):
@@ -89,12 +97,14 @@ def drift_dm(family: str, conc):
         return dmx.drift_legendre_regressors(conc, order=int(param)), None
     if fam == "dct":
         dm = dmx.drift_cosine_regressors(conc, fmax=float(param) * units.Hz)
-        return dm & offset_only(), None                               # + Offset
+        # Native k=0 is already a constant. For floor(2*N*f/fs)=0 Cedalion
+        # returns no columns, so retain an explicit offset in that case only.
+        return (dm if dm.common.sizes["regressor"] else offset_only()), None
     if fam == "bspline":
         return _bspline_dm(conc, int(param)), None    # enthaelt Offset (Zerlegung d. Eins)
     if fam == "none":
         return offset_only(), None                                    # nur Offset
-    if fam == "butter":              # Hochpass, z.B. butter:0.01
+    if fam in ("butter", "butterxy"):   # old arm / consistent-filter control
         return offset_only(), (float(param), 0.0)
     if fam == "lowpass":             # Tiefpass allein, z.B. lowpass:0.5
         return offset_only(), (0.0, float(param))
@@ -186,8 +196,17 @@ def _write_progress(done, total, t0, timings, last):
     )
 
 
-def run(cfg: dict):
+def run(cfg: dict, output_prefix="sweep", replace: bool = False):
+    """Sweep rechnen. Vorhandene Ergebnisdateien werden nur mit `replace=True` ersetzt,
+    und dann erst nach einer verifizierten Archivkopie (results/archive/)."""
     paths.ensure()
+    output_files = _result_files(output_prefix)
+    if any(p.exists() for p in output_files):
+        if not replace:
+            raise FileExistsError(f"Refusing to replace existing results: {output_files}. "
+                                  "Archive them (--replace) or choose a separate output prefix.")
+        print("Archiviere vorhandene Ergebnisse:",
+              _archive_results(output_prefix, "before_rerun"), flush=True)
     t0 = time.time()
     rec = cedalion.data.get_nn22_resting_state()   # einmal laden
     # Erste Haelfte der Preprocessing-Kette (Rohamplitude -> OD) haengt weder vom
@@ -240,16 +259,13 @@ def run(cfg: dict):
                     parts[v] = sc.short_dm(v, ts_base, ts_short, P.geo3d)
             for family in cfg["families"]:
                 dm_drift, filt = drift_dm(family, P.conc)
-                ts_fam = ts_base
-                if filt is not None:
-                    # Filter-Alternative im Konzentrationsraum, nach der Augmentation.
-                    ts_fam = ts_base.cd.freq_filter(
-                        filt[0] * units.Hz, filt[1] * units.Hz, 4)
                 for con in cfg["constellations"]:
                     extra = constellation_dm(con, parts)
                     dm = P.dm_hrf & dm_drift
                     if extra is not None:
                         dm = dm & extra
+                    ts_fam, dm = apply_filter(ts_base, dm, filt,
+                                             filter_design=family.startswith("butterxy:"))
                     for nm in cfg["noise_models"]:
                         tc = time.time()
                         betas = glm.fit(ts_fam, dm, noise_model=nm,
@@ -271,10 +287,12 @@ def run(cfg: dict):
                                         f"{family} {con} ({mc}/{nm}, win={win:g}, "
                                         f"seed={seed})")
 
-    _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, time.time() - t0)
+    _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, time.time() - t0,
+                          output_prefix=output_prefix)
 
 
-def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
+def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall,
+                          output_prefix="sweep"):
     fams, wins = cfg["families"], cfg["windows"]
     cons, seeds = cfg["constellations"], cfg["seeds"]
     mcs, nms = cfg["motion_methods"], cfg["noise_models"]
@@ -324,8 +342,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                          r2=r2x, r2_adj=r2ax, resid_rms=residx))
     ds.attrs["beta_true_peak_hbo"] = beta_true["HbO"]
     ds.attrs["beta_true_peak_hbr"] = beta_true["HbR"]
+    ds.attrs["dct_constant_schema"] = "one_constant_v2"
     paths.ensure()
-    ds.to_netcdf(RESULTS / "sweep_per_channel.nc")
 
     # Tidy-Zusammenfassung (ueber Kanaele aggregiert) + Plausibilitaet
     recs = []
@@ -373,19 +391,18 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                             hbo_hbr_corr=corr, hbr_hbo_ratio_med=ratio,
                         ))
     df = pd.DataFrame(recs).sort_values(["chromo", "window_s", "rmse_med"])
-    df.to_csv(RESULTS / "sweep_summary.csv", index=False)
 
     meta = dict(config=cfg, n_cells=len(timings),
                 wall_s=round(wall, 1),
                 cell_time_s=dict(min=round(float(np.min(timings)), 2),
                                  median=round(float(np.median(timings)), 2),
                                  max=round(float(np.max(timings)), 2)))
-    (RESULTS / "sweep_meta.json").write_text(json.dumps(meta, indent=2))
+    _write_results(output_prefix, ds, df, meta)
 
     print(f"\n[OK] {len(timings)} Fits in {wall/60:.1f} min "
           f"(median {np.median(timings):.1f}s/Fit).")
-    print(f"     -> {RESULTS/'sweep_summary.csv'}")
-    print(f"     -> {RESULTS/'sweep_per_channel.nc'}")
+    print(f"     -> {RESULTS / (output_prefix + '_summary.csv')}")
+    print(f"     -> {RESULTS / (output_prefix + '_per_channel.nc')}")
     print("\nBeste Familie je (Fenster, chromo) nach RMSE_med:")
     best = df.loc[df.groupby(["chromo", "window_s"])["rmse_med"].idxmin()]
     print(best[["chromo", "window_s", "family", "constellation", "motion",
@@ -397,6 +414,172 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
             .to_string(float_format=lambda x: f"{x:+.4f}"))
 
 
+def _result_files(prefix):
+    if Path(prefix).name != prefix:
+        raise ValueError("output prefix must be a filename, not a path")
+    return [RESULTS / f"{prefix}_{suffix}" for suffix in
+            ("per_channel.nc", "summary.csv", "meta.json")]
+
+
+def _write_results(prefix, ds, frame, meta):
+    """Serialize every output first, then atomically replace individual files."""
+    destinations = _result_files(prefix)
+    temporary = [p.with_name(f".{p.name}.{os.getpid()}.tmp") for p in destinations]
+    try:
+        ds.to_netcdf(temporary[0])
+        frame.to_csv(temporary[1], index=False)
+        temporary[2].write_text(json.dumps(meta, indent=2) + "\n")
+        for src, dst in zip(temporary, destinations):
+            os.replace(src, dst)
+    finally:
+        for p in temporary:
+            p.unlink(missing_ok=True)
+
+
+def _archive_results(prefix, reason):
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S_%f")
+    archive = RESULTS / "archive"
+    archive.mkdir(exist_ok=True)
+    mapping = []
+    for source in _result_files(prefix):
+        if source.exists():
+            target = archive / f"{source.stem}_{stamp}_{reason}{source.suffix}"
+            shutil.copy2(source, target)
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise IOError(f"Archive verification failed: {source}")
+            mapping.append(dict(source=str(source), archive=str(target), sha256=digest))
+    (archive / f"{prefix}_{stamp}_{reason}_mapping.json").write_text(
+        json.dumps(mapping, indent=2) + "\n")
+    return mapping
+
+
+def merge_results(addition_prefix, base_prefix="sweep"):
+    """Append new families only after checking exact axes, truth and complete cells."""
+    base_files, extra_files = _result_files(base_prefix), _result_files(addition_prefix)
+    base, extra = (xr.load_dataset(files[0]) for files in (base_files, extra_files))
+    if set(base.data_vars) != set(extra.data_vars):
+        raise ValueError("Sweep variables differ")
+    for dim in base.dims:
+        if dim != "family" and not base[dim].equals(extra[dim]):
+            raise ValueError(f"Sweep coordinate mismatch: {dim}")
+    if set(base.family.values) & set(extra.family.values):
+        raise ValueError("Family already present; refusing to replace an existing arm")
+    xr.testing.assert_identical(base.beta_true_map, extra.beta_true_map)
+    for attr in ("beta_true_peak_hbo", "beta_true_peak_hbr"):
+        if base.attrs[attr] != extra.attrs[attr]:
+            raise ValueError(f"Ground-truth peak mismatch: {attr}")
+    key = ["family", "window_s", "constellation", "motion", "noise_model", "chromo"]
+    frames = []
+    for files, data in ((base_files, base), (extra_files, extra)):
+        frame = pd.read_csv(files[1])
+        expected = pd.MultiIndex.from_product([data[k].values for k in key], names=key)
+        found = pd.MultiIndex.from_frame(frame[key])
+        if found.has_duplicates or set(found) != set(expected):
+            raise ValueError(f"Incomplete or duplicate summary cells: {files[1]}")
+        if not ((frame.n_channels == data.sizes["channel"]).all()
+                and (frame.n_seeds == data.sizes["seed"]).all()):
+            raise ValueError(f"Summary sample counts differ: {files[1]}")
+        frames.append(frame)
+    merged = xr.concat([base, extra], dim="family", data_vars="minimal",
+                       coords="minimal", compat="equals", join="exact")
+    meta = json.loads(base_files[2].read_text())
+    meta["config"]["families"] = merged.family.values.tolist()
+    extra_meta = json.loads(extra_files[2].read_text())
+    for name in ("n_cells", "wall_s"):
+        meta[name] += extra_meta[name]
+    meta.setdefault("additional_runs", []).append(dict(prefix=addition_prefix,
+                                                       metadata=extra_meta))
+    meta["archive_before_merge"] = _archive_results(base_prefix, "B1_before_merge")
+    _write_results(base_prefix, merged, pd.concat(frames, ignore_index=True), meta)
+    return meta
+
+
+def migrate_dct_adjusted_r2(prefix="sweep"):
+    """Correct only DCT adjusted R² from stored per-seed/channel R², without fits.
+
+    Window lengths follow pipeline.build's actual raw time-axis slicing; native
+    DCT counts follow Cedalion's mean sampling interval, including K=0. Validate
+    every old per-seed/chromophore value before replacing any result file.
+    """
+    files = _result_files(prefix)
+    ds, frame = xr.load_dataset(files[0]), pd.read_csv(files[1])
+    if ds.attrs.get("dct_constant_schema") == "one_constant_v2":
+        raise ValueError("DCT correction already applied")
+    rec = cedalion.data.get_nn22_resting_state()
+    time_coord = rec["amp"].time
+    raw_time = np.asarray(time_coord.values)
+    slice_fs = 1.0 / float(np.median(np.diff(raw_time)))
+    motion_columns = sum(rec.aux_ts[k].sizes["aux_channel"]
+                         for k in ("accelerometer", "gyroscope") if k in rec.aux_ts)
+    counts = []
+    for family in ds.family.values:
+        if not str(family).startswith("dct:"):
+            continue
+        cutoff = float(str(family).partition(":")[2])
+        for window in ds.window_s.values:
+            times = raw_time[:int(round(float(window) * slice_fs))]
+            n = len(times)
+            fs_hz = 1.0 / float(np.diff(times).mean())
+            native_k = int(np.floor(2 * n * cutoff / fs_hz))
+            for constellation in ds.constellation.values:
+                extra_p = 0
+                for part in str(constellation).split("+"):
+                    if part == "motion":
+                        extra_p += motion_columns
+                    elif part in ("global", "short_avg", "short_maxcorr", "short_closest"):
+                        extra_p += 1
+                    elif part != "baseline":
+                        raise ValueError(f"Unsupported stored constellation: {part}")
+                old_p = 1 + native_k + 1 + extra_p  # HRF, native DCT, old offset, extras
+                new_p = 1 + max(native_k, 1) + extra_p
+                sel = dict(family=family, window_s=window, constellation=constellation)
+                stored_r2 = ds.r2.sel(**sel)
+                expected_old = 1 - (1 - stored_r2) * (n - 1) / (n - old_p)
+                np.testing.assert_allclose(ds.r2_adj.sel(**sel), expected_old,
+                                           rtol=2e-12, atol=2e-12, equal_nan=True,
+                                           err_msg=f"Stored column count inconsistent: {sel}")
+                corrected = 1 - (1 - stored_r2) * (n - 1) / (n - new_p)
+                ds.r2_adj.loc[sel] = corrected
+                for motion in ds.motion.values:
+                    for noise in ds.noise_model.values:
+                        for chromo in ds.chromo.values:
+                            row = ((frame.family == family) & (frame.window_s == window)
+                                   & (frame.constellation == constellation)
+                                   & (frame.motion == motion) & (frame.noise_model == noise)
+                                   & (frame.chromo == chromo))
+                            if int(row.sum()) != 1:
+                                raise ValueError(f"Expected one summary row: {sel}")
+                            value = corrected.sel(motion=motion, noise_model=noise,
+                                                  chromo=chromo).median()
+                            frame.loc[row, "r2_adj_med"] = float(value)
+                counts.append(dict(family=str(family), window_s=float(window),
+                                   constellation=str(constellation), n_samples=n,
+                                   native_dct_columns=native_k,
+                                   old_columns=old_p, corrected_columns=new_p))
+    ds.attrs["dct_constant_schema"] = "one_constant_v2"
+    meta = json.loads(files[2].read_text())
+    meta["dct_adjusted_r2_migration"] = dict(counts=counts, refitted=False,
+        archive=_archive_results(prefix, "R06_before_dct_correction"))
+    _write_results(prefix, ds, frame, meta)
+    return counts
+
+
 if __name__ == "__main__":
-    preset = sys.argv[1] if len(sys.argv) > 1 else "pilot"
-    run({"pilot": PILOT, "v4": V4}[preset])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("preset", nargs="?", default="pilot",
+                        choices=("pilot", "v4", "butterxy", "merge", "migrate-dct"))
+    parser.add_argument("--output-prefix")
+    parser.add_argument("--addition-prefix", default="sweep_butterxy")
+    parser.add_argument("--replace", action="store_true",
+                        help="vorhandene Ergebnisse archivieren und ersetzen")
+    args = parser.parse_args()
+    if args.preset == "merge":
+        merge_results(args.addition_prefix, args.output_prefix or "sweep")
+    elif args.preset == "migrate-dct":
+        migrate_dct_adjusted_r2(args.output_prefix or "sweep")
+    else:
+        run({"pilot": PILOT, "v4": V4, "butterxy": BUTTERXY}[args.preset],
+            output_prefix=args.output_prefix or
+            ("sweep_butterxy" if args.preset == "butterxy" else "sweep"),
+            replace=args.replace)

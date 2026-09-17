@@ -16,14 +16,14 @@ FAMILY_ORDER = [
     "dct:0.005", "dct:0.01", "dct:0.02",
     "legendre:1", "legendre:3", "legendre:5",
     "bspline:5", "bspline:8",
-    "butter:0.01", "lowpass:0.5", "bandpass:0.01-0.5",
+    "butter:0.01", "butterxy:0.01", "lowpass:0.5", "bandpass:0.01-0.5",
 ]
 
 _FIXED = {
     "none": "0.6",
     "dct:0.005": "#f4a259", "dct:0.01": "#e76f51", "dct:0.02": "#bc4749",
     "bspline:5": "#8d6e63", "bspline:8": "#4e342e",
-    "butter:0.01": "#8338ec", "lowpass:0.5": "#b5179e",
+    "butter:0.01": "#8338ec", "butterxy:0.01": "#3a0ca3", "lowpass:0.5": "#b5179e",
     "bandpass:0.01-0.5": "#560bad",
 }
 

@@ -1,0 +1,55 @@
+{
+  "config": {
+    "families": [
+      "poly:1",
+      "poly:2",
+      "poly:3",
+      "poly:4",
+      "poly:5",
+      "dct:0.005",
+      "dct:0.01",
+      "dct:0.02",
+      "legendre:1",
+      "legendre:3",
+      "legendre:5",
+      "none",
+      "butter:0.01",
+      "bspline:5",
+      "bspline:8"
+    ],
+    "windows": [
+      90.0,
+      180.0,
+      368.0
+    ],
+    "constellations": [
+      "baseline",
+      "motion",
+      "global",
+      "short_avg",
+      "short_maxcorr"
+    ],
+    "seeds": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "motion_methods": [
+      "wavelet",
+      "tddr+wavelet"
+    ],
+    "n_channels": 20,
+    "noise_models": [
+      "ar_irls"
+    ],
+    "ar_order": 30
+  },
+  "n_cells": 1800,
+  "wall_s": 24629.9,
+  "cell_time_s": {
+    "min": 7.4,
+    "median": 11.22,
+    "max": 33.96
+  }
+}

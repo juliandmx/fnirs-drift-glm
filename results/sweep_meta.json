@@ -51,5 +51,432 @@
     "min": 7.4,
     "median": 11.22,
     "max": 33.96
+  },
+  "dct_adjusted_r2_migration": {
+    "counts": [
+      {
+        "family": "dct:0.005",
+        "window_s": 90.0,
+        "constellation": "baseline",
+        "n_samples": 809,
+        "native_dct_columns": 0,
+        "old_columns": 2,
+        "corrected_columns": 2
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 90.0,
+        "constellation": "motion",
+        "n_samples": 809,
+        "native_dct_columns": 0,
+        "old_columns": 8,
+        "corrected_columns": 8
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 90.0,
+        "constellation": "global",
+        "n_samples": 809,
+        "native_dct_columns": 0,
+        "old_columns": 3,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 90.0,
+        "constellation": "short_avg",
+        "n_samples": 809,
+        "native_dct_columns": 0,
+        "old_columns": 3,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 90.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 809,
+        "native_dct_columns": 0,
+        "old_columns": 3,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 180.0,
+        "constellation": "baseline",
+        "n_samples": 1618,
+        "native_dct_columns": 1,
+        "old_columns": 3,
+        "corrected_columns": 2
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 180.0,
+        "constellation": "motion",
+        "n_samples": 1618,
+        "native_dct_columns": 1,
+        "old_columns": 9,
+        "corrected_columns": 8
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 180.0,
+        "constellation": "global",
+        "n_samples": 1618,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 180.0,
+        "constellation": "short_avg",
+        "n_samples": 1618,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 180.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 1618,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 368.0,
+        "constellation": "baseline",
+        "n_samples": 3308,
+        "native_dct_columns": 3,
+        "old_columns": 5,
+        "corrected_columns": 4
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 368.0,
+        "constellation": "motion",
+        "n_samples": 3308,
+        "native_dct_columns": 3,
+        "old_columns": 11,
+        "corrected_columns": 10
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 368.0,
+        "constellation": "global",
+        "n_samples": 3308,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 368.0,
+        "constellation": "short_avg",
+        "n_samples": 3308,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.005",
+        "window_s": 368.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 3308,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 90.0,
+        "constellation": "baseline",
+        "n_samples": 809,
+        "native_dct_columns": 1,
+        "old_columns": 3,
+        "corrected_columns": 2
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 90.0,
+        "constellation": "motion",
+        "n_samples": 809,
+        "native_dct_columns": 1,
+        "old_columns": 9,
+        "corrected_columns": 8
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 90.0,
+        "constellation": "global",
+        "n_samples": 809,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 90.0,
+        "constellation": "short_avg",
+        "n_samples": 809,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 90.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 809,
+        "native_dct_columns": 1,
+        "old_columns": 4,
+        "corrected_columns": 3
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 180.0,
+        "constellation": "baseline",
+        "n_samples": 1618,
+        "native_dct_columns": 3,
+        "old_columns": 5,
+        "corrected_columns": 4
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 180.0,
+        "constellation": "motion",
+        "n_samples": 1618,
+        "native_dct_columns": 3,
+        "old_columns": 11,
+        "corrected_columns": 10
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 180.0,
+        "constellation": "global",
+        "n_samples": 1618,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 180.0,
+        "constellation": "short_avg",
+        "n_samples": 1618,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 180.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 1618,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 368.0,
+        "constellation": "baseline",
+        "n_samples": 3308,
+        "native_dct_columns": 7,
+        "old_columns": 9,
+        "corrected_columns": 8
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 368.0,
+        "constellation": "motion",
+        "n_samples": 3308,
+        "native_dct_columns": 7,
+        "old_columns": 15,
+        "corrected_columns": 14
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 368.0,
+        "constellation": "global",
+        "n_samples": 3308,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 368.0,
+        "constellation": "short_avg",
+        "n_samples": 3308,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.01",
+        "window_s": 368.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 3308,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 90.0,
+        "constellation": "baseline",
+        "n_samples": 809,
+        "native_dct_columns": 3,
+        "old_columns": 5,
+        "corrected_columns": 4
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 90.0,
+        "constellation": "motion",
+        "n_samples": 809,
+        "native_dct_columns": 3,
+        "old_columns": 11,
+        "corrected_columns": 10
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 90.0,
+        "constellation": "global",
+        "n_samples": 809,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 90.0,
+        "constellation": "short_avg",
+        "n_samples": 809,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 90.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 809,
+        "native_dct_columns": 3,
+        "old_columns": 6,
+        "corrected_columns": 5
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 180.0,
+        "constellation": "baseline",
+        "n_samples": 1618,
+        "native_dct_columns": 7,
+        "old_columns": 9,
+        "corrected_columns": 8
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 180.0,
+        "constellation": "motion",
+        "n_samples": 1618,
+        "native_dct_columns": 7,
+        "old_columns": 15,
+        "corrected_columns": 14
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 180.0,
+        "constellation": "global",
+        "n_samples": 1618,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 180.0,
+        "constellation": "short_avg",
+        "n_samples": 1618,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 180.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 1618,
+        "native_dct_columns": 7,
+        "old_columns": 10,
+        "corrected_columns": 9
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 368.0,
+        "constellation": "baseline",
+        "n_samples": 3308,
+        "native_dct_columns": 14,
+        "old_columns": 16,
+        "corrected_columns": 15
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 368.0,
+        "constellation": "motion",
+        "n_samples": 3308,
+        "native_dct_columns": 14,
+        "old_columns": 22,
+        "corrected_columns": 21
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 368.0,
+        "constellation": "global",
+        "n_samples": 3308,
+        "native_dct_columns": 14,
+        "old_columns": 17,
+        "corrected_columns": 16
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 368.0,
+        "constellation": "short_avg",
+        "n_samples": 3308,
+        "native_dct_columns": 14,
+        "old_columns": 17,
+        "corrected_columns": 16
+      },
+      {
+        "family": "dct:0.02",
+        "window_s": 368.0,
+        "constellation": "short_maxcorr",
+        "n_samples": 3308,
+        "native_dct_columns": 14,
+        "old_columns": 17,
+        "corrected_columns": 16
+      }
+    ],
+    "refitted": false,
+    "archive": [
+      {
+        "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_per_channel.nc",
+        "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_per_channel_2026-09-17_132612_743872_R06_before_dct_correction.nc",
+        "sha256": "78cc4f4c5015ab33cc8d310cea77ae9dbee0096937f8470f248fe77f2ea0e791"
+      },
+      {
+        "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_summary.csv",
+        "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_summary_2026-09-17_132612_743872_R06_before_dct_correction.csv",
+        "sha256": "e6f833aa7a537264a36710faf8fedcf42b851f2892c3f9d70642d408a07c8476"
+      },
+      {
+        "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_meta.json",
+        "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_meta_2026-09-17_132612_743872_R06_before_dct_correction.json",
+        "sha256": "0ceb0eb111b1d00e2477c1bef7ec13fdbf511c9ea1662652153721e858d1be60"
+      }
+    ]
   }
 }

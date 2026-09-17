@@ -1,0 +1,17 @@
+[
+  {
+    "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_per_channel.nc",
+    "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_per_channel_2026-09-17_132612_743872_R06_before_dct_correction.nc",
+    "sha256": "78cc4f4c5015ab33cc8d310cea77ae9dbee0096937f8470f248fe77f2ea0e791"
+  },
+  {
+    "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_summary.csv",
+    "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_summary_2026-09-17_132612_743872_R06_before_dct_correction.csv",
+    "sha256": "e6f833aa7a537264a36710faf8fedcf42b851f2892c3f9d70642d408a07c8476"
+  },
+  {
+    "source": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/sweep_meta.json",
+    "archive": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/sweep_meta_2026-09-17_132612_743872_R06_before_dct_correction.json",
+    "sha256": "0ceb0eb111b1d00e2477c1bef7ec13fdbf511c9ea1662652153721e858d1be60"
+  }
+]
