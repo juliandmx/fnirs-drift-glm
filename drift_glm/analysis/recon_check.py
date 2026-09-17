@@ -1,10 +1,7 @@
-"""Rauschfreie Kontrolle des Bildraum-Kreises und der Regularisierung.
+"""Rauschfreie Kontrolle des Bildraum-Kreises und der Regularisierungsparameter.
 
-Warum das hier liegt und nicht bei `core.imagespace`: Diese Diagnose braucht einen
-DATENSATZ (eine echte OD-Zeitreihe fuer die Messvarianz), und `core` darf die
-Datenschicht nicht kennen -- sonst laeuft die Abhaengigkeit nach oben und die Schichtung
-ist nur noch Dekoration. `core.imagespace` bleibt damit frei von Datensatzwissen; die
-Kombination aus Bildraum und Datensatz passiert in `analysis`.
+Liegt in `analysis` statt in `core.imagespace`, weil die Diagnose eine echte OD-Zeitreihe
+eines Datensatzes fuer die Messvarianz braucht und `core` die Datenschicht nicht kennt.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.recon_check
@@ -46,21 +43,13 @@ def recon_check(dataset: str = "multisubject_fingertapping", *,
                 target_uM: float = 0.6) -> list[dict]:
     """Rauschfreie Kontrolle des Kreises Bildraum -> Kanalraum -> Bildraum.
 
-    Das eingemischte Muster ist bekannt, also laesst sich die Rekonstruktion OHNE
-    Ruhedaten und OHNE GLM pruefen: was kommt zurueck, wenn man exakt das Wahre
-    hineingibt? Was hier nicht funktioniert, kann spaeter nicht an der Driftfamilie
-    liegen. Zugleich belegt der Lauf die Wahl der Regularisierungsparameter empirisch,
-    statt sie nur zu uebernehmen.
+    Das eingemischte Muster wird ohne Ruhedaten und ohne GLM rekonstruiert; was hier nicht
+    zurueckkommt, kann spaeter nicht an der Driftfamilie liegen. Zugleich wird die Wahl von
+    alpha_meas/alpha_spatial ueber ein Raster belegt. Gemessen wird nur auf den sichtbaren
+    Vertices (`imagespace.sensitivity_mask`), sonst misst man die Tiefenkorrektur.
 
-    Gemessen wird ausschliesslich auf den sichtbaren Vertices
-    (`imagespace.sensitivity_mask`) -- ohne diese Beschraenkung misst man das Verhalten der
-    Tiefenkorrektur statt der Rekonstruktion.
-
-    Default ist die 28-Kanal-Montage, NICHT nn22: dort ist eine `ImageRecon`-Instanz
-    ~16 MB statt ~300 MB, und die Aussage ueber die Regularisierung ist dieselbe. Auf
-    dieser Maschine (7,8 GB) laesst nn22 nichts anderes daneben laufen -- ein volles
-    Parameterraster darauf hat 40 Minuten CPU gebraucht und zwei parallele Laeufe
-    OOM-killen lassen.
+    Default ist die 28-Kanal-Montage: eine `ImageRecon`-Instanz ist dort ~16 MB statt
+    ~300 MB (nn22), die Aussage ueber die Regularisierung ist dieselbe.
     """
     pre = reference_od(dataset)
     od = pre.od

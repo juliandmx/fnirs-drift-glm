@@ -1,28 +1,12 @@
-"""Multisubject-Fingertapping: GLM je Driftfamilie, Gruppenebene, Bildraum.
+"""Multisubject-Fingertapping: GLM je Driftfamilie, Gruppenebene, Kanal- und Bildraum.
 
-Der dritte Auswertungsstrang neben `sweep.py` (Simulation) und `realglm.py` (Khan). Wie
-dort gibt es keine Ground Truth -- aber dieser Datensatz erlaubt zwei Kriterien, die auf
-den anderen nicht verfuegbar waren:
-
-  * **Halbierungs-Reproduzierbarkeit.** Jede Bedingung hat 30 Trials. Werden die geraden
-    und ungeraden Trials getrennt gefittet, muessen beide Haelften dieselbe beta-Karte
-    liefern. Das ist der Ersatz fuer die Durchgangspaare bei Khan (dort 2-3 Durchgaenge je
-    Proband, hier nur eine Aufnahme) und dasselbe wahrheitsfreie Guetemass: eine Familie,
-    die Rauschen als Aktivierung modelliert, ist zwischen den Haelften inkonsistent.
-
-  * **Kontralaterale Vorhersage.** Getappt wird mit linker und rechter Hand getrennt, und
-    Motorik ist kontralateral organisiert. Also MUSS Tapping/Left ueber C4 und
-    Tapping/Right ueber C3 landen. Im Kanalraum als Lateralisierungsindex ueber die
-    Kanalgruppen, im Bildraum als Abstand des rekonstruierten Maximums zur erwarteten
-    Landmarke. Genau diese Kontrolle war bei Khan unmoeglich, weil dort die Landmarken
-    fehlen (siehe BESPRECHUNG, Abb. 17) -- sie ist das inhaltliche Argument fuer den
-    Bildraum.
-
-DIE SYSTEMIK-ACHSE. Weil dieser Datensatz echte kurze Kanaele hat, sind erstmals alle
-Varianten anwendbar, und zusaetzlich die Frage aus den Gespraechsnotizen ("global
-components subtraction anschauen"): gehoert der systemische Anteil in die Designmatrix
-oder wird er vorher abgezogen? Beides benutzt denselben Regressor, ist aber nicht
-dasselbe -- Begruendung in `shortchannel.subtract_global_component`.
+Ohne Ground Truth zaehlen zwei Kriterien: Halbierungs-Reproduzierbarkeit (gerade und
+ungerade Trials je Bedingung getrennt gefittet, Korrelation der beta-Karten) und
+kontralaterale Vorhersage (Tapping/Left ueber C4, Tapping/Right ueber C3; im Kanalraum
+als Lateralisierungsindex, im Bildraum als Abstand des rekonstruierten Maximums zur
+Landmarke). Der Datensatz hat echte kurze Kanaele, daher ist die Systemik-Achse
+(`SYSTEMIC`) voll besetzt: Regressor in der Designmatrix (`_dm`) oder vorab abgezogen
+(`_sub`, s. `shortchannel.subtract_global_component`). Ergebnis: results/msglm_summary.csv.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.msglm test    # 2 Probanden, 2 Familien (Timing)
@@ -61,29 +45,17 @@ ALPHA = 0.05
 FAMILIES = ["none", "poly:1", "poly:3", "poly:5", "dct:0.005", "dct:0.01", "dct:0.02",
             "legendre:1", "legendre:3", "bspline:5", "bspline:8", "butter:0.01"]
 
-#: Die Systemik-Achse: WELCHER Regressor und WIE er angewandt wird. Suffix `_dm` = bleibt
-#: in der Designmatrix, `_sub` = wird vorher abgezogen (Notebook-50b-Variante).
+#: Systemik-Achse: Suffix `_dm` = Regressor in der Designmatrix, `_sub` = vorab abgezogen
+#: (Variante aus Cedalion-Notebook 50b).
 SYSTEMIC = ["none", "global_dm", "short_avg_dm", "short_avg_sub",
             "short_maxcorr_dm", "short_closest_dm"]
 
 NOISE_MODELS = ["ar_irls", "ols"]
 
-#: AR-IRLS bekommt ein REDUZIERTES Raster, und das ist eine Messung, keine Bequemlichkeit.
-#: Auf diesem Datensatz (2974 s bei 7,8125 Hz = 23 240 Samples je Kanal) gemessen, ein Fit
-#: ueber alle Kanaele:
-#:
-#:     poly:3   + OLS       0,7 s        poly:3   + AR-IRLS   145,3 s
-#:     dct:0.02 + OLS      53,8 s        dct:0.02 + AR-IRLS   > 500 s
-#:
-#: AR-IRLS kostet also rund das Zweihundertfache. Der Grund ist die Prewhitening-Stufe: sie
-#: schaetzt je Kanal iterativ ein AR-Modell der Ordnung 30 ueber 23 000 Samples. Die Ordnung
-#: liesse sich nicht einfach senken -- die Empfehlung ist ~4 x Abtastrate, bei 7,8 Hz also
-#: genau 30.
-#:
-#: Das volle Raster (12 Familien x 6 Systemik-Stufen x 3 Fits x 5 Probanden) waere mit
-#: AR-IRLS mehrere Tage. Deshalb: OLS ueber das VOLLE Raster, AR-IRLS ueber die Familien und
-#: Stufen, an denen die Fragestellung haengt. Die Kanalraum-Rangliste aus `realglm.py` gibt
-#: es fuer beide Rauschmodelle, der Vergleich ist also nicht verloren.
+#: AR-IRLS bekommt ein reduziertes Raster: auf diesen Aufnahmen (2974 s bei 7,8 Hz =
+#: 23 240 Samples je Kanal) kostet ein Fit ueber alle Kanaele mit AR-IRLS (Ordnung 30,
+#: ~4 x Abtastrate) rund das Zweihundertfache von OLS (poly:3: 145 s gegen 0,7 s). OLS
+#: laeuft ueber das volle Raster.
 AR_IRLS_FAMILIES = ["none", "poly:3", "dct:0.02", "butter:0.01"]
 AR_IRLS_SYSTEMIC = ["none", "short_avg_dm", "short_avg_sub"]
 
@@ -95,12 +67,9 @@ def grid_for(noise_model: str, families, systemic):
     return ([f for f in families if f in AR_IRLS_FAMILIES],
             [s for s in systemic if s in AR_IRLS_SYSTEMIC])
 
-#: Prozesse fuer die Parallelisierung ueber Probanden. Wie in realglm.py: cedalions
-#: glm.fit parallelisiert intern kaum, die Probanden sind dagegen unabhaengig.
-#: Niedriger als die 5 in realglm.py, weil die Aufnahmen hier 8x laenger sind (2974 s bei
-#: 7,8 Hz = 23 240 Samples gegen 1367) und jeder Prozess zusaetzlich den cedalion-Import
-#: traegt. Mit 5 Prozessen wurde der Lauf auf dieser Maschine (7,8 GB) vom OOM-Killer
-#: beendet.
+#: Prozesse ueber Probanden. Niedriger als in realglm.py, weil die Aufnahmen 8x laenger
+#: sind und jeder Prozess den cedalion-Import traegt; 5 Prozesse wurden auf 7,8 GB RAM vom
+#: OOM-Killer beendet.
 N_JOBS = 3
 
 
@@ -112,10 +81,9 @@ def first_level(conc, geo3d, stim, family: str, systemic: str, noise_model: str,
                 *, ar_order: int = 30, max_jobs: int = 1, half: str | None = None):
     """GLM einer Aufnahme -> beta je (channel, chromo, trial_type).
 
-    `half` waehlt fuer die Halbierungs-Reproduzierbarkeit jeden zweiten Trial je
-    Bedingung aus (`"even"` / `"odd"`). Wichtig: es wird JE BEDINGUNG halbiert, nicht
-    global -- sonst haette eine Haelfte mehr Trials einer Bedingung als die andere und der
-    Unterschied waere ein Design-Effekt statt eines Rauscheffekts.
+    `half` ("even"/"odd") waehlt fuer die Halbierungs-Reproduzierbarkeit jeden zweiten
+    Trial aus, und zwar je Bedingung, damit beide Haelften gleich viele Trials je
+    Bedingung enthalten.
     """
     if half is not None:
         keep = []
@@ -186,15 +154,14 @@ def half_reliability(pairs: list[tuple[xr.DataArray, xr.DataArray]], chromo="HbO
 def hemisphere_of(channels, geo3d) -> np.ndarray:
     """+1 fuer Kanaele der linken, -1 fuer die der rechten Hemisphaere.
 
-    Ueber die x-Koordinate des Kanalmittelpunkts, bezogen auf die Mitte zwischen LPA und
-    RPA. Deshalb braucht dieser Test Landmarken -- und deshalb ist er beim Khan-Datensatz
-    unmoeglich.
+    Ueber die x-Koordinate des Kanalmittelpunkts relativ zur Mitte zwischen LPA und RPA;
+    braucht also Landmarken in geo3d.
     """
     g = geo3d.pint.to("mm").pint.dequantify() if geo3d.pint.units is not None else geo3d
     lpa = np.asarray(g.sel(label="LPA").values, float)
     rpa = np.asarray(g.sel(label="RPA").values, float)
     axis = rpa - lpa
-    axis = axis / np.linalg.norm(axis)                # zeigt nach RECHTS
+    axis = axis / np.linalg.norm(axis)                # zeigt nach rechts
     mid = 0.5 * (np.asarray(g.sel(label=channels.source.values).values, float)
                  + np.asarray(g.sel(label=channels.detector.values).values, float))
     proj = (mid - 0.5 * (lpa + rpa)) @ axis
@@ -204,9 +171,8 @@ def hemisphere_of(channels, geo3d) -> np.ndarray:
 def lateralisation(mean_beta: xr.DataArray, geo3d, chromo="HbO") -> dict:
     """Kontralaterale Kontrolle im Kanalraum.
 
-    Fuer jede Hand: mittleres beta auf der kontralateralen minus auf der ipsilateralen
-    Hemisphaere. Positiv = die Erwartung ist erfuellt. Der Wert ist bewusst eine Differenz
-    und kein Verhaeltnis -- bei kleinen Nennern wuerde ein Verhaeltnis explodieren.
+    Je Hand: mittleres beta kontralateral minus ipsilateral; positiv = Erwartung erfuellt.
+    Differenz statt Verhaeltnis, weil kleine Nenner ein Verhaeltnis explodieren liessen.
     """
     side = hemisphere_of(mean_beta, geo3d)            # +1 links, -1 rechts
     out = {}
@@ -221,12 +187,10 @@ def lateralisation(mean_beta: xr.DataArray, geo3d, chromo="HbO") -> dict:
 
 
 def _fit_one(conc, geo3d, stim, family, systemic, noise_model, half, max_jobs=1):
-    """Ein Proband, ein Fit. Ausgelagert, damit joblib ihn per Referenz picklen kann.
+    """Ein Proband, ein Fit; ausgelagert, damit joblib ihn per Referenz picklen kann.
 
-    Die Vorverarbeitung passiert bewusst NICHT hier: sie haengt weder an der Familie noch
-    an der Systemik-Stufe, und die Wavelet-Korrektur ist der teuerste Einzelschritt. Wuerde
-    sie je Zelle laufen, waere sie bei 144 Zellen der Kostentreiber -- dieselbe Lehre wie
-    in `realglm.py`.
+    Die Vorverarbeitung liegt bewusst nicht hier: sie haengt weder an Familie noch
+    Systemik-Stufe, und die Wavelet-Korrektur ist der teuerste Einzelschritt.
     """
     return first_level(conc, geo3d, stim, family, systemic, noise_model, half=half,
                        max_jobs=max_jobs)
@@ -260,9 +224,8 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
     worker = importlib.import_module(_self)._fit_one
     n_jobs = min(N_JOBS, len(files))
 
-    # Vorverarbeitung EINMAL je Proband. Die Geometrie und die Kanalmenge sind ueber die
-    # Probanden identisch (dieselbe Montage), der Referenz-Proband liefert sie also fuer
-    # den Bildraum mit.
+    # Vorverarbeitung einmal je Proband. Geometrie und Kanalmenge sind ueber die Probanden
+    # identisch (dieselbe Montage), der erste Proband liefert sie fuer den Bildraum.
     t0 = time.time()
     prepped = {}
     for f in files:
@@ -289,11 +252,8 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
               f"Vertices, alpha_meas={recon.alpha_meas:.3g}, "
               f"alpha_spatial={recon.alpha_spatial}", flush=True)
 
-    # Wiederaufnahme: bereits gerechnete Zellen aus einer frueheren (z.B. vom OOM-Killer
-    # beendeten) Tabelle uebernehmen statt sie neu zu rechnen. Der Volllauf am 12.08.
-    # brach bei 81/84 Zellen ab -- ohne Wiederaufnahme wuerde jeder Neustart die komplette
-    # OLS-Haelfte wiederholen, nur um an die 3 fehlenden AR-IRLS-Zellen zu kommen.
-    # Neu rechnen erzwingen: die Summary-CSV loeschen oder umbenennen.
+    # Wiederaufnahme: bereits gerechnete Zellen aus einer frueheren Summary-CSV (z.B. nach
+    # einem Abbruch) uebernehmen. Neu rechnen erzwingen: die CSV loeschen oder umbenennen.
     out = _out_path(mode)
     done_cells, recs = set(), []
     if out.exists():
@@ -320,23 +280,13 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                           f"uebernommen (Resume)", flush=True)
                     continue
                 tc = time.time()
-                # Vollfit und (falls gewuenscht) beide Haelften in EINEM Parallel-Aufruf:
-                # loky startet dann einmal statt dreimal Prozesse.
-                #
-                # AR-IRLS laeuft bewusst mit EINEM Prozess und stattdessen mit
-                # Thread-Parallelitaet UEBER DIE KANAELE (glm.fit, max_jobs=-1): drei
-                # parallele AR-IRLS-Prozesse auf der dct:0.02-Designmatrix (~150
-                # Spalten x 23 240 Samples) wurden auf dieser Maschine (7,8 GB) zweimal
-                # vom OOM-Killer beendet (12.08. bei 81/84, erneut 08.09.) -- Threads
-                # teilen sich den Speicher, Prozesse nicht.
+                # Vollfit und beide Haelften in einem Parallel-Aufruf, damit loky die
+                # Prozesse nur einmal startet.
                 jobs = [(f, h) for f in files for h in (None, *halves_wanted)]
-                # AR-IRLS strikt sequenziell (1 Prozess, 1 Kanal-Thread): EIN einzelner
+                # AR-IRLS strikt sequenziell (1 Prozess, 1 Kanal-Thread): ein einzelner
                 # Kanal-Fit auf der dct:0.02-Designmatrix (122 Spalten x 23 239 Samples)
-                # belegt gemessen 2,9 GB (Peak-RSS, 08.09.; unabhaengig von den
-                # GC-Schwellen, also echt gehaltener Speicher in statsmodels' IRLS).
-                # Auf der 7,8-GB-Maschine ist damit genau ein Fit gleichzeitig sicher --
-                # 3 Prozesse, 4 Threads und 2 Threads wurden nacheinander vom
-                # OOM-Killer beendet. Waehrend des Laufs nichts anderes Grosses starten.
+                # belegt ~2,9 GB Peak-RSS; auf der 7,8-GB-Maschine ist nur ein Fit
+                # gleichzeitig sicher, mehr Prozesse oder Threads wurden OOM-gekillt.
                 nj, mj = (1, 1) if nm == "ar_irls" else (n_jobs, 1)
                 res = Parallel(n_jobs=nj, backend="loky")(
                     delayed(worker)(prepped[f][0], prepped[f][1], prepped[f][2],
@@ -411,8 +361,7 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                     f"verstrichen: {(time.time() - t0) / 60:.1f} min\n"
                     f"ETA: {(time.time() - t0) / done * (total - done) / 60:.1f} min\n"
                     f"letzte Zelle: {fam} {sysm} {nm}\n")
-                # Nach JEDER Zelle schreiben. Der Lauf dauert Stunden; ein Abbruch nach
-                # zwei Dritteln soll nicht zwei Drittel der Ergebnisse mitnehmen.
+                # Nach jeder Zelle schreiben; der Lauf dauert Stunden.
                 pd.DataFrame(recs).to_csv(_out_path(mode), index=False)
 
     df = pd.DataFrame(recs)

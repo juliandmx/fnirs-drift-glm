@@ -1,28 +1,12 @@
-"""Guete des Modellfits: variance explained (R^2) und Residual-Masse.
+"""Guete des Modellfits: variance explained (R^2) und Residual-RMS je Kanal x Chromophor.
 
-Beide Groessen beantworten den Punkt aus dem Betreuungsgespraech (Notizen 2026-09-08):
-"Residuals vom Modelfit -> was konnte das Modell nicht fitten?" -- als Mass fuer den
-Modellfit, das AUCH auf realen Daten ohne Ground Truth existiert. Auf simulierten Daten
-kommt die pruefbare Erwartung dazu: je kleiner die Residuen, desto kleiner sollte die
-Abweichung von der Ground Truth sein. Genau diese Korrelation berechnet der Sweep
-(`sweep._aggregate_and_export`, Spalte `resid_err_corr`).
-
-Definitionen (je Kanal x Chromophor, ueber die Zeit):
-
-  Residuum    r(t) = y(t) - X @ beta_hat  -- im DATENraum, nicht prewhitened. AR-IRLS
-              arbeitet intern mit gewichteten Residuen; fuer die Frage "was blieb
-              unerklaert?" zaehlt aber die interpretierbare Groesse in µM.
-  resid_rms   sqrt( mean_t r(t)^2 )                     [µM]
-  r2          1 - mean_t r(t)^2 / var_t y(t)            (variance explained)
-  r2_adj      1 - (1 - r2) * (n - 1) / (n - p)          (p = Spaltenzahl der
-              Designmatrix INKL. Offset). Relevant, weil die Driftfamilien
-              verschieden viele Spalten haben: dct:0.02 hat bei langen Fenstern ein
-              Vielfaches von poly:1, und mehr Spalten erhoehen R^2 mechanisch.
-
-Vergleichbarkeits-Hinweis: R^2 bezieht sich auf die Zeitreihe, die der Fit tatsaechlich
-gesehen hat. Fuer die Filter-Familien (butter/lowpass/bandpass) ist das die GEFILTERTE
-Zeitreihe -- der Filter hat einen Teil der Varianz bereits entfernt, ihr R^2 ist also
-nicht direkt mit dem der Regressor-Familien vergleichbar. In Abbildungen ausweisen.
+Residuum r(t) = y(t) - X @ beta_hat im Datenraum (nicht prewhitened, in µM);
+resid_rms = sqrt(mean_t r^2); r2 = 1 - mean_t r^2 / var_t y;
+r2_adj = 1 - (1 - r2) * (n - 1) / (n - p) mit p = Spaltenzahl inkl. Offset, weil
+Familien mit mehr Spalten (dct:0.02 bei langen Fenstern) R^2 mechanisch erhoehen.
+Fuer Filter-Familien bezieht sich R^2 auf die gefilterte Zeitreihe und ist nicht direkt
+mit den Regressor-Familien vergleichbar. Beide Groessen existieren auch auf realen Daten
+ohne Ground Truth; der Sweep korreliert sie mit dem GT-Fehler (Spalte `resid_err_corr`).
 """
 
 from __future__ import annotations
@@ -34,7 +18,7 @@ import cedalion.models.glm as glm
 
 
 def dequantify(ts: xr.DataArray) -> xr.DataArray:
-    """Zeitreihe ohne pint-Einheit (Werte in µM). Vertraegt beide Zustaende."""
+    """Zeitreihe ohne pint-Einheit (Werte in µM); vertraegt beide Zustaende."""
     acc = getattr(ts, "pint", None)
     if acc is not None and acc.units is not None:
         return ts.pint.to("micromolar").pint.dequantify()
@@ -44,8 +28,7 @@ def dequantify(ts: xr.DataArray) -> xr.DataArray:
 def n_regressors(dm: glm.design_matrix.DesignMatrix) -> int:
     """Spaltenzahl der Designmatrix je Kanal (inkl. Offset).
 
-    Kanalweise Regressoren (short_maxcorr/short_closest) zaehlen einmal pro Kanal --
-    jeder Kanal sieht genau eine Spalte je channel_wise-Matrix.
+    Kanalweise Regressoren (short_maxcorr/short_closest) zaehlen einmal pro Kanal.
     """
     p = int(dm.common.sizes["regressor"]) if dm.common is not None else 0
     for cw in dm.channel_wise:
@@ -57,8 +40,7 @@ def residuals(ts: xr.DataArray, betas: xr.DataArray,
               dm: glm.design_matrix.DesignMatrix) -> xr.DataArray:
     """Residuum y - X@beta_hat im Datenraum, Dims wie `ts` (unitless, µM-Skala).
 
-    Schaetzerunabhaengig ueber `glm.predict` (verarbeitet auch kanalweise
-    Designmatrizen), statt auf statsmodels-Interna der Ergebnisobjekte zu bauen.
+    Ueber `glm.predict`, das auch kanalweise Designmatrizen verarbeitet.
     """
     y = dequantify(ts)
     pred = glm.predict(ts, betas, dm)
@@ -69,8 +51,8 @@ def fit_metrics(ts: xr.DataArray, betas: xr.DataArray,
                 dm: glm.design_matrix.DesignMatrix) -> xr.Dataset:
     """R^2, adjustiertes R^2 und Residual-RMS je (channel, chromo).
 
-    Rueckgabe: Dataset mit `r2`, `r2_adj`, `resid_rms` (float64). `n` (Samples) und
-    `p` (Regressorspalten) stehen in den attrs.
+    Rueckgabe: Dataset mit `r2`, `r2_adj`, `resid_rms`; `n_samples` und `n_regressors`
+    stehen in den attrs.
     """
     y = dequantify(ts)
     r = residuals(ts, betas, dm)

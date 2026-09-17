@@ -1,1119 +1,477 @@
-# Projektdokumentation
+# Projektdokumentation fnirs-drift-glm
 
-**Bachelorarbeit: „Vergleich verschiedener Driftregressoren im General Linear Model zur Schätzung der hämodynamischen Antwortfunktion in fNIRS-Daten"**
-TU Berlin · Fachgebiet Neurotechnologie · Stand: 13. Juli 2026
+Bachelorarbeit „Vergleich verschiedener Driftregressoren im General Linear Model zur
+Schätzung der hämodynamischen Antwortfunktion in fNIRS-Daten", TU Berlin, Fachgebiet
+Neurotechnologie. Stand der Ergebnisse: 9. September 2026.
 
----
+Inhalt
 
-## Für wen ist dieses Dokument?
+1. [Ziel und Fragestellung](#1-ziel-und-fragestellung)
+2. [Daten](#2-daten)
+3. [Pipeline](#3-pipeline)
+4. [Versuchsraster](#4-versuchsraster)
+5. [Gütemaße](#5-gütemaße)
+6. [Ergebnisse](#6-ergebnisse)
+7. [Dateien und Ausführung](#7-dateien-und-ausführung)
+8. [Bekannte Einschränkungen](#8-bekannte-einschränkungen)
 
-Dieses Dokument erklärt **von Grund auf**, worum es in diesem Projekt geht, wie die
-Software funktioniert und was bisher herausgekommen ist. Es ist bewusst so geschrieben,
-dass man **keine Informatik- und keine Neurowissenschafts-Kenntnisse** braucht, um zu
-verstehen, was hier passiert. Jeder Fachbegriff wird beim ersten Auftauchen erklärt; am
-Ende gibt es ein Glossar zum Nachschlagen.
+## 1 Ziel und Fragestellung
 
-Inhalt:
-1. [Das Projekt in einfachen Worten](#1-das-projekt-in-einfachen-worten)
-2. [Die wichtigsten Begriffe – mit Alltagsvergleichen](#2-die-wichtigsten-begriffe--mit-alltagsvergleichen)
-3. [Das Werkzeug „Cedalion" und seine Notebooks](#3-das-werkzeug-cedalion-und-seine-notebooks)
-4. [Wie die Auswertung Schritt für Schritt funktioniert](#4-wie-die-auswertung-schritt-für-schritt-funktioniert)
-5. [Der systematische Vergleich (der „Sweep")](#5-der-systematische-vergleich-der-sweep)
-6. [Was bisher herausgekommen ist](#6-was-bisher-herausgekommen-ist)
-7. [Die Dateien im Überblick](#7-die-dateien-im-überblick)
-8. [Wie man alles ausführt](#8-wie-man-alles-ausführt)
-9. [Was noch kommt (Ausblick)](#9-was-noch-kommt-ausblick)
-10. [Glossar](#10-glossar)
+Das GLM erklärt eine fNIRS-Zeitreihe als gewichtete Summe aus HRF-Regressor,
+Driftregressoren und optionalen Störregressoren. Der Koeffizient des HRF-Regressors
+(beta) ist die Zielgröße. Untersucht wird, welche Driftregressor-Familie unter welchen
+Bedingungen (Fensterlänge, weitere Regressoren, Bewegungskorrektur) die genaueste
+beta-Schätzung liefert und wie sich die Wahl auf Form, Detektion und Ort der geschätzten
+Aktivierung auswirkt.
 
----
+Verglichen werden Polynome (`poly:n`), Legendre-Polynome (`legendre:n`), eine diskrete
+Cosinus-Basis (`dct:f`), kubische B-Splines (`bspline:k`), ein reines Offset-Modell
+(`none`) und als Filteralternative ein Butterworth-Hochpass (`butter:0.01`), bei dem die
+Zeitreihe vor dem Fit gefiltert wird und die Designmatrix nur den Offset enthält. In allen
+Regressor-Armen wird nicht gefiltert; der Drift wird ausschließlich über die Designmatrix
+modelliert. Schätzer ist AR-IRLS.
 
-## 1. Das Projekt in einfachen Worten
+Die Arbeit hat zwei Stränge. In der Simulation wird eine Aktivierung mit bekannter
+Amplitude in Ruhedaten eingemischt; alle Fehlermaße beziehen sich auf diese Ground Truth.
+Auf zwei realen Fingertapping-Datensätzen gibt es keine Wahrheit; dort werden
+Reproduzierbarkeit, Signifikanz nach FDR, HbO/HbR-Plausibilität, Modellfit (adj. R²,
+Residuen) und beim Multisubject-Datensatz die kontralaterale Organisation der Motorik als
+Kriterien verwendet.
 
-Wenn ein Bereich im Gehirn aktiv wird, verbraucht er mehr Sauerstoff, und der Körper
-schickt kurz darauf **mehr Blut** dorthin. Diese Durchblutungsänderung kann man **von
-außen durch den Schädel messen** – mit Licht. Genau das macht **fNIRS** (funktionelle
-Nahinfrarotspektroskopie): schwaches Infrarotlicht wird auf den Kopf gestrahlt, ein Teil
-davon kommt an anderer Stelle wieder heraus, und aus der Abschwächung lässt sich
-berechnen, wie viel sauerstoffreiches und sauerstoffarmes Blut gerade unter der Haut
-fließt.
+## 2 Daten
 
-Das Problem: Das gemessene Signal enthält **nicht nur** die Hirnaktivität, die uns
-interessiert, sondern auch viel „Störung": Herzschlag, Atmung, langsames Wegdriften der
-Messwerte, kleine Bewegungen. Besonders lästig ist das langsame **Driften** der Grundlinie
-(englisch *drift*) – so, als würde ein Radiosender langsam wegwandern. Wenn man dieses
-Driften nicht sauber herausrechnet, misst man die Hirnaktivität falsch.
+### 2.1 nn22-Ruhedatensatz (Simulation)
 
-Um das Driften herauszurechnen, baut man ins Auswertemodell (das **General Linear Model**,
-siehe Kapitel 2) sogenannte **Driftregressoren** ein – mathematische „Formvorlagen" für das
-langsame Driften. Davon gibt es verschiedene Sorten (Polynome, Cosinus-Funktionen,
-Legendre-Polynome, B-Splines; dazu als Alternative einen Filter). **Die zentrale Frage der
-Arbeit lautet:**
+`cedalion.data.get_nn22_resting_state()`: eine Person in Ruhe, 368 s, 567 Kanäle,
+760/850 nm, ca. 9 Hz, Accelerometer und Gyroskop als Aux, Dunkelsignal. Nach dem
+Positivitäts-Gate (6 Kanäle mit Amplitude 0) und dem Pruning (41 Kanäle) bleiben 520
+Kanäle. Der Rauschboden aus dem Dunkelsignal liegt bei 9,5e-6 V; die Amplitudenuntergrenze
+1e-3 V liegt beim 105-Fachen davon, und zwischen dem 50- und dem 105-Fachen fällt kein
+weiterer Kanal heraus. Der kürzeste Quell-Detektor-Abstand beträgt 15,6 mm; bei der
+Grenze 1,8 cm zählen 37 Kanäle (15,8-17,8 mm) als kurz, bei 1,9 cm wären es 114. Für die
+Montage liegt eine vorberechnete Sensitivitätsmatrix auf ICBM152 vor.
 
-> **Welche Sorte von Driftregressor liefert unter welchen Bedingungen die genaueste
-> Schätzung der Hirnaktivität?**
+### 2.2 Khan-Datensatz (25 Probanden)
 
-Für fMRT (die „große" Bildgebung im Kernspintomografen) ist das gut untersucht – für fNIRS
-erstaunlicherweise kaum. Diese Lücke füllt die Arbeit.
+Khan, Nazeer & Mirtaheri (2026), „Open access individual finger movement dataset with
+fNIRS", SNIRF auf figshare. Einzelfinger-Tapping der rechten Hand, 10 s Block, 10 s Ruhe
+(S25: 15 s), 15 Blöcke je Aufnahme, 350 s. NIRScout, 16 Quellen x 16 Detektoren = 48
+Kanäle bei einheitlich 3 cm, 760/850 nm, 3,9063 Hz (S25: 10,1725 Hz). 25 Probanden mit je
+2-3 Durchgängen, 69 Aufnahmen, 74 Durchgangspaare. Keine kurzen Kanäle, kein
+Bewegungs-Aux, keine Landmarken in `geo3d`. Verwendet wird ausschließlich die
+unverarbeitete Fassung (`*_TRIM`); die von den Autoren gefilterte Fassung
+(`*_CC_filtered`) hat bereits einen Hochpass bei 0,01 Hz angewandt und wird von
+`realdata.find_files()` ausgeblendet.
 
-**Vorgehen in zwei Stufen:**
-1. **Simulation (aktueller Stand):** Wir nehmen echte Ruhemessungen (Person tut nichts) und
-   „mischen" künstlich eine Hirnaktivität mit **exakt bekannter Stärke** hinein. Weil wir die
-   Wahrheit kennen, können wir für jede Driftregressor-Sorte genau messen, wie nah die
-   Schätzung an der Wahrheit liegt.
-2. **Echte Daten (später):** Anwendung auf echte hochauflösende Messungen (300 Kanäle), bei
-   denen Probanden *Tetris* spielen gegen Ruhe.
+### 2.3 Multisubject-Fingertapping (5 Probanden)
 
----
+BIDS-NIRS-Tapping über `cedalion.data` (Referenz-Notebook `50b`). 5 Probanden, 28 Kanäle,
+davon 8 kurze bei 7-8 mm und 20 lange bei 33-41 mm (Grenze 15 mm), 7,8125 Hz, 2974,5 s je
+Aufnahme, je 30 Trials `control`, `Tapping/Left`, `Tapping/Right` (Blockdauer 5 s), kein
+Aux. Landmarken LPA/Nasion/RPA sind vorhanden, die Sensitivitätsmatrix ist vorberechnet
+(`get_precomputed_sensitivity("fingertapping", "icbm152")`).
 
-## 2. Die wichtigsten Begriffe – mit Alltagsvergleichen
+## 3 Pipeline
 
-**fNIRS** – Messung der Hirndurchblutung mit Infrarotlicht durch den Schädel. Nicht-invasiv,
-tragbar, günstig.
+### 3.1 Vorverarbeitung (`core/preprocess.py`)
 
-**HbO und HbR** – die zwei Blut-Bestandteile, die fNIRS unterscheidet:
-- **HbO** = oxygeniertes (sauerstoffreiches) Hämoglobin.
-- **HbR** = deoxygeniertes (sauerstoffarmes) Hämoglobin.
-Bei echter Hirnaktivität steigt **HbO** und sinkt **HbR** gleichzeitig (eine **inverse**
-Beziehung). Findet man das im Signal, ist das ein gutes Plausibilitätszeichen.
+Reihenfolge: Rohamplitude -> `int2od` mit gespeicherter Baseline -> Bewegungskorrektur
+auf der OD -> `od2int` zurück zur Amplitude -> Qualitätsmasken auf der korrigierten
+Amplitude -> Pruning -> `od2conc`. Die Kanalqualität (dunkel, gesättigt) ist nur auf der
+Amplitude definiert, die Korrektur arbeitet auf der OD; die Baseline erlaubt den Rückweg
+(`amp = baseline * exp(-od)`).
 
-**Kanal** – ein Messpunkt, gebildet aus einem Lichtsender und einem Lichtempfänger auf dem
-Kopf. Viele Kanäle zusammen ergeben eine Karte der Hirnoberfläche. Unser Datensatz hat
-**544 nutzbare Kanäle** – das ist „hochkanalig" und heißt auch **DOT** (Diffuse Optische
-Tomografie).
-
-**HRF (hämodynamische Antwortfunktion)** – die *typische Form* der Durchblutungsantwort auf
-einen kurzen Reiz: Sie steigt über einige Sekunden an, erreicht nach ca. 5–6 s ein Maximum
-und klingt dann wieder ab. Vergleich: Wirft man einen Stein ins Wasser, entsteht immer die
-gleiche charakteristische Wellenform – die HRF ist diese „Standardwelle" der Durchblutung.
-
-**Aktivierungsstärke β (beta)** – *wie hoch* die HRF-Welle an einem Kanal ausschlägt. Das
-ist die eigentliche Zielgröße: β groß = starke Aktivierung. Die ganze Arbeit dreht sich
-darum, dieses β möglichst genau zu **schätzen**.
-
-**Drift** – langsames Wegwandern der Messwerte über die Zeit, unabhängig von jeder
-Hirnaktivität (z. B. durch Erwärmung der Geräte, langsame Körpervorgänge). Der Störenfried,
-den wir modellieren müssen.
-
-**GLM (General Linear Model)** – das Auswertemodell. Idee: Das gemessene Signal wird als
-**Summe mehrerer bekannter „Zutaten"** erklärt. Vergleich mit einem Rezept:
-
-> gemessenes Signal ≈ β · (HRF-Zutat) + (Drift-Zutaten) + Rest.
-
-Das GLM findet die Mischungsverhältnisse (u. a. das β), mit denen die Summe der Zutaten das
-gemessene Signal am besten nachbildet. Die Tabelle aller Zutaten heißt **Designmatrix**.
-
-**Driftregressor** – eine der „Drift-Zutaten" im Rezept. Es gibt mehrere Familien, die das
-Driften unterschiedlich flexibel nachbilden:
-- **Polynom (poly n):** einfache Kurven wachsender Krümmung (Gerade, Parabel, …). `n` = wie
-  „gewellt" die Kurve sein darf.
-- **DCT (diskrete Cosinus-Basis):** eine Sammlung von Cosinus-Wellen bis zu einer
-  Grenzfrequenz – wirkt wie ein Hochpassfilter, lässt also nur „schnelle genug" Signale durch.
-- **Legendre-Polynome:** mathematisch besonders „saubere" Polynome (gut trennbar).
-- **B-Splines:** aus glatten Kurvenstücken zusammengesetzte, flexible Basis.
-- **Butterworth-Hochpass:** *kein* Regressor im Rezept, sondern ein **Filter**, der das
-  langsame Driften schon vor der Auswertung aus dem Signal entfernt – die *Alternative* zu
-  Driftregressoren.
-- **„none":** gar kein Drift-Modell (nur ein konstanter Grundwert) – als Vergleichs-Untergrenze.
-
-**AR-IRLS** – das Schätzverfahren, mit dem das GLM gelöst wird. Es berücksichtigt, dass das
-Rauschen in fNIRS nicht rein zufällig ist, sondern zeitlich „nachhallt" (autokorreliert).
-**Wichtig:** AR-IRLS modelliert das *Rauschen*, nicht den *Drift* – der Drift kommt
-ausschließlich über die Regressoren ins Modell.
-
-**Ground Truth (Grundwahrheit)** – der bekannte, wahre Wert. In der Simulation kennen wir
-β, weil wir es selbst hineingemischt haben. So können wir Schätzfehler exakt ausrechnen.
-
-**Gütemaße** – womit wir „genau" messen (getrennt für HbO und HbR):
-- **Bias (Verzerrung):** systematisches Daneben­liegen (im Schnitt zu hoch/zu niedrig).
-- **Varianz / Streuung:** wie stark die Schätzung von Durchlauf zu Durchlauf schwankt.
-- **RMSE (Wurzel des mittleren quadratischen Fehlers):** Gesamtfehler, fasst Bias und Streuung
-  zusammen. Kleiner = besser.
-Vergleich Dartscheibe: **Bias** = die Pfeile treffen konstant neben die Mitte; **Varianz** =
-die Pfeile streuen weit; **RMSE** = wie schlecht insgesamt.
-
----
-
-## 3. Das Werkzeug „Cedalion" und seine Notebooks
-
-**Cedalion** ist ein frei verfügbares Python-Programmpaket zur fNIRS-/DOT-Auswertung,
-mitentwickelt an der TU Berlin. Es liefert fertige, geprüfte Bausteine für alle Schritte
-(Daten laden, Qualität prüfen, in Konzentrationen umrechnen, GLM rechnen, Aktivierung
-simulieren, Karten zeichnen). Wir bauen darauf auf, statt alles selbst zu programmieren.
-
-> **Grundsatz dieses Projekts:** Die offiziellen **Cedalion-Notebooks** (Schritt-für-Schritt-
-> Beispiele) und die Dokumentation sind die **maßgebliche Referenz** – vor eigenem Wissen.
-> Ein „Notebook" ist ein interaktives Dokument, das Erklärtext und lauffähigen Beispielcode
-> mischt.
-
-- **Online-Dokumentation:** https://doc.ibs.tu-berlin.de/cedalion/doc/dev/
-- **Notebooks lokal:** im Schwester-Ordner `../cedalion/examples/`
-- **Cedalion-Version in diesem Projekt:** 26.5.1 (Entwicklungszweig `dev`)
-
-**Die für dieses Projekt wichtigsten Notebooks:**
-
-| Notebook | Wofür |
+| Parameter | Wert |
 |---|---|
-| `examples/getting_started_io/13_data_structures_intro.ipynb` | Wie fNIRS-Daten in Cedalion aufgebaut sind |
-| `examples/signal_quality/21_data_quality_and_pruning.ipynb` | Kanäle nach Signalqualität aussortieren |
-| `examples/modeling/33_glm_illustrative_example.ipynb` | GLM verständlich erklärt |
-| `examples/modeling/32_glm_fingertapping_example.ipynb` | GLM an echten Daten + **Kopf-Karten (scalp plot)** der β-Werte |
-| `examples/modeling/31_glm_basis_functions.ipynb` | die HRF-„Formvorlagen" (Basisfunktionen) |
-| `examples/modeling/35_statsmodels_overview.ipynb` | wie man die Ergebnisse (β, Statistik) ausliest |
-| `examples/augmentation/62_synthetic_hrfs_example.ipynb` | **künstliche HRF einmischen** (Kernidee der Simulation) |
-| `examples/tutorial/7_data_augmentation.ipynb` | Tutorial zur Datenaugmentation inkl. Kopf-Karten |
-
----
-
-## 4. Wie die Auswertung Schritt für Schritt funktioniert
-
-Das Herzstück ist die Datei `drift_glm/core/pipeline.py`. Sie baut aus Ruhedaten einen Testfall mit
-**bekannter Wahrheit**. Hier die Schritte in Alltagssprache; in Klammern die
-Cedalion-Bausteine und die Notebooks, an denen sie sich orientieren.
-
-### Schritt 1 – Ruhedaten laden
-Wir laden einen frei verfügbaren fNIRS-Ruhedatensatz („nn22"): eine Person, die ~6 Minuten
-still sitzt. Er enthält **567 Kanäle**, misst mit ~**9 Messungen pro Sekunde**, bei zwei
-Lichtfarben (760 und 850 Nanometer).
-*(Cedalion: `cedalion.data.get_nn22_resting_state()`. Aufbau der Daten: Notebook
-`getting_started_io/13`.)*
-
-### Schritt 2 – Aufräumen: Bewegung herausrechnen, schlechte Kanäle aussortieren
-Nicht jeder Kanal misst sauber, und die Person bewegt sich. Beides wird hier behandelt – in
-einer **bestimmten Reihenfolge**, die nicht beliebig ist:
-
-1. **Lichtstärke → optische Dichte.** Dabei wird der Ausgangspegel jedes Kanals (die
-   „Baseline", also seine mittlere Helligkeit) **mitgespeichert**. Ohne ihn käme man später
-   nicht zurück, denn die optische Dichte beschreibt nur *Änderungen* gegenüber dem eigenen
-   Mittel, nicht die Helligkeit selbst.
-2. **Bewegungsartefakte herausrechnen.** Sie treten in zwei Formen auf: als **scharfer
-   Ausschlag** (Spike) und als **ruckartige Verschiebung** der Grundlinie. Dafür gibt es zwei
-   Verfahren – *Wavelet* gegen Spikes, *TDDR* gegen Verschiebungen. Sie arbeiten auf der
-   optischen Dichte, nicht auf der Helligkeit.
-3. **Zurück zur Lichtstärke.** Erst hier lässt sich beurteilen, ob ein Kanal **zu dunkel**
-   (kaum Licht, nur Rauschen) oder **gesättigt** ist (Detektor am Anschlag, Signal oben
-   abgeschnitten). Beides sind Helligkeits-Begriffe – in der optischen Dichte sind sie gar
-   nicht definiert. Deshalb der Umweg.
-4. **Kanäle bewerten und aussortieren**, nach drei Kriterien: Signal-Rausch-Verhältnis
-   (Schwelle 3), Helligkeitsfenster (0,001 bis 0,84 Volt), Sender-Empfänger-Abstand.
-5. **Weiterarbeiten auf der optischen Dichte** und erst dann in Konzentrationen umrechnen.
-
-Von **567** Rohkanälen bleiben **520** übrig: 6 fallen weg, weil ihre Lichtstärke stellenweise
-auf null geht (physikalisch unmöglich, unter dem Rauschboden), 41 durch die Qualitätskriterien.
-
-Wie gut ist die Helligkeits-Untergrenze gewählt? Der Datensatz enthält eine **Dunkelmessung**
-(das Gerät misst bei ausgeschaltetem Licht mit) – daraus ergibt sich ein Rauschboden von
-0,0000095 Volt. Die Grenze 0,001 Volt liegt also beim **105-fachen** davon. Und sie liegt in
-einer Lücke: zwischen dem 50- und dem 105-fachen des Rauschbodens fällt **kein einziger**
-weiterer Kanal heraus. Die beiden Gruppen – brauchbare und tote Kanäle – sind also klar
-getrennt, die genaue Lage der Grenze ist unkritisch.
-
-> **Ein Befund, der für diese Arbeit zentral ist:** Die beiden Bewegungs-Verfahren verhalten
-> sich völlig unterschiedlich gegenüber dem **langsamen Driften**, um das es in dieser Arbeit
-> geht. *Wavelet* lässt es unangetastet (100 % bleiben übrig). *TDDR* dagegen entfernt
-> **fast die Hälfte davon** (nur 55,6 % bleiben) – es wirkt unterhalb von 0,5 Hz wie ein
-> breiter Dämpfer. Damit würde ein Teil des Driftens schon vor der Auswertung verschwinden,
-> und die Driftregressoren hätten weniger zu tun, als sie eigentlich sollten. Weil das die
-> Kernfrage der Arbeit berührt, wird die Wahl des Verfahrens **nicht** festgelegt, sondern
-> als eigene Vergleichsachse mitgeführt (Kapitel 5).
->
-> **Und es trifft nicht nur das Driften, sondern die Hirnantwort selbst.** Die eingemischte
-> HRF liegt im Bereich um 0,03 Hz – genau dort, wo TDDR dämpft. Gemessen kommt von der
-> eingemischten Höhe nur noch **70 %** an (HbO wie HbR); bei *Wavelet* sind es 100 %.
-> Damit unterschätzt TDDR die gesuchte Größe systematisch um rund 30 %.
->
-> Warum das trotzdem zunächst wie eine Verbesserung *aussieht*: Ohne Bewegungskorrektur wird
-> HbO ohnehin um **50 % überschätzt** (Schätzung 0,596 statt 0,397 – die Driftregressoren
-> ziehen systemische Störungen in die Hirnantwort hinein). Die 30 % Dämpfung von TDDR heben
-> einen Teil dieser Überschätzung zufällig wieder auf, der Fehler sinkt auf +0,059. Das ist
-> aber **kein besseres Schätzen, sondern das Verrechnen zweier Fehler**. Sichtbar wird das an
-> **HbR**: dort gibt es keine Überschätzung, gegen die sich etwas verrechnen könnte – und
-> prompt verschlechtert TDDR den Fehler von +0,018 auf +0,071. Dieselbe Dämpfung, aber ohne
-> den Gegenfehler.
->
-> *(Zahlen aus `drift_glm/analysis/compare_preprocessing.py`, 3 Wiederholungen, Fenster 180 s, 20 aktivste
-> Kanäle → `results/preprocessing_comparison.csv`. Der Vergleich läuft auf einer gemeinsamen
-> Kanalbasis; deshalb sind „alte" und „neue" Kette ohne Bewegungskorrektur identisch – die
-> Umstellung ändert nicht die Schätzung auf einem Kanal, sondern welche Kanäle eingehen.)*
->
-> **Wichtig für die Aussagekraft:** Damit das überhaupt messbar ist, wird die künstliche
-> Hirnantwort seit dem Umbau **vor** der Bewegungskorrektur eingemischt (in die optische
-> Dichte), nicht danach. Sonst könnte die Korrektur die Antwort gar nicht erreichen – sie
-> dürfte nur das Rauschen putzen und sähe künstlich gut aus. Auf echten Daten steckt die
-> Hirnantwort ebenfalls im Signal, wenn korrigiert wird.
-
-*(Cedalion: `cedalion.nirs.cw.int2od(..., return_baseline=True)` / `od2int(...)`,
-`cedalion.sigproc.motion.tddr(...)` / `wavelet(...)`, `cedalion.sigproc.quality.snr / mean_amp /
-sd_dist / prune_ch`. Notebooks `signal_quality/21`, `signal_quality/22`, Tutorial `3`.
-Umgesetzt in `drift_glm/core/preprocess.py`; die Reihenfolge entspricht der Betreuungsvorgabe und zugleich
-der von Cedalion empfohlenen Kette.)*
-
-### Schritt 3 – Licht in Blutkonzentrationen umrechnen
-Aus der optischen Dichte werden die Konzentrationsänderungen von **HbO** und **HbR** je Kanal
-(in Mikromol, µM) – über das **modifizierte Beer-Lambert-Gesetz**. Das ist eine feste
-physikalische Umrechnung ohne freie Entscheidungen.
-*(Cedalion: `cedalion.nirs.cw.od2conc(...)`.)*
-
-### Schritt 4 – Eine künstliche Hirnaktivität mit bekannter Stärke einmischen
-Das ist der Trick, mit dem wir eine **Grundwahrheit** erzeugen. Wir nehmen die
-Standard-HRF-Welle (eine **Gamma-Form**), skalieren sie auf **Höhe 1** (normieren) und
-mischen sie mit einer selbst gewählten Stärke β in die Ruhedaten. Weil die Welle auf Höhe 1
-normiert ist, **ist die eingemischte Stärke danach exakt gleich dem β**, das die Auswertung
-zurückliefern soll. So können wir „Geschätzt vs. Wahrheit" direkt vergleichen.
-
-Wichtige Feinheit (**räumlicher Blob**): Eine echte Hirnaktivierung sitzt **lokal** an
-einer Stelle, nicht überall gleich. Deshalb mischen wir die Aktivität als räumlichen Fleck
-ein – und **seit Version 5 dort, wo sie hingehört: auf dem Kortex.**
-
-> **Was sich in Version 5 geändert hat (und warum das mehr als eine Formalität ist).**
-> Bis Version 4 war der Fleck eine Glocke über den **Kanal-Mittelpunkten**: ein Kanal war
-> aktiv, wenn sein Mittelpunkt nah am Zentrum lag. Das war eine bewusste
-> Hilfskonstruktion ohne Kopfmodell – aber die räumliche Ausdehnung hatte damit nichts mit
-> Anatomie zu tun, und ein „Ort" im Gehirn kam darin überhaupt nicht vor.
->
-> Jetzt entsteht der Fleck als **geodätische Gauß-Glocke auf der Hirnoberfläche** unter den
-> 10-20-Punkten **C3 und C4** (dem linken und rechten Handmotorkortex, σ = 2 cm), wird über
-> die **Sensitivitätsmatrix** in Kanal-Werte umgerechnet und **erst dann** zu den Ruhedaten
-> addiert. „Geodätisch" heißt: der Abstand wird **entlang der gefalteten Oberfläche**
-> gemessen, nicht durch das Gewebe hindurch – ein Fleck läuft also nicht über eine
-> Hirnfurche hinweg auf den gegenüberliegenden Wulst, obwohl der in Luftlinie nah wäre.
->
-> Der Gewinn: Wie stark ein Kanal aktiviert ist, ergibt sich nun daraus, **wie stark sein
-> Lichtweg den Fleck überlappt** – genau wie bei echten Daten. Und weil die Wahrheit einen
-> Ort auf dem Kortex hat, lässt sich erstmals fragen, ob die Auswertung die Aktivierung am
-> **richtigen Ort** wiederfindet (Kapitel 6, Teil C).
->
-> Damit lösen sich auch zwei scheinbar widersprüchliche Betreuungsvorgaben auf: **erzeugt**
-> wird im Bildraum (Vorgabe 5. August), **eingemischt** im Kanalraum (Vorgabe 11. Juli).
-> Beides gilt gleichzeitig. Die alte Variante bleibt als `activation_space="channel"`
-> erreichbar, damit die v4-Zahlen anschlussfähig bleiben.
-
-Die Höhe wird weiterhin auf **0,6 µM Peak für HbO im Kanalraum** kalibriert. Das ist
-nötig, weil Vertex- und Kanal-Konzentration verschiedene Größen sind: ein Kanal
-integriert über sein ganzes Sensitivitätsprofil. Gemessen entspricht ein Kanal-Peak von
-0,6 µM einem **Vertex-Peak von 5,3 µM** – beide Zahlen sind physiologisch plausibel, sie
-beziehen sich nur auf verschiedene Volumina. HbR bekommt dieselbe Form mit umgekehrtem
-Vorzeichen und 40 % der Höhe.
-
-*(Cedalion-Bezug: das Vorgehen folgt jetzt Tutorial `7` Schritt für Schritt –
-`build_spatial_activation` für den Fleck, `get_precomputed_sensitivity` für die
-Sensitivitätsmatrix, `image_to_channel_space` für den Weg in den Kanalraum. Kopfmodell ist
-durchgängig **ICBM152** (Betreuungsvorgabe 5. August, vorher Colin27): ICBM152 ist ein
-Mittelwert über 152 Gehirne und damit der übliche Bezugsraum für Gruppenaussagen, Colin27
-ein einzelnes Gehirn. Umgesetzt in `drift_glm/core/imagespace.py`, aufgerufen aus `pipeline.build`.)*
-
-### Schritt 5 – Die Designmatrix (das „Rezept") zusammenstellen
-Jetzt legen wir die „Zutaten" fest, mit denen das GLM das Signal erklären soll:
-- die **HRF-Zutat** (dieselbe normierte Welle, die wir eingemischt haben – so ist der
-  Vergleich fair),
-- die **Drift-Zutaten** (je nach untersuchter Familie: Polynome, DCT, Legendre, B-Splines …),
-- optional weitere Zutaten (siehe „Konstellationen" in Kapitel 5).
-*(Cedalion: `hrf_regressors(...)`, `drift_regressors(...)`, `drift_cosine_regressors(...)`,
-`drift_legendre_regressors(...)`; HRF-Formen aus Notebook `modeling/31`, Zusammenbau aus
-`modeling/33`.)*
-
-![Designmatrix](figures/01_designmatrix.png)
-*Abb. 1 – Die Designmatrix (das „Rezept"). Oben die HRF-Zutat: die auf Höhe 1 normierte
-Standardwelle, an jedem Stimulus wiederholt. Unten die Polynom-Drift-Zutaten, mit denen das
-langsame Wegwandern der Grundlinie nachgebildet wird.*
-
-### Schritt 6 – Das GLM lösen (schätzen)
-Das GLM bestimmt die Mischungsverhältnisse aller Zutaten – insbesondere das geschätzte **β̂**
-(sprich „beta-Dach") je Kanal. Wir nutzen das robuste Verfahren **AR-IRLS**.
-*(Cedalion: `cedalion.models.glm.fit(..., noise_model="ar_irls")`, Ergebnis-Auslesen mit
-`.sm.params`; Notebooks `modeling/32` und `35`.)*
-
-### Schritt 7 – Vergleichen: Wie gut wurde die Wahrheit getroffen?
-Für jeden aktiven Kanal vergleichen wir das geschätzte β̂ mit dem eingemischten wahren β und
-berechnen **Bias, Varianz und RMSE** – getrennt für HbO und HbR. Zusätzlich prüfen wir die
-**HbO/HbR-Plausibilität** (ist HbR etwa −0,4-mal HbO, wie eingemischt?).
-
-![Ein-Kanal-Fit](figures/02_kanal_fit.png)
-*Abb. 2 – Ein einzelner Kanal über die Zeit. Grau: gemessenes Ruhesignal mit eingemischter
-Aktivität. Rot: die eingemischte Wahrheit (Ground Truth). Blau: die vom GLM zurückgewonnene
-HRF. Gepunktet: der Gesamt-Fit inklusive Drift. Grüne Streifen markieren die Stimulus-Zeiten.
-Dass die blaue Kurve der roten Wahrheit folgt, zeigt: die Aktivität wird zurückgewonnen.*
-
-![Rückgewinnung: geschätzt vs. wahr](figures/03_beta_recovery.png)
-*Abb. 3 – Geschätzte gegen wahre Aktivierungsstärke, ein Punkt je Kanal. Die gestrichelte
-Linie ist die Ideallinie (Schätzung = Wahrheit). Punkte darüber = Überschätzung. Bei HbO
-liegen die aktiven Kanäle überwiegend oberhalb → systematische Überschätzung. Die vielen
-Punkte bei „wahres β ≈ 0" sind inaktive Kanäle (reines Rauschen).*
-
-### Schritt 8 – Bilder zeichnen
-Zur Kontrolle erzeugt `drift_glm/reports/demo_figures.py` Diagramme, u. a. **Kopf-Karten (scalp plots)**, auf
-denen jeder Kanal an seiner Position auf dem Kopf farbig dargestellt wird (z. B. „wie weit
-lag die Schätzung daneben?").
-*(Cedalion: `cedalion.vis.anatomy.scalp_plot(...)`; Vorbild Notebook `tutorial/7` und
-`modeling/32`.)*
-
-![Kopf-Karte des Schätzfehlers](figures/04_scalp_abweichung.png)
-*Abb. 4 – Kopf-Karte des Schätzfehlers (β̂ − Wahrheit) je Kanal, getrennt für HbO und HbR.
-Jeder Kanal ist an seiner Position auf dem Kopf eingezeichnet; die Farbe zeigt die Abweichung
-(blau = zu niedrig, rot = zu hoch, weiß = korrekt). Rote/blaue Quadrate sind die Sender/
-Empfänger auf dem Kopf.*
-
-![Kopf-Karte der relativen Abweichung](figures/05_scalp_rel_abweichung.png)
-*Abb. 5 – Relative Abweichung, nur in der aktiven Region gezeigt (graue Kanäle liegen
-außerhalb der Aktivierung). Oben: relativer Fehler der Amplitude; unten: ein Formfehler-Maß.
-Die Farbskala ist fest auf ±100 % begrenzt; wie viele Kanäle darüber liegen, steht im Titel.*
-
-> **Warum hier 67 % stehen und im Sweep 21 %.** Beide Zahlen sind richtig, sie beziehen sich
-> auf verschiedene Kanäle. Der Sweep wertet die **20 am stärksten aktivierten** Kanäle aus –
-> dort ist die eingemischte Stärke 0,6 µM, und ein Fehler von 0,12 µM sind 21 %. Diese
-> Kopf-Karte zeigt **alle** Kanäle, in denen überhaupt etwas eingemischt wurde, also auch den
-> Rand des Flecks. Dort beträgt die Wahrheit nur noch 0,06 µM – derselbe absolute Fehler ist
-> dann 200 %. Der Median über alle diese Kanäle liegt bei 67 % (HbO) bzw. 39 % (HbR).
->
-> Am Rand ist also nicht die Methode schlechter, sondern die Bezugsgröße kleiner. Für die
-> Bewertung der Driftfamilien zählt der Blob-Kern (Kapitel 5/6); diese Karte zeigt, **wo** im
-> Feld der Fehler sitzt – und das ist am Rand, wie erwartet.*
-
----
-
-## 5. Der systematische Vergleich (der „Sweep")
-
-Ein einzelner Durchlauf beantwortet die Forschungsfrage noch nicht. Dafür wiederholen wir
-die Schritte 4–7 **systematisch für alle Kombinationen** von Einflussgrößen. Das erledigt
-`drift_glm/analysis/sweep.py`. „Sweep" heißt sinngemäß „alles einmal durchfahren".
-
-Variiert werden sechs Achsen:
-1. **Driftregressor-Familie** (die Hauptfrage): 15 Varianten – Polynom Ordnung 1–5, DCT mit
-   3 Grenzfrequenzen, Legendre Ordnung 1/3/5, **B-Splines** (5 und 8 Knoten), „kein Drift",
-   Butterworth-Hochpass. Dazu als Filter-Alternativen Tiefpass 0,5 Hz und Bandpass
-   0,01–0,5 Hz.
-2. **Fensterlänge:** Wie lang ist der ausgewertete Zeitausschnitt? (90 s, 180 s und 368 s =
-   die ganze Aufnahme.) Kürzere Fenster sind schwieriger.
-3. **Konstellation:** Welche *weiteren* Zutaten sind im Rezept? – `baseline` (nur HRF+Drift),
-   `motion` (Bewegungssignale aus dem eingebauten Beschleunigungssensor), `global`
-   (ein „Gesamtsignal"-Regressor als Ersatz für systemische Störungen) sowie **echte
-   Short-Channel-Regression** in zwei Varianten: `short_avg` (Mittel aller kurzen Kanäle)
-   und `short_maxcorr` (je langem Kanal der am stärksten mit ihm korrelierende kurze).
-4. **Bewegungskorrektur:** `wavelet` oder `tddr+wavelet`. Warum das eine eigene Achse ist,
-   steht im Kasten in Kapitel 4, Schritt 2 – kurz: die beiden Verfahren gehen völlig
-   unterschiedlich mit dem Driften *und* mit der Hirnantwort um.
-5. **Schätzverfahren:** `ar_irls` (das Standardverfahren dieser Arbeit) und `ols` (das
-   einfache Verfahren ohne Rauschmodell). AR-IRLS ist rund 50-mal langsamer, die Achse
-   kostet also fast nichts.
-6. **Zufalls-Wiederholungen (Seeds):** Die künstlichen Reize werden zu leicht anderen
-   Zeitpunkten platziert (mehrere Wiederholungen). Erst der Vergleich **über diese
-   Wiederholungen** liefert eine echte Bias-/Varianz-Aussage (nicht der Vergleich über Kanäle).
-
-Das ergibt in der Hauptversion (v4) 15 × 3 × 5 × 2 × 4 = **1800 Auswertungen** in 7,5 Stunden.
-Ergebnisse landen in `results/` (Tabelle `sweep_summary.csv`, Rohdaten
-`sweep_per_channel.nc`), Abbildungen und Markdown-Tabellen erzeugt `drift_glm/reports/sweep_report.py`.
-
-**Zu den kurzen Kanälen.** Ein Kanal mit kleinem Abstand zwischen Sender und Empfänger hat
-eine flache „Lichtbanane": sein Licht erreicht das Gehirn gar nicht und misst nur Kopfhaut
-und Schädel – also **systemische Störungen ohne Hirnsignal**. Nimmt man ihn als Regressor
-auf, lässt sich dieser Anteil aus den langen Kanälen herausrechnen; ausgewertet wird dann
-nur über die langen. Der Ruhedatensatz hat keine echten Short-Separation-Kanäle (< 10 mm),
-aber bei einer Grenze von **1,8 cm** fallen 37 der 520 Kanäle in die kurze Gruppe
-(15,8–17,8 mm). Genau diese Grenze war die Vorgabe aus dem Betreuungsgespräch; dasselbe
-Vorgehen nutzt das Cedalion-Workshop-Notebook 36 mit 22,5 mm. **Als Einschränkung zu nennen:**
-15,8–17,8 mm sehen noch etwas Kortex, der Regressor entfernt also potenziell auch echtes
-Signal. Die Grenze ist außerdem nicht unempfindlich – bei 1,9 cm wären es schon 114 Kanäle.
-
-Damit der Vergleich fair ist, wird die künstliche Aktivität **nicht in die kurzen Kanäle
-eingemischt** (sie sehen ja kein Gehirn). Ohne diese Vorsichtsmaßnahme enthielte der
-Short-Channel-Regressor die Hirnantwort selbst und würde sie aus den langen Kanälen
-herausrechnen – gemessen bekämen die kurzen Kanäle sonst bis zu 0,54 µM der eingemischten
-0,60 µM ab.
-
-> **Wichtiger methodischer Hinweis (aus dem Betreuungsgespräch):** Bei Auswertungen *mit*
-> Driftregressoren wird das Signal **nicht** hochpassgefiltert – ein Hochpassfilter würde
-> genau den Drift entfernen, den die Regressoren modellieren sollen, und den Vergleich
-> verfälschen. Der Butterworth-Hochpass ist deshalb die **eigenständige Alternative**
-> (Filter *statt* Regressoren), nicht zusätzlich.
-
-### Zusatz-Analyse 1: Formfehler mit flexibler Formvorlage
-
-Bisher nutzen Einmischung und Auswertung dieselbe HRF-Formvorlage (die Gamma-Welle). Dadurch
-kann sich zwischen „eingemischt" und „geschätzt" nur die **Höhe** unterscheiden, nicht die
-**Form**. Um zu prüfen, ob eine schlechte Drift-Modellierung auch die *Form* der geschätzten
-Antwort verzerrt, wird zusätzlich mit einer **flexiblen** Formvorlage ausgewertet
-(`GaussianKernels` – eine Reihe von Glockenkurven, die zusammen praktisch jede Kurvenform
-annehmen können). Als Maß dient die **Form-Treue**: die Korrelation zwischen zurückgewonnener
-und eingemischter HRF-Kurve. Diese ist *skaleninvariant* – sie misst also reine Form,
-unabhängig von der Höhe (1,0 = perfekte Form). Skript: `drift_glm/analysis/flex_basis.py`.
-*(Cedalion: `glm.GaussianKernels`; HRF-Formvorlagen aus Notebook `modeling/31`.)*
-
-### Zusatz-Analyse 2: Statistische Absicherung – Signifikanz und Mehrfachvergleichs-Korrektur
-
-Für die spätere Auswertung echter Daten – und als methodische Vollständigkeit – wird die
-statistische Absicherung demonstriert: Für jeden Kanal wird geprüft, ob die geschätzte
-Aktivierung **statistisch signifikant** von null verschieden ist (Signifikanz = Schätzung
-geteilt durch ihren Standardfehler, daraus ein p-Wert). Weil **sehr viele Kanäle gleichzeitig**
-getestet werden, muss für **multiples Testen korrigiert** werden (Verfahren Benjamini-Hochberg,
-„FDR", Niveau 5 %) – sonst entstünden allein durch Zufall zahlreiche Falsch-Positive.
-
-Da wir in der Simulation die Wahrheit kennen (welche Kanäle wirklich aktiv sind = der Blob),
-lässt sich die **Detektionsgüte** direkt messen:
-- **Sensitivität** – Anteil der wirklich aktiven Kanäle, die auch erkannt werden;
-- **Spezifität** – Anteil der Ruhe-Kanäle, die korrekt als inaktiv gelten;
-- **Youden-J** (= Sensitivität + Spezifität − 1) als Gesamtmaß.
-
-So zeigt sich, welche Driftfamilie die zuverlässigste Aktivierungs-Erkennung liefert. Dieses
-Skript (`drift_glm/analysis/detection.py`) fittet über **alle** 544 Kanäle (nur so sind Falsch-Positive
-bewertbar) und demonstriert damit die komplette Inferenz-Pipeline für die realen DOT-Daten.
-*(Cedalion: `.sm.params` + `.sm.regressor_variances()`; FDR über `statsmodels`.)*
-
-### Zusatz-Analyse 3: Modellfit ohne Wahrheit – variance explained und Residuen (Notizen 08.09.)
-
-Alle bisherigen Gütemaße vergleichen gegen die eingemischte Wahrheit – die es auf echten
-Daten nicht gibt. Zwei Maße funktionieren **ohne** Wahrheit und wurden deshalb ergänzt
-(`drift_glm/core/fitstats.py`, in Sweep und Realdaten-Auswertung eingebaut):
-
-- **Variance explained (R²):** Welcher Anteil des Auf und Ab der Messung wird vom Modell
-  erklärt? 1,0 = alles erklärt, 0 = nicht besser als eine flache Linie auf Mittelwerthöhe.
-  Weil ein Modell mit **mehr Spalten** mechanisch mehr erklärt (die DCT-Familie hat bei
-  langen Fenstern ein Vielfaches der Spalten von poly:1), wird das **adjustierte R²**
-  berichtet, das dafür bestraft.
-- **Residuum:** der Rest `Messung − Modellvorhersage`, also genau das, „was das Modell
-  nicht fitten konnte". Verdichtet zum **Residual-RMS** (in µM) je Kanal – und angeschaut
-  als Zeitspur und als Spektrum (`drift_glm/analysis/residuals.py`): Bleibt im Residuum
-  **niederfrequenter Drift** übrig (Anteil der Residualleistung unter 0,02 Hz,
-  `lowfreq_frac`), war das Driftmodell zu schwach.
-
-In der Simulation kommt die prüfbare Erwartung aus dem Betreuungsgespräch dazu: **je kleiner
-die Residuen, desto kleiner sollte die Abweichung von der Ground Truth sein.** Der Sweep
-berechnet dafür je Zelle die Korrelation zwischen Residual-RMS und |β̂ − Wahrheit| über
-Seeds × Kanäle (`resid_err_corr`, Abb. 26).
-
-**Zwei Ehrlichkeits-Hinweise, die in die Arbeit gehören:** (1) Für die **Filter-Arme**
-(Butterworth & Co.) bezieht sich R² auf die *gefilterte* Zeitreihe – ein Teil der Varianz ist
-dort schon entfernt, der Wert ist mit den Regressor-Familien nicht direkt vergleichbar (in
-den Abbildungen schraffiert). (2) Unter **AR-IRLS kann R² negativ werden** – kein Fehler,
-sondern ein Befund: AR-IRLS optimiert im *prewhitened* Raum, und rohe Polynome werden durch
-das Prewhitening numerisch instabil, sodass im Rohdatenraum ein Resttrend zurückbleibt
-(deutlich bei poly bei kurzen Fenstern; genau davor warnt auch Cedalions AR-IRLS-Docstring:
-„prefer Legendre polynomials or discrete cosine terms"). Mit OLS gelten die klassischen
-Eigenschaften (R² ≥ 0, mehr Spalten ⇒ nie schlechter) – als Invarianten getestet.
-
-### Zusatz-Analyse 4: HRF-Kurven gegenübergestellt – Simulation und echte Daten (Notizen 08.09.)
-
-„Wie unterscheiden sich die HRF-Schätzungen?" wird zweimal beantwortet, beide Male mit der
-**flexiblen** Formvorlage (sonst wäre jede Kurve nur ein skaliertes Abbild derselben Gamma-Form):
-
-- **Simulation** (`residuals.py`, Abb. 28): je Driftfamilie die zurückgewonnene HRF-Kurve
-  gegen die eingemischte Wahrheit, gemittelt über die Blob-Kanäle.
-- **Echte Daten** (`drift_glm/analysis/mshrf.py`, Abb. 29): auf dem Multisubject-Datensatz
-  (echte Short-Channels) je Familie die geschätzte HRF gegen das **Block-Mittel der Daten**
-  – die familienunabhängige Referenz, die zeigt, was in den Daten steckt, bevor ein Modell
-  sie zerlegt. Je Hand über die 3 stärksten **kontralateralen** Kanäle (aus den Daten
-  bestimmt, damit keine Familie bevorzugt wird). Der Khan-Datensatz folgt separat.
-
----
-
-## 6. Was bisher herausgekommen ist
-
-### Teil A – Simulation (bekannte Wahrheit)
-
-Die Simulationsstudie lief in vier Ausbaustufen. **v1** mischte die Aktivität überall gleich
-stark ein (räumlich „flach") – das führte zu einem Trugschluss beim Global-Regressor und wurde
-in **v2** durch den räumlichen Blob behoben. **v3** ergänzte B-Splines, lange Fenster und die
-beiden Zusatz-Analysen. **v4** ist der aktuelle Stand: 15 Driftfamilien × 3 Fenster ×
-5 Konstellationen (jetzt mit echter Short-Channel-Regression) × 2 Bewegungskorrekturen ×
-4 Wiederholungen = **1800 Auswertungen** in 7,5 Stunden. Alle Tabellen: `results/tables.md`.
-
-> **Stand v6 (08.09.2026) – das v4-Raster wurde komplett NEU gerechnet** und die Zahlen
-> unten sind entsprechend zu lesen: (a) mit der **Bildraum-Ground-Truth** (Kortex-Blob
-> unter C3/C4 statt Kanalraum-Blob) nach dem Ordnungs-Fix (siehe Warnblock in Teil C),
-> (b) mit den neuen Modellfit-Metriken (adj. R², Residual-RMS, `resid_err_corr`).
-> Die Kernzahlen des Neulaufs (baseline, Wavelet, sofern nicht anders gesagt):
->
-> - **Fensterlänge dominiert weiter:** HbO-RMSE **0,38 → 0,20 → 0,08 µM** (90/180/368 s).
-> - **Systemik bleibt der größte Hebel:** HbO-RMSE im Mittel 0,22 (baseline) →
->   **0,069 (short_avg)** / 0,076 (global) / 0,082 (short_maxcorr); der Baseline-Bias
->   +0,05 µM verschwindet. Beste Einzelzellen: dct:0.01+short_avg (90 s, 0,080),
->   bspline:5+short_avg (180 s, 0,052), dct:0.02+short_maxcorr (368 s, **0,041**).
-> - **Lange Fenster nivellieren die Familienwahl:** bei 368 s liegen butter/legendre:3/
->   poly:3/none bei 0,082–0,083 µM praktisch gleichauf.
-> - **Neu – Instabilität roher Polynome unter AR-IRLS:** poly:5 bei 90 s hat
->   adj. R² ≈ **−95** (Residual-RMS 5,1 µM, fast alles im Driftband) – das Prewhitening
->   macht die rohen Potenzen numerisch instabil; Legendre/DCT sind die stabile Wahl
->   (Abb. 25/27; deckt sich mit der Warnung im Cedalion-AR-IRLS-Docstring). Der β-RMSE
->   bleibt davon erstaunlich unberührt – der Schaden landet in den Drift-Koeffizienten.
-> - **Erwartung „kleine Residuen ↔ kleine GT-Abweichung" (Abb. 26):** zwischen den
->   Modellen gilt sie für HbO (Spearman ρ = **+0,62**), für HbR nicht (ρ ≈ 0);
->   innerhalb der Zellen ist der Zusammenhang schwach positiv (corr ≈ +0,22/+0,24).
->   Residuen sind also ein brauchbarer, aber kein hinreichender Modellfit-Indikator.
-> - **variance explained** (baseline, Median über Familien): HbR 0,15/0,45/0,55 für
->   90/180/368 s; HbO erreicht 0,21 bei 368 s und ist bei 90 s unter AR-IRLS im Median
->   negativ (siehe Zusatz-Analyse 3 – Rohdatenraum vs. Prewhitening).
->
-> Die Erzähllinie der Ergebnisse 1–9 unten (v4, Kanalraum-Blob vom 04.08.) bleibt
-> qualitativ gültig; wo einzelne Zahlen abweichen, gelten die des Neulaufs bzw.
-> `results/tables.md`.
-
-**Ergebnis 1 – Systemische Störungen sind der größte Hebel (für HbO).**
-Ohne systemischen Regressor wird HbO deutlich **überschätzt** (Bias +0,104 µM auf eine
-Wahrheit von 0,600 µM bei 90-s-Fenstern sogar +0,570). Ein systemischer Regressor bringt das
-weitgehend in Ordnung. Grund: Benachbarte aktive Kanäle teilen sich systemische Körpersignale
-(z. B. Blutdruckwellen); ein reines Drift-Modell zieht diese teils fälschlich in die
-Hirnaktivität. → **Der systemische Regressor wirkt sich stärker aus als die Wahl der
-Driftfamilie.** Bewegungs*regressoren* aus dem Beschleunigungssensor bleiben dagegen praktisch
-ohne Wirkung – erwartet, da die *synthetische* HRF nicht mit echter Bewegung koppelt.
-
-**Ergebnis 1b – Short-Channel-Regression schlägt den Global-Regressor, auch wenn die Zahlen
-zunächst das Gegenteil sagen.** Rein nach Bias sieht `global` besser aus (+0,021 gegen +0,056
-bei `short_avg`). Das ist aber kein Vorteil, sondern eine Verrechnung zweier Fehler: der
-Global-Regressor mittelt über **alle** Kanäle, also auch über die aktivierten, und enthält
-dadurch im Mittel **0,040 µM der eingemischten Hirnantwort** – die kurzen Kanäle enthalten
-konstruktionsbedingt **0,000 µM**. Der Unterschied im Bias beträgt 0,035 µM, der Hirnsignal-
-Anteil des Global-Regressors 0,040 µM: er „gewinnt", indem er einen Teil des Gesuchten
-wegrechnet. **`short_avg` ist der methodisch saubere Regressor.**
-
-**Ergebnis 2 – HbR ist unempfindlicher als HbO.** Der HbR-Fehler (~0,07 µM) ändert sich über
-alle Konstellationen kaum – HbR ist weniger von systemischen Störungen betroffen (physiologisch
-plausibel, eigenständiges Ergebnis).
-
-**Ergebnis 3 – Die Fensterlänge dominiert.** HbO-RMSE (baseline, Wavelet): **90 s ≈ 0,30 →
-180 s ≈ 0,21 → 368 s ≈ 0,09 µM** – die ganze Aufnahme ist rund dreimal genauer als ein
-90-s-Fenster. Mehr Daten (und mehr Reize im Fenster) → stabilere Schätzung.
-
-**Ergebnis 4 – Familienwahl: kontextabhängig, insgesamt moderat.**
-- **Lange Fenster (368 s):** Alle Driftregressor-Familien rücken eng zusammen (HbO-RMSE
-  0,119–0,125). → *Dass* ein Drift-Modell da ist, zählt; *welche* Familie, kaum.
-- **Kurze Fenster (90 s):** Hier trennen sich die Familien; **sehr hohe Ordnungen überanpassen**
-  (B-Spline mit 8 Knoten fällt auf 0,619 gegenüber 0,49–0,52 der übrigen).
-- **B-Splines** liegen ansonsten gleichauf mit Polynom/Legendre/DCT – kein Vor-, kein Nachteil.
-
-**Ergebnis 4b – Die Bewegungskorrektur ist wichtiger als die Driftfamilie, und sie ist eine
-Falle.** TDDR halbiert den HbO-Fehler (RMSE 0,136 gegen 0,199) und beseitigt scheinbar den
-Bias (−0,040 gegen +0,070). Das ist aber wieder keine bessere Schätzung, sondern die
-Verrechnung zweier Fehler: TDDR **dämpft die eingemischte Hirnantwort auf 70 %** ihrer Höhe,
-und diese Dämpfung hebt die systemisch bedingte Überschätzung zufällig auf. Sichtbar wird das
-an **HbR**, wo es keine Überschätzung zu kompensieren gibt – dort verschlechtert TDDR den
-Fehler von +0,020 auf +0,057, also von 8 % auf 24 % Betragsunterschätzung. Über alle
-Driftfamilien hinweg ist der Bias praktisch identisch; der Sprung kommt allein von der
-Vorverarbeitung (Abb. 14).
-
-**Konsequenz für die Auswertung:** Bias **getrennt nach HbO und HbR** betrachten, nicht nur
-den RMSE. Wer nur den RMSE ansieht, hält TDDR für das bessere Verfahren.
-
-**Ergebnis 5 – Plausibilität.** Das zurückgewonnene HbR/HbO-Verhältnis liegt bei −0,25 bis
-−0,34 (eingemischt −0,4); es bessert sich mit systemischem Regressor und mit längerem Fenster
-(368 s: −0,342) und verschlechtert sich leicht mit TDDR – konsistent mit dessen HbR-Dämpfung.
-
-**Ergebnis 6 – Die Form der HRF wird treu zurückgewonnen (Zusatz-Analyse 1).** Mit der
-flexiblen Formvorlage ist die **Form-Treue hoch (~0,87–0,91) und über die Driftfamilien
-ähnlich** → die Drift-Wahl verzerrt die *Form* der geschätzten Antwort nur wenig (die *Höhe*
-schon, s. Ergebnis 1/5). Nebenbefund: die flexible Basis **überschätzt die Amplitude**
-(+30–70 %) – der bekannte Bias-Varianz-Preis flexibler HRF-Modelle.
-
-**Ergebnis 7 – Aktivierungs-Detektion nach FDR (Zusatz-Analyse 2).** Über alle 544 Kanäle mit
-FDR-Korrektur (q = 0,05): **moderate Drift-Modelle detektieren am besten** (Youden-J HbO/HbR:
-DCT 0,01 ≈ Polynom 3 ≈ Legendre 3 ≈ B-Spline 5), „kein Drift" hat die höchste **Spezifität**
-(wenige Falsch-Positive), aber die niedrigste **Sensitivität** (verpasst echte Aktivierungen).
-Die Inferenz-Pipeline (Signifikanz + FDR) steht damit bereit für die realen Daten.
-
-### Teil B – Reale Daten (keine Wahrheit bekannt)
-
-Stufe 2 der Arbeit läuft auf einem öffentlichen Finger-Tapping-Datensatz (Khan, Nazeer &
-Mirtaheri 2026): **25 Probanden**, 69 Aufnahmen, 48 Kanäle, Einzelfinger-Tapping der rechten
-Hand, 10 s Block gegen 10 s Ruhe, 15 Tapping-Blöcke je Aufnahme. Ausgewertet wurden
-14 Driftfamilien × 2 Konstellationen × 2 Schätzverfahren über alle Aufnahmen =
-**3864 Auswertungen** in 3,6 Stunden (`drift_glm/analysis/realglm.py`).
-
-**Der entscheidende Unterschied:** Hier gibt es **keine Ground Truth**. Der Fehler gegen die
-Wahrheit, an dem in der Simulation alles hing, existiert nicht. Stattdessen drei Kriterien,
-die ohne Wahrheit auskommen – und eines davon trägt die Hauptlast:
-
-> **Reproduzierbarkeit.** Die Probanden haben je 2–3 Durchgänge. Die Korrelation der
-> β-Karten zwischen den Durchgängen **eines** Probanden misst, wie stabil eine Driftfamilie
-> schätzt. Eine Familie, die Rauschen als Aktivierung modelliert, ist zwischen Durchgängen
-> inkonsistent. Über 74 Durchgangspaare gemittelt ist das ein belastbares Gütemaß.
-
-**Ergebnis 6 – Den Drift zu modellieren schlägt ihn wegzufiltern.** Der Butterworth-Hochpass
-ist die **schlechteste** Option (Reproduzierbarkeit 0,443 mit AR-IRLS) – schlechter als *gar
-kein* Driftmodell (0,494). Das bestätigt den methodischen Hinweis aus dem Betreuungsgespräch
-jetzt an echten Daten statt nur als Argument.
-
-**Ergebnis 7 – DCT mit ~0,02 Hz ist die stabilste Familie**, und zwar unabhängig vom
-Schätzverfahren (0,566 mit AR-IRLS, 0,564 mit OLS). Danach DCT 0,01 (0,545/0,547) und
-B-Spline 8 (0,535/0,535). Die Simulation hatte DCT ~0,01–0,02 Hz ebenfalls vorn – die beiden
-Stufen der Arbeit stützen sich gegenseitig.
-
-**Ergebnis 8 – Das Driftmodell zählt bei OLS mehr als bei AR-IRLS.** Spannweite der
-Reproduzierbarkeit über die Familien: **0,200 bei OLS gegen 0,123 bei AR-IRLS**. AR-IRLS
-fängt einen Teil der niederfrequenten Struktur über sein Rauschmodell ab und ist dadurch
-robuster gegen eine schlechte Driftwahl. Bei OLS trägt allein die Designmatrix – dort bricht
-`poly:3` auf 0,440 ein, während `dct:0.02` bei 0,564 bleibt.
-
-**Ergebnis 9 – Tiefpassfilterung und AR-IRLS schließen einander aus.** Mit einem Tiefpass bei
-0,5 Hz kollabiert die Schätzung auf **1e-05 µM**, fünf Größenordnungen zu klein; mit OLS
-liefert derselbe Datensatz normale Werte, und ein reiner Hochpass läuft mit AR-IRLS
-problemlos. Ursache ist die Prewhitening-Stufe: AR-IRLS schätzt ein Rauschmodell und wendet
-dessen Inverse an. Bei 3,906 Hz Abtastrate entfernt ein Tiefpass bei 0,5 Hz rund **drei
-Viertel des Spektrums** (0,5 Hz = 0,256 × Nyquist); oberhalb davon hat das Residuum keine
-Leistung mehr, der Whitening-Filter müsste dort unendlich verstärken. Übrig bleibt
-numerisches Rauschen. **Das ist kein Rechenfehler, sondern eine Eigenschaft der Kombination**
-– und sie hängt an der Abtastrate: auf dem 9-Hz-Ruhedatensatz läge 0,5 Hz bei 0,51 × Nyquist
-und wäre weit unkritischer.
-
-**Ergebnis 10 – Plausibilität auf realen Daten.** HbO und HbR sind mit **−0,88** deutlich
-antikorreliert, das Signal ist also physiologisch. Das HbR/HbO-Verhältnis liegt bei −0,18
-(baseline) und verbessert sich mit dem systemischen Regressor auf −0,29 (AR-IRLS) bzw. −0,36
-(OLS); erwartet wird ~−0,4. Der systemische Regressor halbiert dabei die Zahl signifikanter
-Kanäle (27–31 → 10–19 von 48) – dasselbe Muster wie in der Simulation.
-
-### Teil C – Im Bildraum (Version 5)
-
-> ⚠️ **Korrektur 08.09.2026 – die Bildraum-Zahlen dieses Teils werden neu gerechnet.**
-> `od2conc` gibt Kanäle nicht in der Eingabereihenfolge zurück; dadurch verteilte die
-> positionale Zuweisung in `pipeline.build` die eingemischte Aktivierung auf **falsche
-> Kanäle** – `beta_true_map` behauptete einen breiten Blob, eingemischt war er woanders.
-> Betroffen ist alles, was seit dem Bildraum-Umbau (11.08.) mit `activation_space="image"`
-> gerechnet wurde, insbesondere `imageglm_summary.csv` (Bildraum-Rangliste und die
-> alpha_spatial-Tabelle in BESPRECHUNG A0). **Nicht** betroffen: die v3/v4-Zahlen aus
-> Teil A (Kanalraum-Blob, Juli/04.08.) und alle Realdaten-Auswertungen (Teil B, msglm).
-> Der Fix liegt in `imagespace.ground_truth` + `pipeline.build` und ist durch den
-> Regressionstest `test_activation_matches_beta_true_map` abgesichert. **Die Neurechnung
-> ist abgeschlossen (09.09., 01:20):** Sweep v6, flex, detection, imageglm und alle
-> Abbildungen (00–30) sind aktuell; die maßgeblichen Zahlen stehen in
-> `results/imageglm_summary.csv` / `tables.md` und den Abbildungen. Nur der
-> **Fließtext dieses Teils C** trägt noch die Zahlen des entwerteten Laufs vom 11.08. —
-> beim Verschriftlichen die CSVs/Abbildungen verwenden, nicht die Inline-Zahlen unten.
-> Auffälligster Unterschied nach dem Fix: die rauschfreie Obergrenze rekonstruiert mit
-> ~12 mm Lokalisationsfehler (vorher deutlich schlechter), und der Amplitudenfehler der
-> flexiblen Basis fällt von +30…70 % auf −3…+13 %.
-
-Hier wird eine Frage gestellt, die im Kanalraum gar nicht formulierbar ist: **landet die
-Aktivierung am richtigen Ort auf dem Kortex?** Ein Kanal ist ein Quell-Detektor-Paar, keine
-Hirnregion; erst die Rückrechnung in den Bildraum liefert einen Ort. Sie ist ein *inverses
-Problem* – viele Hirnbilder erklären dieselben Kanalwerte, man braucht Zusatzannahmen
-(Regularisierung), um eines auszuwählen.
-
-**Ergebnis C1 – Ohne Sichtbarkeitsmaske ist im Bildraum keine Zahl brauchbar.**
-Die Rekonstruktion gibt für **jeden** Punkt der Hirnoberfläche einen Wert zurück, auch für
-solche, zu denen nie ein Photon gelangt ist. Dort ist das Ergebnis kein Messwert, sondern
-reine Regularisierung – und die Tiefenkorrektur verstärkt genau diese Punkte am stärksten,
-weil sie durch die (kleine) örtliche Empfindlichkeit teilt. Gemessen: ohne Maske landet
-selbst die **rauschfreie Wahrheit** 65–110 mm neben ihrem eigenen Zentrum, bei einer
-Korrelation von 0,00. Mit Maske (Punkte über 1 % der maximalen Empfindlichkeit) sind es
-r = 0,80 und 11,9 mm. *Das ist keine Feinheit der Auswertung, sondern die Voraussetzung
-dafür, dass sie überhaupt etwas misst.*
-
-**Ergebnis C2 – Die Regularisierung entscheidet mehr als das Rauschmodell.** Rauschfrei
-geprüft (`python -m drift_glm.analysis.recon_check`) hängt der Ortsfehler praktisch nur an einem
-Parameter, `alpha_spatial`; der zweite (`alpha_meas`) verschiebt ihn kaum. Auf der dünnen
-28-Kanal-Montage:
-
-| `alpha_spatial` | Korrelation | Amplitude (Ist/Soll) | Ortsfehler |
+| Bewegungskorrektur | `wavelet` (Standard); `tddr+wavelet` als zweite Achsenstufe |
+| SNR-Schwelle | 3 |
+| Amplitudenfenster | 1e-3 bis 0,84 V |
+| Quell-Detektor-Abstand | 0 bis 4,5 cm |
+| DPF | 6 |
+
+Wavelet lässt das Driftband unter 0,01 Hz unangetastet, TDDR entfernt einen großen Teil
+davon und dämpft auch eine eingemischte HRF (Abschnitt 6.3). Die synthetische Aktivierung
+wird deshalb in die OD eingemischt, bevor die Bewegungskorrektur läuft. Für die
+Filterfamilien wird `freq_filter` auf der Konzentration angewandt.
+
+### 3.2 Ground Truth (`core/imagespace.py`, `core/pipeline.py`)
+
+Die Aktivierung entsteht auf dem Kortex des ICBM152-Kopfmodells als geodätische
+Gauß-Glocke (sigma 20 mm) um die Vertices unter den 10-20-Punkten C3 und C4
+(`build_spatial_activation`), HbR mit dem Faktor -0,4. Über die Sensitivitätsmatrix
+(`image_to_channel_space`) entsteht daraus eine OD-Karte je Kanal und Wellenlänge; sie
+wird so kalibriert, dass der HbO-Peak im Kanalraum 0,6 µM beträgt (HbR -0,24 µM). Für die
+Kalibrierung zählen nur Kanäle mit mindestens 10 % der maximalen Hirnsensitivität, weil
+`od2conc` durch den Quell-Detektor-Abstand teilt und kurze Kanäle sonst mit unphysiologisch
+großen Konzentrationen das Maximum stellen. Die Kanalkarte wird nach Namen ausgerichtet,
+weil `od2conc` die Kanäle nicht in Eingabereihenfolge zurückgibt (Abschnitt 8).
+
+Zeitverlauf: Blöcke von 10 s mit zufälligen Abständen von 25-35 s (`build_stim_df`,
+geseedet), Gamma-Basis mit tau = 0 s, sigma = 3 s, T = 0 s (die Blockbreite entsteht aus
+der Faltung in `hrf_regressors`, T wird nicht auf die Stimulusdauer gesetzt). Der
+HRF-Regressor ist auf Peak 1 normiert; damit ist der GLM-Koeffizient direkt die
+Peak-Konzentrationsänderung in µM, und Injektion und Fit verwenden denselben Regressor.
+Die OD-Aktivierung wird zu den Ruhedaten addiert, danach folgt die zweite Hälfte der
+Vorverarbeitung.
+
+### 3.3 Driftfamilien (`analysis/sweep.py: drift_dm`)
+
+| Familie | Umsetzung | Spalten (368 s) |
+|---|---|---|
+| `poly:n` | `drift_regressors(drift_order=n)` | n + 1 |
+| `legendre:n` | `drift_legendre_regressors(order=n)` | n + 1 |
+| `dct:f` | `drift_cosine_regressors(fmax=f)` plus Offset | 1 + Cosinus-Terme bis f |
+| `bspline:k` | eigene kubische B-Spline-Basis mit k Splines, geklemmt, enthält den Offset | k |
+| `none` | nur Offset | 1 |
+| `butter:0.01` | Hochpass 0,01 Hz auf der Konzentration, Designmatrix nur Offset | 1 |
+| `lowpass:0.5`, `bandpass:0.01-0.5` | Filter, nur Offset; nur im Pilot und bei Khan | 1 |
+
+`poly:n` und `legendre:n` spannen denselben Raum auf und liefern identische Fits; sie
+unterscheiden sich in der numerischen Konditionierung unter AR-IRLS (Abschnitt 6.1).
+`dct:f` enthält keinen Cosinus-Term, wenn f unter der ersten Frequenz 1/T liegt:
+`dct:0.005` und `dct:0.01` bei 90 s sowie `dct:0.005` bei 180 s sind gleich `none`.
+
+### 3.4 Konstellationen
+
+| Name | Zusätzliche Regressoren |
+|---|---|
+| `baseline` | keine |
+| `motion` | Accelerometer- und Gyroskopkanäle, z-normiert |
+| `global` | Mittel aller Kanäle |
+| `short_avg` | Mittel der kurzen Kanäle (nn22: 15,8-17,8 mm; Multisubject: 7-8 mm) |
+| `short_maxcorr` | je langem Kanal der am stärksten korrelierende kurze Kanal |
+| `short_closest` | je langem Kanal der räumlich nächste kurze Kanal (nur msglm) |
+
+Bei `short_*` wird nur über die langen Kanäle ausgewertet. `msglm` unterscheidet
+zusätzlich, ob der systemische Regressor in der Designmatrix bleibt (`_dm`) oder vor dem
+Fit abgezogen wird (`_sub`, Global-Component-Subtraktion nach Notebook 50b).
+
+### 3.5 Schätzer und Fit-Metriken
+
+`glm.fit(..., noise_model="ar_irls")` mit AR-Ordnung 30, Koeffizienten aus `.sm.params`,
+Standardfehler aus `.sm.regressor_variances()`. OLS läuft im Pilot, auf den Realdaten als
+zweites Rauschmodell und in `msglm`/`mshrf` als Hauptschätzer (AR-IRLS kostet dort das
+rund 200-Fache). `core/fitstats.py` berechnet Residuum, Residual-RMS, R² und adj. R² im
+Datenraum über `glm.predict`, also nicht im prewhitened Raum.
+
+### 3.6 Bildraum (`core/imagespace.py`, `analysis/imageglm.py`)
+
+Rückweg über `ImageRecon` mit `alpha_meas = 0,01 / median(C_meas)` (aus den Daten
+geschätzt), `alpha_spatial = 0,001`, nur Hirnvertices. Ausgewertet wird nur innerhalb der
+Sichtbarkeitsmaske (Vertexsensitivität über 1 % des Maximums, 9817 Vertices bei nn22).
+Drei Projektionen des GLM-Ergebnisses werden zu einer Amplitudenkarte je Kanal verdichtet
+(Mittel 4-10 s nach Onset) und rekonstruiert: `hrf` (beta-Karte), `residual`
+(blockgemitteltes Residuum), `cleaned` (Residuum plus HRF-Anteil). Die Ground Truth
+durchläuft denselben Rückweg als rauschfreie Obergrenze (`truth_ref`).
+
+## 4 Versuchsraster
+
+### 4.1 Kanalraum-Sweep (Preset `v4`)
+
+| Achse | Stufen |
+|---|---|
+| Driftfamilie | poly:1-5, dct:0.005/0.01/0.02, legendre:1/3/5, none, butter:0.01, bspline:5/8 (15) |
+| Fenster | 90, 180, 368 s |
+| Konstellation | baseline, motion, global, short_avg, short_maxcorr |
+| Bewegungskorrektur | wavelet, tddr+wavelet |
+| Seeds | 0-3 |
+
+1800 Zellen, 6,8 h Laufzeit, Median 11 s je Zelle. Ausgewertet werden je Zelle die 20
+Kanäle mit der größten wahren Amplitude. Ausgaben: `results/sweep_summary.csv`,
+`results/sweep_per_channel.nc`, `results/sweep_meta.json`; `reports/sweep_report.py`
+erzeugt daraus Abb. 6-10, 25, 26 und `results/tables.md`. Das Preset `pilot` (8 Familien
+inkl. `lowpass:0.5` und `bandpass:0.01-0.5`, 90 s, 4 Konstellationen, Seed 0, AR-IRLS und
+OLS) prüft alle Code-Pfade in etwa 5 min.
+
+### 4.2 Zusatzanalysen auf nn22
+
+| Modul | Raster | Ausgabe |
+|---|---|---|
+| `flex_basis` | 8 Familien, 180 s, baseline, Seeds 0-3, 20 Kanäle, `GaussianKernels` als Recovery-Basis | `flex_basis_summary.csv`, Abb. 12, 13 |
+| `detection` | 6 Familien, 180 s, baseline, Seeds 0-1, alle 519 Kanäle, FDR q = 0,05, aktiv wenn wahres beta über 10 % des Peaks (0,06 µM): 51 HbO-, 26 HbR-Kanäle | `detection_summary.csv`, Abb. 14 |
+| `residuals` | 9 Familien, 90 und 368 s, Seed 0, 20 Kanäle; Spektren, Driftband-Anteil unter 0,02 Hz, HRF je Familie mit flexibler Basis | `residuals_summary.csv`, Abb. 27, 28 |
+| `compare_preprocessing` | ohne Korrektur / wavelet / tddr+wavelet, je baseline und motion, 180 s, 3 Seeds, gemeinsame Kanalbasis; HRF-Retention je Verfahren | `preprocessing_comparison.csv`, `hrf_retention.csv`, Abb. 11 |
+| `imageglm` | 12 Familien x baseline/global, 368 s, Seed 0, AR-IRLS über alle Kanäle (420 s je Fit), 3 Projektionen plus truth_ref | `imageglm_summary.csv`, Abb. 19-21 |
+| `recon_check` | rauschfreier Kreis Kortex -> Kanal -> Kortex für alpha_spatial aus / 0,001 / 0,01 | Konsolenausgabe |
+
+### 4.3 Realdaten
+
+| Modul | Raster | Ausgabe |
+|---|---|---|
+| `realglm` (Khan) | 14 Familien x baseline/global x AR-IRLS/OLS über 69 Aufnahmen = 3864 Fits; Gruppen-t-Test über 25 Probanden, FDR, Reproduzierbarkeit über 74 Durchgangspaare | `realglm_summary.csv`, `realglm_group_map.nc`, Abb. 15-18 |
+| `msglm` (Multisubject) | 12 Familien x 6 Systemik-Stufen mit OLS (72 Zellen); AR-IRLS für none/poly:3/dct:0.02/butter:0.01 x none/short_avg_dm/short_avg_sub (12 Zellen, 9 gerechnet); je Zelle Vollfit plus zwei Trial-Hälften, 20 lange Kanäle; Lateralisierungsindex und Bildraum-Lokalisation | `msglm_summary.csv`, Abb. 22, 23 |
+| `mshrf` (Multisubject) | 12 Familien x 5 Probanden, OLS, short_avg in der Designmatrix, flexible HRF-Basis; ROI je Hand die 3 stärksten kontralateralen Kanäle aus dem Block-Mittel der Daten | `mshrf_summary.csv`, Abb. 29, 30 |
+
+## 5 Gütemaße
+
+- Simulation, Kanalraum: Bias, Varianz und RMSE von beta_hat gegen das wahre beta je
+  Kanal über die Seeds, danach Median über die 20 Kanäle (`bias_med`, `var_med`,
+  `rmse_med`). Plausibilität: Korrelation der HbO- und HbR-Karten über Kanäle
+  (`hbo_hbr_corr`) und rückgewonnenes Verhältnis HbR/HbO (`hbr_hbo_ratio_med`,
+  eingemischt -0,4).
+- Modellfit ohne Wahrheit: R², adj. R² (Strafterm für die Spaltenzahl der Designmatrix),
+  Residual-RMS in µM, Anteil der Residualleistung unter 0,02 Hz (`lowfreq_frac`). Für
+  Filter-Arme bezieht sich R² auf die gefilterte Zeitreihe und ist mit den
+  Regressor-Familien nicht direkt vergleichbar. `resid_err_corr` ist die Korrelation
+  zwischen Residual-RMS und |beta_hat - beta| über Seeds x Kanäle einer Zelle.
+- Form: Pearson-Korrelation zwischen rückgewonnener und eingemischter HRF-Kurve
+  (skaleninvariant) und relativer Amplitudenfehler am wahren Peak.
+- Detektion: Sensitivität, Spezifität, Präzision und Youden-J der nach FDR signifikanten
+  Kanäle gegen die wahre Aktivmaske.
+- Bildraum: Korrelation zwischen rekonstruierter Karte und Wahrheit innerhalb der Maske
+  (`img_r`), Abstand des rekonstruierten Maximums zum nächsten wahren Zentrum
+  (`img_loc_err_mm`), Anteil der rekonstruierten Masse innerhalb von 30 mm um ein wahres
+  Zentrum (`img_hit_frac`), Verhältnis der Peaks (`img_peak_ratio`).
+- Realdaten: Reproduzierbarkeit als Median-Korrelation der beta-Karten zwischen
+  Durchgängen eines Probanden (Khan) bzw. zwischen geraden und ungeraden Trials
+  (Multisubject); Zahl signifikanter Kanäle nach FDR; HbR/HbO-Verhältnis und
+  -Korrelation; Lateralisierungsindex als Differenz des mittleren beta kontralateral
+  minus ipsilateral (positiv = Erwartung erfüllt); Abstand des rekonstruierten Maximums
+  zur erwarteten Landmarke (C3 für die rechte, C4 für die linke Hand).
+
+## 6 Ergebnisse
+
+Alle Zahlen stammen aus dem Lauf vom 8./9. September 2026 (Bildraum-Ground-Truth nach
+dem Fix der Kanalreihenfolge), sofern nichts anderes angegeben ist. Vollständige Tabellen:
+`results/tables.md` (Sweep, adj. R², Residualkorrelation) und die CSV-Dateien in
+`results/`. Die Abschnitte „Flexible Recovery-Basis" und „Detektion" in `tables.md`
+stammen noch aus einem älteren Lauf; maßgeblich sind `flex_basis_summary.csv` und
+`detection_summary.csv`.
+
+### 6.1 Kanalraum-Sweep (Abb. 6-10, 25, 26)
+
+Fensterlänge (baseline, wavelet, Median über die 15 Familien):
+
+| | 90 s | 180 s | 368 s |
 |---|---|---|---|
-| aus | +0,49 … +0,58 | 1,36 – 1,51 | **8,6 mm** |
-| 0,001 (Vorgabe) | +0,45 … +0,51 | **1,82 – 2,02** | 14,6 mm |
-| 0,01 | **+0,59 … +0,65** | **0,89 – 0,97** | 13,2 – 14,0 mm |
-
-Der vorgegebene Wert 0,001 schneidet also am schlechtesten ab – er überschätzt die
-Amplitude um den Faktor 2. Er bleibt trotzdem die Voreinstellung (Betreuungsvorgabe wird
-nicht stillschweigend übersteuert), der Gegenlauf ist ein Argument. Auf der dichten
-520-Kanal-Montage ist der Unterschied kleiner, aber gleichgerichtet (0,001 → 11,9 mm;
-0,01 → 3,0 mm).
-
-**Ergebnis C3 – Der Bildraum ist ein strengeres Gütekriterium als der Kanalraum.**
-Damit die Zahlen einordbar sind, läuft eine **rauschfreie Obergrenze** mit: die wahre
-Kanalkarte durch denselben Rückweg (r = 0,80 / 11,9 mm auf dem Ruhedatensatz). In der
-ungünstigsten Konfiguration – einfaches Schätzverfahren, kurzes Fenster, **ohne**
-systemischen Regressor – erreicht die Schätzung dagegen r ≈ 0,00 und 65–110 mm. Im
-Kanalraum sah dieselbe Schätzung unauffällig aus (RMSE 0,21 µM bei 0,6 µM Peak).
-
-> Eine im Kanalraum akzeptable Schätzung kann im Bildraum vollständig danebenliegen, weil
-> die Rekonstruktion die Fehler über ganze Lichtwege verteilt. Der Bildraum ist damit
-> **kein zusätzlicher Darstellungsschritt, sondern ein härteres Kriterium.**
-
-**Ergebnis C4 – Die „Konzentration" eines kurzen Kanals ist keine Amplitude.** Ein
-Fallstrick, der still falsche Zahlen erzeugt. Die Umrechnung von optischer Dichte in
-Konzentration teilt durch den Quell-Detektor-Abstand; bei 7,3 mm gegen 37 mm ist dieser
-Nenner fünfmal kleiner, dieselbe optische Dichte wird also zu einer fünfmal größeren
-Konzentration. Auf der 28-Kanal-Montage lag das globale Maximum der Kanalraum-Wahrheit
-dadurch auf einem **7,3-mm-Kanal** (0,600 µM) vor dem besten langen (0,231 µM) – obwohl
-dessen Hirn-Empfindlichkeit 230-mal größer ist. Die Amplituden-Kalibrierung greift deshalb
-nur auf Kanäle zu, die mindestens 10 % der maximalen Hirn-Empfindlichkeit haben.
-
-**Ergebnis C5 – Die „kurzen" Kanäle des Ruhedatensatzes sind keine reinen
-Systemik-Messungen.** Mit der Einmischung auf dem Kortex ist das beziffert statt behauptet:
-der stärkste 15,8–17,8-mm-Kanal bekommt **18,9 % des eingemischten Peaks** ab. Im
-gemittelten Regressor bleiben davon 1,4 % (Short-Average) gegen 3,8 % (Global-Mittelwert) –
-derselbe Befund wie in Ergebnis 3, aber jetzt mit physikalisch abgeleitetem Muster statt der
-künstlich auf Null gesetzten kurzen Kanäle der Vorversion.
-
-### Nutzungsempfehlung (Stand: beide Stufen)
-
-1. **Systemischen Regressor verwenden** – der größte Genauigkeits-Hebel für HbO. Wenn die
-   Montage kurze Kanäle hat, **Short-Channel-Regression** statt Global-Mittelwert: der
-   Global-Regressor enthält das gesuchte Signal mit und rechnet es teilweise weg.
-2. **Möglichst lange Auswertefenster.**
-3. **Beim Drift: DCT mit Grenzfrequenz ~0,01–0,02 Hz.** In beiden Stufen der Arbeit die
-   stabilste Wahl. Sehr hohe Ordnungen bei kurzen Fenstern meiden.
-4. **Den Drift modellieren, nicht wegfiltern.** Der Hochpass als Ersatz für Driftregressoren
-   war auf realen Daten die schlechteste Option.
-5. **Tiefpass und AR-IRLS nicht kombinieren** (Ergebnis 9).
-6. **Bei der Bewegungskorrektur genau hinsehen:** TDDR dämpft die Hirnantwort auf 70 % und
-   kann dadurch Fehler kaschieren, die im RMSE gut aussehen. Bias getrennt nach HbO und HbR
-   prüfen.
-
-### Überblick und Demo-Strecke
-
-![Pipeline-Flowchart](figures/00_pipeline_flowchart.png)
-*Abb. 00 – Die gesamte Pipeline als Flussdiagramm (für die Arbeit auch als Vektor-PDF:
-`figures/00_pipeline_flowchart.pdf`): beide Stränge – Simulation mit bekannter Wahrheit und
-Realdaten – laufen durch identische Vorverarbeitung und identisches GLM; nur die
-Bewertungsmaßstäbe unterscheiden sich.*
-
-![Ground Truth neben Schätzung](figures/24_scalp_gt_vs_est.png)
-*Abb. 24 – Die Kernvisualisierung zur wichtigsten Metrik (Abweichung von der Ground Truth):
-links die eingemischte Wahrheit, Mitte die Schätzung – **mit derselben Farbskala**, nur so
-ist der Vergleich ehrlich –, rechts die Abweichung. Oben HbO, unten HbR.*
-
-### Abbildungen zum Hauptsweep
-
-![RMSE je Driftfamilie](figures/06_sweep_rmse_by_family.png)
-*Abb. 6 – Gesamtfehler (RMSE) je Driftregressor-Familie, für HbO (oben) und HbR (unten), je
-Fensterlänge (90 / 180 / 368 s). Niedriger = besser. Sichtbar: längere Fenster sind durchweg
-genauer; bei 368 s liegen die Familien eng beieinander.*
-
-![Bias-Varianz-Zerlegung](figures/07_sweep_bias_var.png)
-*Abb. 7 – Aufteilung des Fehlers je Familie in Bias (systematische Verzerrung) und Streuung.*
-
-![Konstellations-Effekt](figures/08_sweep_constellation_effect.png)
-*Abb. 8 – Wirkung der Konstellation. Der Global-Regressor (grün/rot) senkt den HbO-Fehler
-(oben) deutlich gegenüber baseline/motion (blau/orange). Bei HbR (unten) ist der Effekt klein.*
-
-![HbO/HbR-Plausibilität](figures/09_sweep_plausibility.png)
-*Abb. 9 – Plausibilität: zurückgewonnenes HbR/HbO-Verhältnis je Familie; gestrichelt der wahre,
-eingemischte Wert (−0,4).*
-
-![Motion-Achse](figures/10_sweep_motion_axis.png)
-*Abb. 10 – Die Bewegungskorrektur als eigene Achse. Balken = Bias, Striche = RMSE. Links HbO,
-rechts HbR. Entscheidend ist, dass der Bias über **alle** Driftfamilien praktisch konstant
-bleibt – der Sprung zwischen den beiden Balkenfarben kommt allein von der Vorverarbeitung.
-TDDR (orange) drückt den HbO-Bias auf null, verdreifacht ihn aber bei HbR: dort fehlt die
-Überschätzung, gegen die sich die Dämpfung verrechnen könnte.*
-
-![Wirkung der Vorverarbeitung](figures/11_preprocessing_effect.png)
-*Abb. 11 – Warum die Bewegungskorrektur eine eigene Achse ist, in einem Bild. Links: wie viel
-der **eingemischten** Hirnantwort jedes Verfahren übrig lässt (100 % = unangetastet). Ohne
-Korrektur ist es exakt 100 %, bei TDDR nur noch rund 70 %. Rechts: was daraus für den
-Schätzfehler folgt. Der gute RMSE von TDDR entsteht dadurch, dass die Dämpfung eine
-Überschätzung aufhebt – nicht dadurch, dass besser geschätzt würde.*
-
-![Variance explained](figures/25_sweep_r2.png)
-*Abb. 25 – Modellfit ohne Wahrheit: adjustiertes R² je Familie × Fenster. Schraffiert die
-Filter-Arme, deren R² auf der gefilterten Zeitreihe liegt. Negative Werte unter AR-IRLS sind
-ein Befund, kein Fehler (siehe Zusatz-Analyse 3).*
-
-![Residuen gegen GT-Abweichung](figures/26_sweep_resid_vs_error.png)
-*Abb. 26 – Die geprüfte Erwartung aus dem Betreuungsgespräch: kleinere Residuen ↔ kleinere
-Abweichung von der Wahrheit? Links zwischen den Modellen (jeder Punkt eine Zelle, Spearman-ρ),
-rechts innerhalb der Zellen (Korrelation über Seeds × Kanäle, je Familie).*
-
-### Abbildungen zu den Zusatz-Analysen
-
-![Form-Treue je Familie](figures/12_flex_shape_corr.png)
-*Abb. 12 – Form-Treue (Korrelation rückgewonnene vs. injizierte HRF) je Driftfamilie, flexible
-Formvorlage. Hoch und über Familien ähnlich → die Drift-Wahl verzerrt die HRF-Form kaum.*
-
-![Rückgewonnene HRF-Formen](figures/13_flex_shape_curves.png)
-*Abb. 13 – Beispiel: rückgewonnene HRF-Kurven (flexible Basis) je Driftfamilie gegen die
-injizierte Ground-Truth-HRF (schwarz), ein Kanal.*
-
-![Residual-Analyse](figures/27_residual_analysis.png)
-*Abb. 27 – Was konnte das Modell nicht fitten? Links die Residual-Zeitspuren eines starken
-Kanals je Familie (oben grau die Daten selbst), rechts die Residual-Spektren mit markiertem
-Driftband (< 0,02 Hz). Ein Residuum mit viel Leistung im Driftband heißt: das Driftmodell
-hat Trend übrig gelassen.*
-
-![HRF-Schätzungen je Familie](figures/28_hrf_family_comparison.png)
-*Abb. 28 – Wie unterscheiden sich die HRF-Schätzungen? Je Familie die mit der flexiblen
-Formvorlage zurückgewonnene HRF (gestrichelt) gegen die eingemischte Wahrheit (dick, blass),
-gemittelt über die Blob-Kanäle; im Titel die Form-Korrelation.*
-
-![Detektion nach FDR](figures/14_detection.png)
-*Abb. 14 – Aktivierungs-Detektion nach FDR-Korrektur (q = 0,05) je Driftfamilie:
-Sensitivität (blau) und Spezifität (orange), HbO/HbR. Moderate Drift-Modelle geben die beste
-Balance; „kein Drift" ist spezifisch, aber unsensitiv.*
-
-### Abbildungen zu den realen Daten
-
-![Reproduzierbarkeit](figures/15_real_reliability.png)
-*Abb. 15 – Das Hauptergebnis der realen Daten. Median-Korrelation der β-Karten zwischen den
-Durchgängen eines Probanden, über 74 Durchgangspaare. Höher = stabilere Schätzung. Die
-DCT-Familie (orange) liegt vorn, die Filter-Alternativen (rot) klar hinten – schlechter als
-gar kein Driftmodell (braun). „n.a." markiert die mit AR-IRLS nicht auswertbare Kombination
-(Ergebnis 9).*
-
-![Signifikante Kanäle](figures/16_real_significant.png)
-*Abb. 16 – Zahl der Kanäle, die die FDR-Korrektur überstehen (von 48). Der systemische
-Regressor (orange) entfernt bei AR-IRLS rund die Hälfte der Signifikanz – dasselbe Muster
-wie in der Simulation.*
-
-![Gruppen-Aktivierung auf dem Kopf](figures/17_real_scalp.png)
-*Abb. 17 – Die eigentliche Frage: **wo** sitzt die Aktivierung? Gruppen-β über 25 Probanden
-(oben) und t-Werte (unten), HbO links, HbR rechts. Erwartet wird die stärkste Antwort über
-dem linken, kontralateralen Motorkortex, da mit der rechten Hand getappt wurde.*
-
-![Plausibilität real](figures/18_real_plausibility.png)
-*Abb. 18 – HbR/HbO-Verhältnis (links, gestrichelt der physiologisch erwartete Wert −0,4) und
-Antikorrelation zwischen HbO und HbR (rechts). Je Punkt eine Driftfamilie.*
-
-### Abbildungen zum Bildraum und zum dritten Datensatz
-
-![HRF je Kanal](figures/19_hrf_per_channel.png)
-*Abb. 19 – Je Kanal die eingemischte HRF (dick und blass) gegen die geschätzte (dünn,
-gestrichelt); rot HbO, blau HbR. Die letzten drei Kacheln zeigen Kanäle **ohne**
-Aktivierung – dort muss die Schätzung flach bleiben. Genau diese Kontrolle verschwindet in
-jeder gemittelten Kennzahl.*
-
-![Kortex: wahr gegen rekonstruiert](figures/20_cortex_truth_vs_recon.png)
-*Abb. 20 – Die Abbildung, die den Bildraum rechtfertigt: sie zeigt den **Ort**. Links die
-eingemischte Wahrheit (Flecken unter C3 und C4), rechts, was aus dem GLM-Ergebnis
-zurückkommt – je Spalte eine der drei Projektionen, je Zeile eine Blickrichtung. Graue
-Bereiche sieht die Montage nicht; dort wäre jeder Wert reine Regularisierung.*
-
-![Driftfamilien im Bildraum](figures/21_image_families.png)
-*Abb. 21 – Driftfamilien im Bildraum (HbO). Die gestrichelte Linie ist die **rauschfreie
-Obergrenze**: die wahre Kanalkarte durch denselben Rückweg. Ohne sie ist kein Balken
-interpretierbar – erst der Abstand zur Linie sagt, wie viel die Schätzung verliert.*
-
-![Kontralaterale Kontrolle](figures/22_ms_lateralisation.png)
-*Abb. 22 – Der dritte Datensatz erlaubt eine **überprüfbare Vorhersage ohne Ground Truth**:
-Motorik ist kontralateral, also muss Tappen mit der rechten Hand links stärker sein und
-umgekehrt. Links im Kanalraum (positiv = Erwartung erfüllt), rechts im Bildraum als
-Abstand des Maximums zur erwarteten Landmarke gegen den Abstand zur Gegenseite.*
-
-![Global-Component-Subtraktion](figures/23_global_component.png)
-*Abb. 23 – Derselbe systemische Regressor, zwei Anwendungsarten: in der Designmatrix
-belassen (durchgezogen) oder vorher abgezogen (gestrichelt). Der Unterschied ist nicht
-kosmetisch – der abgezogene Anteil wird auf Daten geschätzt, die die gesuchte Antwort
-enthalten.*
-
-![HRF je Familie auf echten Daten](figures/29_ms_hrf_families.png)
-*Abb. 29 – Die Realdaten-Gegenüberstellung aus den Notizen 08.09.: je Driftfamilie die
-geschätzte HRF (flexible Formvorlage, mit echtem Short-Channel-Regressor) gegen das
-**Block-Mittel der Daten** (grau, ±1 SD über die Probanden) – je Hand die kontralaterale
-ROI, oben HbO, unten HbR. Grün die Stimulusdauer.*
-
-![Modellfit auf echten Daten](figures/30_ms_fit_quality.png)
-*Abb. 30 – Modellfit ohne Wahrheit auf den Realdaten: adjustiertes R² und Residual-RMS je
-Familie (±1 SD über Probanden). Schraffiert die Filter-Arme (R² auf der gefilterten
-Zeitreihe).*
-
----
-
-## 7. Die Dateien im Überblick
-
-Der Code liegt im Paket `drift_glm/` mit vier Schichten. Die Abhängigkeiten laufen nur
-nach unten: `reports` darf `analysis` benutzen, `analysis` darf `data` und `core`, und
-`core` kennt die oberen Schichten nicht. Wer das umdreht, baut einen Importzyklus – und
-der fällt sofort auf. Aufgerufen wird deshalb immer als Modul
-(`python -m drift_glm.analysis.sweep`), nie als Datei; die genaue Begründung steht in
-der [`README`](README.md).
-
-| Datei | Aufgabe |
-|---|---|
-| `drift_glm/core/preprocess.py` | **Vorverarbeitung** (Kapitel 4, Schritt 2): OD-Umrechnung mit Baseline, Bewegungskorrektur, Rückweg zur Amplitude, Kanalmasken, Pruning, datengetriebene Amplitudengrenzen. Enthält auch die Diagnose, ob ein Verfahren ins Driftband eingreift. |
-| `drift_glm/core/shortchannel.py` | **Kurze Kanäle:** Distanzanalyse, Long/Short-Split, die drei Regressor-Varianten – und die Alternative, den systemischen Anteil *abzuziehen* statt ihn im Modell zu lassen. |
-| `drift_glm/core/imagespace.py` | **Bildraum-Fundament:** Kopfmodell (ICBM152), Sensitivitätsmatrix, C3/C4-Blob, Vorwärts- und Rückweg, Sichtbarkeitsmaske, Regularisierung. Einzige Stelle, an der das Kopfmodell beschafft wird. |
-| `drift_glm/core/pipeline.py` | **Kernstück der Simulation.** Erzeugt die künstliche HRF als Blob auf dem Kortex, trägt sie über die Sensitivitätsmatrix in den Kanalraum, mischt sie dort in die optische Dichte ein – *vor* der Bewegungskorrektur – und baut die Designmatrix. |
-| `drift_glm/analysis/imageglm.py` | **Bildraum-Auswertung:** GLM-Ergebnis (geschätzte HRF, Residuum, Residuum+HRF) zurück auf den Kortex, Gütemaße inkl. Lokalisationsfehler. |
-| `drift_glm/data/multisubject.py` | **Stufe 3:** Multisubject-Fingertapping (5 Probanden, echte Short Channels), Loader, Inventar, Vorverarbeitung. |
-| `drift_glm/analysis/msglm.py` | **Stufe 3, Kern:** GLM je Driftfamilie × Systemik-Stufe, Gruppen-t-Test, Halbierungs-Reproduzierbarkeit, kontralaterale Kontrolle im Kanal- und Bildraum. |
-| `drift_glm/data/coregister.py` | Landmarkenfreie Koregistrierung der NIRScout-Montage auf ICBM152 – und die Dokumentation, warum daraus hier keine Sensitivitätsmatrix wird. |
-| `drift_glm/reports/imagespace_report.py` | Abbildungen 19–23 (HRF je Kanal, Kortexdarstellung, Driftfamilien im Bildraum, Lateralisierung, Systemik-Achse). |
-| `drift_glm/analysis/sweep.py` | Der **systematische Vergleich** über alle Kombinationen (Kapitel 5). Schreibt Ergebnisse + eine Live-Fortschrittsdatei. |
-| `drift_glm/analysis/compare_preprocessing.py` | Vergleicht die Vorverarbeitungs-Varianten gegen die β-Rückgewinnung (Grundlage für Ergebnis 4b). |
-| `drift_glm/data/realdata.py` | **Stufe 2:** Einlesen der realen SNIRF-Dateien, Inventar, Stimulus-Zuordnung (inkl. der abweichenden Kodierung bei S25), datengetriebene Amplitudengrenzen. |
-| `drift_glm/analysis/realglm.py` | **Stufe 2, Kern:** GLM je Driftfamilie über alle Probanden, Gruppen-t-Test, FDR, Reproduzierbarkeit zwischen Durchgängen. |
-| `drift_glm/reports/realglm_report.py` | Abbildungen zu den realen Daten (Abb. 14–17), inkl. der Gruppen-β-Karte auf dem Kopf. |
-| `drift_glm/reports/sweep_report.py` | Erzeugt aus den Sweep-Ergebnissen die **Abbildungen** und **Markdown-Ergebnistabellen** (`results/tables.md`). |
-| `drift_glm/analysis/flex_basis.py` | **Zusatz-Analyse 1:** flexible HRF-Formvorlage → Form-Treue (Formfehler unabhängig von der Höhe). |
-| `drift_glm/analysis/detection.py` | **Zusatz-Analyse 2:** Signifikanz je Kanal + FDR-Korrektur → Detektionsgüte gegen die Ground Truth. |
-| `drift_glm/core/fitstats.py` | **Modellfit-Gütemaße** (Notizen 08.09.): variance explained (R², adj. R²) und Residual-RMS je Kanal – schätzerunabhängig über `glm.predict` im Datenraum. |
-| `drift_glm/analysis/residuals.py` | **Zusatz-Analyse 3:** Residuen selbst anschauen – Zeitspuren + Spektren je Familie („was konnte das Modell nicht fitten?"), Driftband-Anteil, HRF-Formvergleich je Familie (Abb. 27/28). |
-| `drift_glm/analysis/mshrf.py` | **Zusatz-Analyse 4:** Multisubject – geschätzte HRF je Driftfamilie gegen das Block-Mittel der Daten (flexible Basis, echte Short-Channels), plus Fit-Metriken auf Realdaten (Abb. 29/30). |
-| `drift_glm/figstyle.py` | Familienfarben/-reihenfolge zentral – eine Familie trägt in jeder Abbildung dieselbe Farbe. |
-| `drift_glm/reports/flowchart.py` | Pipeline-Flowchart (Abb. 00) als PDF (Vektor, für LaTeX) + PNG. |
-| `drift_glm/reports/demo_recovery.py` | **End-to-end-Demo (Zahlen):** ein Durchlauf, gibt Fehlerkennzahlen aus. |
-| `drift_glm/reports/demo_figures.py` | **End-to-end-Demo (Bilder):** Designmatrix, Ein-Kanal-Fit, β̂-vs-Wahrheit, Kopf-Karten. |
-| `tests/` | Schnelle **Smoke-Tests** (pytest) für die Pipeline. |
-| `results/` | Ausgaben: `sweep_summary.csv`, `sweep_per_channel.nc`, `tables.md`, `flex_basis_summary.csv`, `detection_summary.csv`, `residuals_summary.csv`, `mshrf_summary.csv`, `logs/*_progress.txt`. |
-| `figures/` | Alle erzeugten Abbildungen (PNG). |
-| `environment.lock.txt` | Exakte Versionen der Kern-Pakete (Reproduzierbarkeit). |
-| `README.md` | Knappe technische Ausführ-/Reproduktions-Anleitung. |
-| `../cedalion/` | Cedalion-Framework (Schwester-Ordner) inkl. Beispiel-Notebooks unter `../cedalion/examples/`. |
-
----
-
-## 8. Wie man alles ausführt
-
-Vorbereitet ist eine Python-Umgebung namens `cedalion`. Alle Befehle aus diesem Repo-Ordner:
-
-```bash
-# Umgebung aktivieren (einmal pro Terminal) und in den Repo-Ordner wechseln
-source ~/anaconda3/etc/profile.d/conda.sh
-cd fnirs-drift-glm
-
-# 1) End-to-end-Demo mit Zahlen (~einige Minuten)
-conda run -n cedalion python -m drift_glm.reports.demo_recovery
-
-# 2) Kontroll-Abbildungen erzeugen
-conda run -n cedalion python -m drift_glm.reports.demo_figures
-
-# 3) Schnelltests (Sekunden–Minuten)
-conda run -n cedalion python -m pytest tests -q          # Smoke-Tests
-conda run -n cedalion python -m drift_glm.analysis.sweep pilot              # alle Code-Pfade, ~5 min
-conda run -n cedalion python -m drift_glm.analysis.flex_basis test          # ~1 min
-conda run -n cedalion python -m drift_glm.analysis.detection test           # ~1 min
-
-# 4) Hauptstudie v4 (1800 Auswertungen, ~7,5 Stunden)
-conda run -n cedalion python -m drift_glm.analysis.sweep v4
-#    Fortschritt live verfolgen (in einem zweiten Terminal):
-cat results/logs/sweep_progress.txt
-
-# 5) Zusatz-Analysen (schreiben ebenfalls *_progress.txt)
-conda run -n cedalion python -m drift_glm.analysis.flex_basis               # ~20 min
-conda run -n cedalion python -m drift_glm.analysis.detection                # ~60–75 min (Fits über ALLE Kanäle)
-conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing    # ~17 min
-
-# 6) Auswertungs-Abbildungen + Ergebnistabellen erzeugen
-conda run -n cedalion python -m drift_glm.reports.sweep_report
-
-# 7) Neu seit 08.09. -- Modellfit-/Residual-/HRF-Analysen und Flowchart
-conda run -n cedalion python -m drift_glm.analysis.residuals        # Abb. 27/28, ~20 min
-conda run -n cedalion python -m drift_glm.analysis.mshrf            # Abb. 29/30, ~25 min
-conda run -n cedalion python -m drift_glm.reports.flowchart         # Abb. 00, Sekunden
-
-# 8) ODER alles als sequenzielle Kette (Speicher-Engpass beachtet, mit Lock):
-./run_v6.sh                       # alle Schritte; einzelne: ./run_v6.sh demo residuals
-tail -f results/logs/*_progress.txt
-```
-
-> ⚠️ **Nicht parallel starten:** eine dct:0.02-AR-IRLS-Zelle hält pro Kanal-Fit 2,9 GB.
-> Auf der 7,8-GB-Maschine ist genau **ein** großer Lauf gleichzeitig sicher – deshalb die
-> sequenziellen Ketten (`run_v5.sh`/`run_v6.sh`) mit gegenseitigem Lock.
-
-> **Bewusste Lücke (Entscheidung 08.09.):** In `msglm_summary.csv` fehlen die 3 Zellen
-> **dct:0.02 × AR-IRLS** (× none / short_avg_dm / short_avg_sub). Sie kosten ~19 h
-> Rechenzeit (~77 s je Kanal-Fit × 20 Kanäle × 15 Fits je Zelle, strikt sequenziell wegen
-> des 2,9-GB-Speicherbedarfs) und füllen nur die AR-IRLS-Linien von Abb. 23 an einer
-> Stelle auf – dct:0.02 liegt mit OLS vollständig vor, AR-IRLS für none/poly:3/butter.
-> Wer sie doch braucht: `./run_v6.sh msglm tables` (Resume überspringt die 81 fertigen
-> Zellen automatisch).
-
-**Stufe 2 – die realen Daten.** Sie liegen als SNIRF unter
-`../FingerTappingDataset_Published2025/` (Unterordner je Proband):
-
-```bash
-# Inventar: prüft die Angaben aus dem Paper gegen die Dateien
-conda run -n cedalion python -m drift_glm.data.realdata
-
-# Hauptauswertung (3864 Auswertungen, ~3,6 Stunden)
-conda run -n cedalion python -m drift_glm.analysis.realglm
-cat results/logs/realglm_progress.txt        # Fortschritt
-
-# Abbildungen (die Kopf-Karte rechnet ~8 min nach; "quick" lässt sie weg)
-conda run -n cedalion python -m drift_glm.reports.realglm_report
-conda run -n cedalion python -m drift_glm.reports.realglm_report quick
-```
-
-*(Hinweis: Der Datensatz enthält zu jeder Aufnahme eine von den Autoren vorgefilterte
-Fassung `*_CC_filtered.snirf`. Diese ist für den Driftregressor-Vergleich **unbrauchbar** –
-sie hat den Hochpass bei 0,01 Hz bereits angewandt, also genau den Drift entfernt, um den es
-geht. `realdata.find_files()` blendet sie deshalb standardmäßig aus.)*
-
-*(Technischer Hinweis für WSL/Windows: Dateien immer aus der Linux-Umgebung heraus
-bearbeiten, nicht mit nativen Windows-Werkzeugen – sonst werden durch Zeilenende-Umschreibung
-scheinbar alle Cedalion-Dateien „verändert".)*
-
----
-
-## 9. Was noch kommt (Ausblick)
-
-**Beide Stufen der Arbeit sind rechnerisch abgeschlossen.** Die Simulation liegt als v4 vor
-(1800 Auswertungen), die realen Daten als Gruppenanalyse über 25 Probanden (3864
-Auswertungen). Was seit der letzten Fassung dazukam:
-
-- **Vorverarbeitung nach Betreuungsvorgabe** – Bewegungskorrektur auf der optischen Dichte,
-  danach zurück zur Amplitude, erst dann Kanalbewertung (Kapitel 4, Schritt 2).
-- **Echte Short-Channel-Regression** bei 1,8 cm statt nur des Global-Mittelwerts.
-- **Bewegungskorrektur und Schätzverfahren als eigene Achsen** – beide stellten sich als
-  einflussreicher heraus als die Driftfamilie selbst.
-- **Stufe 2 auf realen Daten** mit Gruppenstatistik, FDR und dem wahrheitsfreien
-  Reproduzierbarkeits-Kriterium.
-
-**Version 5 (August) – der Bildraum ist dazugekommen, und ein dritter Datensatz.** Was
-zuvor als „noch offen" hier stand, ist umgesetzt:
-
-- **Die Ground Truth liegt jetzt auf dem Kortex** (Kapitel 4, Schritt 4): ein geodätischer
-  Fleck unter C3 und C4, über die Sensitivitätsmatrix in den Kanalraum getragen, dort in die
-  Ruhedaten gemischt. Kopfmodell durchgängig **ICBM152**.
-- **Das GLM-Ergebnis geht zurück auf den Kortex** – die geschätzte HRF, das Residuum und
-  beides zusammen. Damit ist erstmals messbar, ob die Aktivierung am **richtigen Ort**
-  landet (`drift_glm/analysis/imageglm.py`, Abb. 20/21).
-- **Ein dritter Datensatz mit echten Short Channels**: Multisubject-Fingertapping,
-  5 Probanden, 8 Kanäle bei 7,1 mm. Damit ist die Short-Channel-Regression kein reiner
-  Simulationsbefund mehr, und weil beide Hände getrennt getappt wurden, gibt es eine
-  **überprüfbare anatomische Vorhersage** ohne Ground Truth: kontralateral muss stärker
-  sein (`drift_glm/analysis/msglm.py`, Abb. 22).
-- **Die Global-Component-Subtraktion** als eigene Achse neben dem Regressor in der
-  Designmatrix (Abb. 23).
-
-**Was offen bleibt – der Bildraum für den 48-Kanal-Datensatz.** Dessen Optodendatei enthält
-keine Landmarken (Nasenwurzel, Ohrpunkte). Eine landmarkenfreie Anpassung legt die Optoden
-zwar im Median 2,2 mm auf die Kopfhaut (`drift_glm/data/coregister.py`), aber sie kann **links und rechts
-nicht unterscheiden** – eine Kopfhaut ist dafür zu symmetrisch. Und die
-Sensitivitätsmatrix selbst müsste über eine Photonensimulation berechnet werden, die eine
-CUDA-GPU braucht (hier nicht vorhanden). Beides löst sich, sobald von der Betreuung eine
-Koregistrierung oder eine fertige Matrix für dieses Gerät kommt.
-
-**Abschließend – Verschriftlichung (durch den Autor):**
-- Methoden-, Ergebnis- und Diskussionsteil der Bachelorarbeit; Einordnung in die Fachliteratur
-  und Ableitung der finalen **Nutzungsempfehlung**, welcher Driftregressor unter welchen
-  Bedingungen die zuverlässigste Schätzung liefert. (Diese Dokumentation und die
-  Ergebnistabellen in `results/tables.md` liefern dafür das Material.)
-
----
-
-## 10. Glossar
-
-- **AR-IRLS** – robustes GLM-Schätzverfahren, das zeitlich „nachhallendes" Rauschen
-  berücksichtigt (modelliert das Rauschen, nicht den Drift).
-- **β / β̂** – wahre bzw. geschätzte Aktivierungsstärke an einem Kanal.
-- **Bias** – systematische Verzerrung der Schätzung (im Mittel zu hoch/zu niedrig).
-- **B-Splines** – stückweise glatte Kurvenstücke; hier eine Driftfamilie (eigene Regressorspalten).
-- **Butterworth-Hochpass** – Filter, der langsames Driften vor der Auswertung entfernt;
-  Alternative zu Driftregressoren.
-- **Cedalion** – das verwendete Python-Framework für fNIRS/DOT.
-- **DCT** – diskrete Cosinus-Basis; Driftfamilie aus Cosinus-Wellen bis zu einer Grenzfrequenz.
-- **Designmatrix** – Tabelle aller „Zutaten" (Regressoren) im GLM.
-- **DOT** – Diffuse Optische Tomografie; hochkanaliges fNIRS mit räumlicher Auflösung.
-- **Drift** – langsames, nicht-hirnbezogenes Wegwandern der Messwerte.
-- **FDR (False Discovery Rate)** – Korrektur für multiples Testen (Benjamini-Hochberg):
-  begrenzt den erwarteten Anteil an Falsch-Positiven, wenn viele Kanäle gleichzeitig getestet werden.
-- **Flexible Formvorlage** – HRF-Basis, deren Kurvenform frei ist (`GaussianKernels`);
-  ermöglicht die Messung des Formfehlers unabhängig von der Höhe.
-- **fNIRS** – funktionelle Nahinfrarotspektroskopie; Hirndurchblutungsmessung mit Licht.
-- **GLM** – General Linear Model; erklärt das Signal als gewichtete Summe bekannter Zutaten.
-- **Ground Truth** – der bekannte wahre Wert (in der Simulation von uns eingemischt).
-- **HbO / HbR** – sauerstoffreiches / sauerstoffarmes Hämoglobin; steigen bzw. fallen bei
-  Aktivierung.
-- **HRF** – hämodynamische Antwortfunktion; typische Form der Durchblutungsantwort auf einen Reiz.
-- **Kanal** – Messpunkt aus Sender+Empfänger; viele Kanäle = Karte der Hirnoberfläche.
-- **Konstellation** – welche zusätzlichen Regressoren (Bewegung, Global) im Modell sind.
-- **Legendre-Polynome** – mathematisch besonders „saubere" Polynome; eine Driftfamilie.
-- **RMSE** – Gesamtfehlermaß (kleiner = besser); fasst Bias und Varianz zusammen.
-- **Scalp plot** – Kopf-Karte: jeder Kanal farbig an seiner Kopfposition dargestellt.
-- **Seed** – Startwert des Zufallsgenerators; unterschiedliche Seeds = unterschiedliche
-  (reproduzierbare) Zufalls-Wiederholungen.
-- **Sensitivität (TPR)** – Anteil der wirklich aktiven Kanäle, die (nach FDR) erkannt werden.
-- **SNR** – Signal-Rausch-Verhältnis; Maß für Kanalqualität.
-- **Spezifität (TNR)** – Anteil der inaktiven Kanäle, die korrekt als inaktiv gelten.
-- **Sweep** – systematisches Durchrechnen aller Einstellungs-Kombinationen.
-- **Varianz** – wie stark die Schätzung zwischen Wiederholungen schwankt.
-- **Youden-J** – Gesamtmaß der Detektion: Sensitivität + Spezifität − 1 (1 = perfekt).
-
----
-
-*Diese Dokumentation beschreibt den Stand vom 13. Juli 2026. Die inhaltliche Roadmap steht
-in Kapitel 9 (Ausblick).*
+| HbO RMSE [µM] | 0,367 | 0,193 | 0,084 |
+| HbO Bias [µM] | +0,106 | +0,084 | -0,026 |
+| HbR RMSE [µM] | 0,061 | 0,041 | 0,031 |
+| HbR Bias [µM] | +0,018 | -0,028 | -0,016 |
+| HbR/HbO-Verhältnis | -0,30 | -0,39 | -0,46 |
+| corr(HbO, HbR) | -0,83 | -0,93 | -0,96 |
+
+Konstellation (wavelet, Mittel über Familien und Fenster):
+
+| Konstellation | HbO RMSE | HbO Bias | HbR RMSE | HbR Bias |
+|---|---|---|---|---|
+| baseline | 0,221 | +0,051 | 0,044 | -0,012 |
+| motion | 0,219 | +0,049 | 0,044 | -0,009 |
+| global | 0,076 | -0,017 | 0,049 | -0,015 |
+| short_avg | 0,069 | -0,022 | 0,073 | -0,031 |
+| short_maxcorr | 0,082 | +0,010 | 0,051 | -0,015 |
+
+Bewegungskorrektur (baseline, Mittel über Familien und Fenster): HbO RMSE 0,221 (wavelet)
+gegen 0,133 (tddr+wavelet), HbO Bias +0,051 gegen -0,073; HbR RMSE 0,044 gegen 0,048,
+HbR Bias -0,012 gegen +0,034 (bei wahrem beta -0,24). Der Bias ist über die Familien
+nahezu konstant; der Unterschied zwischen den Balken in Abb. 10 stammt aus der
+Vorverarbeitung. Der niedrigere HbO-RMSE unter TDDR entsteht aus der Dämpfung der
+eingemischten HRF (Abschnitt 6.3), die der systemischen Überschätzung entgegenwirkt; bei
+HbR, wo keine Überschätzung vorliegt, verschlechtert TDDR den Bias.
+
+Familien: bei 368 s liegen alle Familien für HbO zwischen 0,082 und 0,086 µM
+(butter:0.01, legendre:3, poly:3 bei 0,082; none 0,083). Bei 90 s liegen sie zwischen
+0,357 (butter:0.01) und 0,406 (poly:5); bspline:8 fällt auf 0,489. Beste Zellen je Fenster
+mit systemischem Regressor: dct:0.01 + short_avg 0,080 (90 s), bspline:5 + short_avg 0,052
+(180 s), dct:0.02 + short_maxcorr 0,041 (368 s). Für HbR beträgt die Spannweite der
+Familien bei 368 s 0,030-0,034 µM.
+
+Modellfit (adj. R², baseline, wavelet, Median über Familien): HbO -0,45 / 0,18 / 0,21 und
+HbR 0,15 / 0,45 / 0,55 für 90 / 180 / 368 s. Höchste Werte hat dct:0.02 (HbO 0,03 / 0,35 /
+0,38; HbR 0,15 / 0,57 / 0,77). Unter AR-IRLS werden rohe Polynome hoher Ordnung bei kurzen
+Fenstern numerisch instabil: poly:5 bei 90 s hat adj. R² -95 und Residual-RMS 5,1 µM,
+bspline:8 -6416 und 39,7 µM; der beta-RMSE dieser Zellen bleibt in der Größenordnung der
+übrigen (0,406 bzw. 0,489). Legendre-Polynome liefern dieselben Fits wie rohe Polynome,
+weil beide denselben Raum aufspannen.
+
+Residuen gegen Ground-Truth-Abweichung (Abb. 26): zwischen den 45 Zellen (baseline,
+wavelet) ist die Spearman-Korrelation von Residual-RMS und beta-RMSE für HbO 0,62, für HbR
+-0,02. Innerhalb der Zellen liegt `resid_err_corr` für HbO bei 0,06-0,26, für HbR bei
+-0,05-0,31.
+
+### 6.2 Form, Detektion, Residualspektren (Abb. 12-14, 27, 28)
+
+Formtreue mit flexibler Recovery-Basis (180 s, baseline, n = 80 je Zelle):
+
+| Familie | HbO Form | HbO Amplitudenfehler | HbR Form | HbR Amplitudenfehler |
+|---|---|---|---|---|
+| none | 0,791 | -2,6 % | 0,882 | -2,6 % |
+| poly:1 | 0,792 | -2,8 % | 0,914 | +5,6 % |
+| poly:3 / legendre:3 | 0,791 | -1,7 % | 0,930 | +10,6 % |
+| poly:5 | 0,788 | -2,3 % | 0,941 | +13,3 % |
+| dct:0.01 | 0,790 | -1,4 % | 0,930 | +10,2 % |
+| bspline:5 | 0,784 | -4,5 % | 0,928 | +9,4 % |
+| butter:0.01 | 0,796 | -2,0 % | 0,918 | +4,9 % |
+
+Detektion nach FDR (q = 0,05; 180 s; Seeds 0-1; 51 aktive HbO- und 26 aktive HbR-Kanäle
+von 519):
+
+| Familie | HbO Sens. | HbO Spez. | HbO Youden | HbR Sens. | HbR Spez. | HbR Youden |
+|---|---|---|---|---|---|---|
+| none | 0,37 | 0,84 | 0,22 | 0,44 | 0,95 | 0,39 |
+| poly:1 | 0,36 | 0,85 | 0,21 | 0,63 | 0,89 | 0,52 |
+| poly:3 / legendre:3 | 0,35 | 0,83 | 0,18 | 0,67 | 0,91 | 0,59 |
+| dct:0.01 | 0,35 | 0,84 | 0,19 | 0,65 | 0,93 | 0,58 |
+| bspline:5 | 0,36 | 0,83 | 0,19 | 0,69 | 0,90 | 0,59 |
+
+Für HbO liegen alle Familien bei Sensitivität 0,35-0,37 und Spezifität 0,83-0,85; für HbR
+heben Driftregressoren die Sensitivität von 0,44 (none) auf 0,63-0,69 bei Spezifität
+0,89-0,93.
+
+Residualspektren (`residuals_summary.csv`, AR-IRLS, Seed 0): Anteil der Residualleistung
+unter 0,02 Hz bei 368 s für HbO 0,22 (none, poly:1-5, legendre:3, bspline:5), 0,195
+(dct:0.01), 0,116 (butter:0.01), 0,056 (dct:0.02). Bei 90 s liegt poly:5 bei 0,957
+(Residual-RMS 6,1 µM), none bei 0,072.
+
+### 6.3 Vorverarbeitung (Abb. 11)
+
+`hrf_retention.csv` (Lauf vom 5. August 2026, Seeds 0-1): Anteil der eingemischten
+HRF-Amplitude, der die Bewegungskorrektur überlebt: ohne Korrektur und wavelet 100 %,
+tddr 51-60 % (HbO) und 53-60 % (HbR), tddr+wavelet identisch.
+
+`preprocessing_comparison.csv` (Lauf vom 5. August 2026 mit Kanalraum-Blob, 180 s, 3
+Seeds, baseline; wahres beta 0,395 / -0,158 µM): Bias HbO +0,199 (ohne Korrektur), +0,249
+(wavelet), +0,058 (tddr+wavelet); Bias HbR +0,018, +0,018, +0,071. Die Motion-Regressoren
+in der Designmatrix ändern diese Werte um höchstens 0,011.
+
+### 6.4 Bildraum (Abb. 19-21, 24)
+
+Rauschfreie Obergrenze (`truth_ref`, 520 Kanäle, alpha_spatial 0,001): r = 0,80,
+Lokalisationsfehler 11,9 mm, 82 % der rekonstruierten Masse innerhalb von 30 mm um ein
+wahres Zentrum, Peak-Verhältnis 1,93.
+
+Projektion der geschätzten HRF (368 s, Seed 0, AR-IRLS, 12 Familien):
+
+| | HbO baseline | HbO global | HbR baseline | HbR global |
+|---|---|---|---|---|
+| img_r | 0,34-0,43 | 0,39-0,43 | 0,21-0,24 | 0,30-0,33 |
+| Lokalisationsfehler [mm] | 74-86 | 86 | 78-96 (none: 19) | 76-78 |
+| Massenanteil innerhalb 30 mm | 0,17-0,21 | 0,22-0,24 | 0,15-0,17 | 0,18-0,19 |
+| Kanalraum r derselben Zellen | 0,91-0,93 | 0,93-0,96 | 0,90-0,92 | 0,92-0,93 |
+
+Das rekonstruierte Maximum liegt in 23 der 24 HbO-Zellen an derselben Stelle (84-86 mm
+von den wahren Zentren, unabhängig von der Familie); die Ausnahme ist dct:0.02/baseline mit
+74 mm. Die Residuum-Projektion hat r zwischen -0,03 und 0,05, die Projektion
+Residuum + HRF zwischen -0,01 und 0,29 bei Lokalisationsfehlern von 61-117 mm. Die
+Reihung der Familien im Bildraum ist flach: img_r variiert innerhalb einer Konstellation um
+höchstens 0,09.
+
+### 6.5 Khan-Datensatz (Abb. 15-18)
+
+Reproduzierbarkeit (Median-Korrelation der HbO-beta-Karten über 74 Durchgangspaare,
+baseline):
+
+| Familie | AR-IRLS | OLS |
+|---|---|---|
+| dct:0.02 | 0,566 | 0,564 |
+| dct:0.01 | 0,545 | 0,547 |
+| bspline:8 | 0,535 | 0,535 |
+| poly:5 | 0,533 | 0,516 |
+| poly:3 / legendre:3 | 0,526 | 0,440 |
+| dct:0.005 | 0,522 | 0,498 |
+| none | 0,494 | 0,461 |
+| butter:0.01 | 0,443 | 0,364 |
+| bandpass:0.01-0.5 | n. a. | 0,389 |
+
+Spannweite über die Familien: 0,123 mit AR-IRLS, 0,200 mit OLS. Mit AR-IRLS überstehen bei
+`baseline` 27-31 von 48 Kanälen die FDR-Korrektur, mit `global` 10-19. HbO und HbR sind
+über Kanäle mit -0,86 bis -0,89 korreliert; das HbR/HbO-Verhältnis liegt bei -0,18
+(baseline) und -0,29 (global, AR-IRLS) bzw. -0,36 (global, OLS). Kombinationen aus
+Tiefpass 0,5 Hz und AR-IRLS liefern beta um 1e-7 µM und werden nicht in Ranglisten
+aufgenommen (Abschnitt 8).
+
+### 6.6 Multisubject-Datensatz (Abb. 22, 23, 29, 30)
+
+`msglm_summary.csv` (OLS, HbO, Tapping-Bedingungen, Mittel über beide Hände):
+Halbierungs-Reproduzierbarkeit 0,21-0,42 ohne systemischen Regressor, 0,25-0,52 mit
+short_avg in der Designmatrix, 0,33-0,52 mit short_avg-Subtraktion, 0,46-0,58 mit
+global_dm. Der Lateralisierungsindex ist für die linke Hand in allen Zellen positiv
+(+0,10 bis +0,18 µM), für die rechte Hand nahe null (-0,02 bis +0,10 µM). Im Bildraum liegt
+das rekonstruierte Maximum mit global_dm 12-16 mm von der erwarteten Landmarke, in den
+übrigen Systemik-Stufen überwiegend 84-90 mm (etwa gleich weit von beiden Landmarken),
+in einzelnen Zellen 16-31 mm. Von den 12 AR-IRLS-Zellen sind 9 gerechnet.
+
+`mshrf_summary.csv` (OLS, short_avg, flexible HRF-Basis, Median über 5 Probanden), adj.
+R² HbO / HbR: none 0,41 / 0,34; poly:1 0,60 / 0,57; poly:3 0,83 / 0,65; poly:5 0,83 /
+0,69; dct:0.005 0,88 / 0,77; dct:0.01 0,93 / 0,79; dct:0.02 0,96 / 0,86; bspline:5 0,83 /
+0,68; bspline:8 0,84 / 0,73; butter:0.01 0,26 / 0,07 (gefilterte Zeitreihe). Die
+Spaltenzahl der Designmatrix reicht dabei von 32 (none) bis 149 (dct:0.02).
+
+### 6.7 Abbildungen
+
+| Abb. | Datei | Modul |
+|---|---|---|
+| 00 | `00_pipeline_flowchart.pdf/.png` | `reports/flowchart.py` |
+| 1-5 | Designmatrix, Ein-Kanal-Fit, beta_hat gegen beta, Scalp-Abweichung absolut/relativ | `reports/demo_figures.py` |
+| 6-10 | RMSE je Familie, Bias/Varianz, Konstellation, Plausibilität, Motion-Achse | `reports/sweep_report.py` |
+| 11 | Vorverarbeitungsvarianten | `analysis/compare_preprocessing.py` |
+| 12, 13 | Formtreue, HRF-Kurven flexible Basis | `analysis/flex_basis.py` |
+| 14 | Detektion nach FDR | `analysis/detection.py` |
+| 15-18 | Khan: Reproduzierbarkeit, signifikante Kanäle, Gruppenkarte, Plausibilität | `reports/realglm_report.py` |
+| 19-23 | HRF je Kanal, Kortex wahr/rekonstruiert, Familien im Bildraum, Lateralisierung, Global-Component | `reports/imagespace_report.py` |
+| 24 | Scalp Ground Truth neben Schätzung | `reports/demo_figures.py` |
+| 25, 26 | adj. R², Residuen gegen GT-Abweichung | `reports/sweep_report.py` |
+| 27, 28 | Residualspuren und -spektren, HRF je Familie (Simulation) | `analysis/residuals.py` |
+| 29, 30 | HRF je Familie und Modellfit (Multisubject) | `analysis/mshrf.py` |
+
+## 7 Dateien und Ausführung
+
+Das Paket `drift_glm/` hat vier Schichten mit Abhängigkeiten nur nach unten: `core`
+(Vorverarbeitung, kurze Kanäle, Bildraum, Simulation, Fit-Metriken) -> `data`
+(Khan, Multisubject, Koregistrierung) -> `analysis` (Auswertungen, schreiben nach
+`results/`) -> `reports` (Abbildungen und Tabellen aus `results/`). `paths.py` hält alle
+Pfade, `figstyle.py` die Farben und Reihenfolge der Familien. `tests/` enthält 31
+pytest-Tests (`test_smoke.py` 12, `test_imagespace.py` 12, `test_fitstats.py` 7), darunter
+den Regressionstest `test_activation_matches_beta_true_map` für die Kanalreihenfolge.
+
+`run_v6.sh` führt alle Schritte sequenziell mit PID-Sperre aus (`demo residuals mshrf
+sweep sweeprep flex detection imageglm report msglm tables`); der Sweep schreibt seine CSV
+am Ende, `imageglm` und `msglm` nach jeder Zelle, `msglm` setzt fort. Aufrufe, Laufzeiten
+und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
+
+## 8 Bekannte Einschränkungen
+
+- Kanalreihenfolge nach `od2conc`: die Funktion gibt Kanäle nicht in Eingabereihenfolge
+  zurück. Eine positionale Zuweisung der Ground-Truth-Karte in `pipeline.build` verteilte
+  die Injektion auf falsche Kanäle; alle Bildraum-Ergebnisse zwischen dem 11. August und
+  dem 8. September 2026 waren dadurch ungültig. Die Karte wird jetzt nach Kanalnamen
+  ausgerichtet (`test_activation_matches_beta_true_map`); alle Simulationsergebnisse in
+  Abschnitt 6 stammen aus dem Neulauf.
+- TDDR dämpft die eingemischte HRF auf 51-60 % (HbO wie HbR) und entfernt einen großen
+  Teil des Driftbands. Deshalb ist `wavelet` Standard und TDDR eine eigene Achse. Der
+  kleinere HbO-RMSE unter TDDR entsteht dadurch, dass die Dämpfung die systemische
+  Überschätzung kompensiert; der Bias ist deshalb je Chromophor zu lesen.
+- Tiefpass 0,5 Hz und AR-IRLS schließen einander bei 3,9 Hz Abtastrate aus: der Filter
+  entfernt rund drei Viertel des Spektrums, der Whitening-Filter müsste dort unbegrenzt
+  verstärken, beta kollabiert auf etwa 1e-7 µM. `lowpass:*` und `bandpass:*` werden nur mit
+  OLS ausgewertet (`realglm.AR_IRLS_INCOMPATIBLE`).
+- Der Global-Regressor mittelt über alle Kanäle einschließlich der aktivierten und enthält
+  damit einen Teil der gesuchten Antwort. Die kurzen Kanäle von nn22 (15,8-17,8 mm) sind
+  keine echten Short-Separation-Kanäle und sehen noch Kortex: der stärkste erhält 18,9 %
+  des eingemischten Peaks, im Mittel bleiben 1,4 % (short_avg) gegen 3,8 % (global)
+  (`pipeline leakage`, Werte vor dem Neulauf, zu prüfen). Die Grenze 1,8 cm ist
+  empfindlich (1,9 cm: 114 statt 37 kurze Kanäle).
+- Bildraum-Regularisierung: mit `alpha_spatial = 0,001` überschätzt schon die rauschfreie
+  Rekonstruktion den Peak um den Faktor 1,93 bei 11,9 mm Lokalisationsfehler; mit 0,01
+  sinkt der Fehler auf 3,0 mm (`recon_check`, zu prüfen). Ohne Sichtbarkeitsmaske landet
+  auch die rauschfreie Wahrheit 65-110 mm neben ihrem Zentrum bei r = 0,00 (zu prüfen).
+  Alle Bildraum-Zahlen gelten nur innerhalb der Maske und für diese Regularisierung; die
+  Schätzungen aus dem GLM lokalisieren in 23 von 24 HbO-Zellen an einer familienunabhängigen
+  falschen Stelle. `imageglm` verwendet einen Seed.
+- `msglm_summary.csv` enthält 81 von 84 Zellen; dct:0.02 x AR-IRLS (x none / short_avg_dm /
+  short_avg_sub) fehlt (Laufzeit etwa 19 h wegen 2,9 GB je Kanalfit, strikt sequenziell).
+  `./run_v6.sh msglm tables` rechnet sie nach und überspringt die fertigen Zellen.
+- Khan ohne Landmarken und Sensitivitätsmatrix: `geo3d` enthält nur Optoden. Die
+  landmarkenfreie Registrierung (`data/coregister.py`) legt die Optoden im Median 2,2 mm auf
+  die ICBM152-Kopfhaut, kann aber links und rechts nicht unterscheiden; die
+  Sensitivitätsmatrix bräuchte eine Photonensimulation mit CUDA-GPU (nicht vorhanden). Der
+  Bildraum und die kontralaterale Kontrolle sind für diesen Datensatz nicht verfügbar; die
+  Konstellationen `short_*` und `motion` entfallen (keine kurzen Kanäle, kein Aux).
+- Abb. 20 (`20_cortex_truth_vs_recon.png`) enthält nur leere Achsenrahmen: das
+  Offscreen-Rendering der Kortexoberfläche (pyvista) liefert unter WSL keine Pixel. Die
+  Datei muss auf einem System mit funktionierendem OpenGL neu erzeugt werden
+  (`imagespace_report cortex`).
+- Simulation auf einer einzelnen Person (nn22), Auswertung über die 20 stärksten Kanäle je
+  Zelle; `dct:0.005`/`dct:0.01` bei 90 s und `dct:0.005` bei 180 s sind mit `none`
+  identisch und `poly:n` mit `legendre:n`, sodass das 15-Familien-Raster bei kurzen
+  Fenstern weniger unabhängige Modelle enthält als Zeilen.

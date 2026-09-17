@@ -1,53 +1,37 @@
 #!/usr/bin/env bash
-# Version-6-Kette: Umsetzung der Gespraechsnotizen vom 08.09. -- SEQUENZIELL.
+# Version-6-Kette: alle Analyse- und Report-Schritte nacheinander in einer Shell.
 #
-# Sequenziell aus demselben Grund wie run_v5.sh: der Speicher ist der Engpass.
-# Ein einzelner dct:0.02-AR-IRLS-Kanalfit belegt 2,9 GB (gemessen 08.09.); parallele
-# Laeufe wurden dreimal vom OOM-Killer beendet.
+# Sequenziell, weil der Speicher der Engpass ist: ein dct:0.02-AR-IRLS-Kanalfit belegt
+# rund 2,9 GB, parallele Laeufe werden vom OOM-Killer beendet. msglm (~19 h) kommt zuletzt.
 #
-# Schritte (ohne Argumente alle, sonst nur die genannten). Die Reihenfolge ist nach
-# Nutzen fuer die Verschriftlichung sortiert; msglm (19 h) kommt bewusst zuletzt.
-#
-# WARUM die Bildraum-Laeufe neu muessen (08.09.): ground_truth lieferte die Kanalkarte
-# in od2conc-sortierter Reihenfolge, die positionale Zuweisung in pipeline.build hat
-# die Injektion dadurch auf falsche Kanaele verteilt. Betroffen ist alles, was seit dem
-# Bildraum-Umbau (11.08.) mit activation_space="image" gerechnet wurde -- v.a.
-# imageglm_summary.csv. Die Zahlen von v3/v4 (Jul/04.08., Kanalraum-Blob) waren valide.
-#
+# Schritte (ohne Argumente alle, sonst nur die genannten), ungefaehre Laufzeiten:
 #   demo       Demo-Abbildungen inkl. Scalp GT vs. Schaetzung (Abb. 1-5, 24)
 #   residuals  Residual-Analyse + HRF-Formvergleich nn22 (Abb. 27/28)
 #   mshrf      Multisubject: HRF je Driftfamilie + Fit-Metriken (Abb. 29/30)
-#   sweep      Hauptstudie v4 NEU: Bildraum-GT (gefixt) + R^2/Residual-Metriken (~7,5 h)
+#   sweep      Hauptstudie v4: Bildraum-GT + R^2/Residual-Metriken (~7,5 h)
 #   sweeprep   Sweep-Auswertung (Abb. 6-10, 25/26, tables.md)
-#   flex       flexible Recovery-Basis neu (Bildraum-GT, ~1 h)
-#   detection  Detektions-Analyse neu (Bildraum-GT, ~1,5 h)
-#   imageglm   Bildraum-Rangliste neu (~1-3 h)
+#   flex       flexible Recovery-Basis (~1 h)
+#   detection  Detektions-Analyse (~1,5 h)
+#   imageglm   Bildraum-Rangliste (~1-3 h)
 #   report     Bildraum-/Multisubject-Report (Abb. 19-23)
-#   msglm      Multisubject-GLM-Restzellen (Resume; dct:0.02 x AR-IRLS, ~19 h!)
+#   msglm      Multisubject-GLM-Restzellen (Resume; dct:0.02 x AR-IRLS, ~19 h)
 #   tables     Abb. 21-23 aktualisieren, nachdem msglm vollstaendig ist
 #
+# Aufruf:            ./run_v6.sh [schritt ...]
 # Fortschritt live:  tail -f results/logs/*_progress.txt
 # Logs:              results/logs/run_v6_*.log
 set -u
 cd "$(dirname "$0")"
 
 mkdir -p results/logs
+# Lock-Datei mit der PID, damit nicht zwei Ketten gleichzeitig laufen.
 LOCK="results/logs/.run_v6.lock"
 if [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
     echo "Es laeuft schon eine Kette (PID $(cat "$LOCK")). Abbruch." >&2
     exit 1
 fi
-# Auch gegen run_v5-Ketten sperren -- gleicher Speicher, gleiche Maschine.
-LOCK5="results/logs/.run_v5.lock"
-if [ -e "$LOCK5" ] && kill -0 "$(cat "$LOCK5" 2>/dev/null)" 2>/dev/null; then
-    echo "Es laeuft eine run_v5-Kette (PID $(cat "$LOCK5")). Abbruch." >&2
-    exit 1
-fi
 echo $$ > "$LOCK"
-# Beim regulaeren Ende NUR den Lock entfernen. Der fruehere `kill -- -$$` im EXIT-Trap
-# hat die eigene Prozessgruppe -- inklusive der aufrufenden Shell -- mitgerissen
-# (beobachtet 08.09.: bash-Segfault am Kettenende). Bei Signalen werden nur die
-# Kindprozesse beendet, und der Trap entschaerft sich selbst gegen Re-Entranz.
+# Der EXIT-Trap entfernt nur den Lock; bei INT/TERM werden zusaetzlich die Kindprozesse beendet.
 cleanup() { trap - EXIT; rm -f "$LOCK"; }
 on_signal() { trap - EXIT INT TERM; rm -f "$LOCK"; pkill -TERM -P $$ 2>/dev/null; exit 143; }
 trap cleanup EXIT

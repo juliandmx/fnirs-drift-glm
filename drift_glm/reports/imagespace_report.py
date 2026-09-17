@@ -1,7 +1,7 @@
 """Abbildungen zum Bildraum und zum Multisubject-Datensatz (Abb. 19-23).
 
-Getrennt von `sweep_report.py` und `realglm_report.py`, weil hier eine andere Datenquelle
-zugrunde liegt: `results/imageglm_summary.csv` und `results/msglm_summary.csv`.
+Datenquellen: `results/imageglm_summary.csv` und `results/msglm_summary.csv`; Abb. 19/20
+rechnen ausserdem je einen Pipeline-Build plus AR-IRLS-Fit nach.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.reports.imagespace_report            # alles, was da ist
@@ -41,9 +41,7 @@ def fig_hrf_per_channel(window_s: float = 368.0, family: str = "dct:0.02",
                         seed: int = 0):
     """Abb. 19 -- je Kanal die geschaetzte gegen die eingemischte HRF.
 
-    Betreuungsnotiz "pro channel die hrf betrachten". Gezeigt werden die staerksten Kanaele
-    und zum Kontrast drei ohne Aktivierung: dort MUSS die Schaetzung flach sein, und wenn
-    sie es nicht ist, ist das ein Falsch-Positiv-Beleg, den kein Mittelwert sichtbar macht.
+    Gezeigt werden die staerksten Kanaele und als Kontrolle drei ohne Aktivierung.
     """
     from drift_glm.analysis import imageglm as ig
     from drift_glm.core import pipeline as pl
@@ -52,7 +50,7 @@ def fig_hrf_per_channel(window_s: float = 368.0, family: str = "dct:0.02",
     from cedalion import units
     from drift_glm.analysis.sweep import drift_dm
 
-    P = pl.build(window_s=window_s, seed=seed, activation_space="image")
+    P = pl.build(window_s=window_s, seed=seed)
     ts = P.conc_syn
     dm_drift, _ = drift_dm(family, ts)
     dm_hrf = glm.design_matrix.hrf_regressors(
@@ -123,16 +121,15 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
                noise_model: str = "ar_irls", seed: int = 0):
     """Abb. 20 -- eingemischte und rekonstruierte Aktivierung auf dem Kortex.
 
-    Die Abbildung, die den Bildraum ueberhaupt rechtfertigt: sie zeigt den ORT. Links die
-    Wahrheit (Bloebe unter C3 und C4), rechts, was aus dem GLM-Ergebnis zurueckkommt --
-    je Projektion eine Spalte, je Hemisphaere eine Zeile.
+    Links die Wahrheit (Bloebe unter C3 und C4), rechts die Rekonstruktionen aus dem
+    GLM-Ergebnis; je Projektion eine Spalte, je Hemisphaere eine Zeile.
     """
     import cedalion.vis.anatomy as vis
     from drift_glm.analysis import imageglm as ig
     from drift_glm.core import imagespace as ims
     from drift_glm.core import pipeline as pl
 
-    P = pl.build(window_s=window_s, seed=seed, activation_space="image")
+    P = pl.build(window_s=window_s, seed=seed)
     head = ims.head()
     A = ims.adot(P.dataset).sel(channel=[str(c) for c in P.pre.od.channel.values])
     recon, c_meas = ims.recon_operator(A, P.pre.od)
@@ -148,11 +145,9 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
         od = ig.conc_map_to_od(pr[proj], P.geo3d, P.pre.od.wavelength, like=P.conc_syn)
         imgs[PROJ_LABEL[proj]] = recon.reconstruct(od, c_meas.sel(channel=od.channel))
 
-    # Unsichtbare Vertices auf NaN setzen statt mitzufaerben -- dort ist der Wert reine
-    # Regularisierung (siehe imagespace.sensitivity_mask); plot_brain_in_axes stellt NaN
-    # ueber `bad_color` grau dar. Bewusst als DataArray OHNE Einheit: die Funktion ruft
-    # `metric.pint.dequantify()` auf, und eine Mischung aus quantifizierten µM und einem
-    # nackten numpy-Array wuerde an der Einheitenpruefung von pint scheitern.
+    # Vertices ausserhalb der Sensitivitaetsmaske auf NaN (dort ist der Wert reine
+    # Regularisierung); plot_brain_in_axes zeichnet NaN grau. Ohne Einheit uebergeben,
+    # weil die Funktion selbst dequantifiziert.
     def masked(img):
         v = img.sel(chromo="HbO")
         if getattr(v, "pint", None) is not None and v.pint.units is not None:
@@ -176,8 +171,7 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
             axes[i_row, i_col].set_title(f"{name} · Blick von {cam}", fontsize=9)
     fig.suptitle("Abb. 20 – Aktivierung auf dem Kortex: eingemischt und aus dem "
                  f"GLM-Ergebnis rekonstruiert ({family}, {noise_model})\n"
-                 "graue Bereiche sieht die Montage nicht – dort ist jeder Wert reine "
-                 "Regularisierung", fontsize=10)
+                 "grau: ausserhalb der Sensitivität der Montage", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     out = FIGURES / "20_cortex_truth_vs_recon.png"
     fig.savefig(out, dpi=130)
@@ -190,9 +184,8 @@ def fig_cortex(window_s: float = 368.0, family: str = "dct:0.02",
 def fig_image_families(csv: str = "imageglm_summary.csv"):
     """Abb. 21 -- Driftfamilien im Bildraum: Form, Ort, Trefferanteil.
 
-    Die rauschfreie Obergrenze (`truth_ref`) wird als waagerechte Linie eingezeichnet, nicht
-    als weiterer Balken: sie ist keine Schaetzung, sondern das Beste, was die Rekonstruktion
-    ueberhaupt liefern kann. Ohne diese Linie ist kein Balken interpretierbar.
+    Die rauschfreie Obergrenze (`truth_ref`) ist als waagerechte Linie eingezeichnet,
+    nicht als Balken.
     """
     path = RESULTS / csv
     if not path.exists():
@@ -238,9 +231,8 @@ def fig_image_families(csv: str = "imageglm_summary.csv"):
         axes[-1][i_con].set_xticklabels(fams, rotation=30, ha="right", fontsize=8)
     axes[0][0].legend(ncol=max(len(projs), 1) + 1, fontsize=8, loc="upper left",
                       framealpha=0.9)
-    fig.suptitle("Abb. 21 – Driftfamilien im Bildraum (HbO). Der Lokalisationsfehler ist "
-                 "die Kennzahl,\ndie es im Kanalraum nicht gibt: sitzt die Aktivierung "
-                 "am richtigen Ort?", fontsize=11)
+    fig.suptitle("Abb. 21 – Driftfamilien im Bildraum (HbO): Korrelation, "
+                 "Lokalisationsfehler, Trefferanteil", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     out = FIGURES / "21_image_families.png"
     fig.savefig(out, dpi=130)
@@ -274,8 +266,8 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
     ax.set_xticks(x)
     ax.set_xticklabels([SYS_LABEL[s] for s in sysl], rotation=25, ha="right", fontsize=8)
     ax.set_ylabel("β kontralateral − ipsilateral [µM]")
-    ax.set_title("Kanalraum: ist die kontralaterale Seite stärker?\n"
-                 "positiv = Erwartung erfüllt")
+    ax.set_title("Kanalraum: Lateralisierung\n"
+                 "(positiv = kontralateral stärker)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(fontsize=8)
 
@@ -289,8 +281,8 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
         ax.set_xticklabels([SYS_LABEL[s] for s in sysl], rotation=25, ha="right",
                            fontsize=8)
         ax.set_ylabel("Abstand des Maximums [mm]")
-        ax.set_title("Bildraum: liegt das Maximum näher an der\nerwarteten Landmarke "
-                     "als an der Gegenseite?")
+        ax.set_title("Bildraum: Ort des Maximums\n(Abstand zur erwarteten Landmarke "
+                     "und zur Gegenseite)")
         ax.grid(axis="y", alpha=0.3)
         ax.legend(fontsize=8)
     fig.suptitle("Abb. 22 – Kontralaterale Kontrolle auf dem Multisubject-Datensatz "
@@ -335,10 +327,8 @@ def fig_multisubject(csv: str = "msglm_summary.csv"):
 def _try(label, fn, *a, **kw):
     """Eine Abbildung erzeugen, Fehler melden statt den Lauf abzubrechen.
 
-    Das Skript laeuft am Ende eines mehrstuendigen Nachtlaufs unbeaufsichtigt. Wuerde eine
-    fehlgeschlagene Abbildung die uebrigen mitnehmen, waere am Morgen nichts da -- und die
-    billigen Tabellen-Abbildungen haengen an den teuren (Abb. 19/20 brauchen je einen
-    vollen Build plus AR-IRLS-Fit).
+    Das Skript laeuft unbeaufsichtigt am Ende der Kette; eine fehlgeschlagene Abbildung
+    soll die uebrigen nicht mitnehmen.
     """
     import traceback
     try:

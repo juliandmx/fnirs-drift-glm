@@ -1,35 +1,16 @@
-"""Systematischer Vergleichs-Sweep der Driftregressoren -- Kernstueck der BA.
+"""Vergleichs-Sweep der Driftregressoren auf den simulierten nn22-Daten.
 
-Variiert (unabhaengige Variablen aus dem Expose):
-  - Driftfamilie: poly n=1..5, DCT (mehrere Cutoffs), Legendre, "none" (nur Offset),
-    Butterworth-Hochpass (Vorverarbeitungs-Alternative STATT Driftregressoren)
-  - Analysefenster (window_s)
-  - Regressor-Konstellation: baseline / +motion / +global / +motion+global
-  - Seeds (Monte-Carlo ueber die Stimulus-Platzierung)
-
-Metriken (getrennt HbO/HbR), aggregiert UEBER SEEDS (echte MC-Bias/Varianz),
-danach ueber Kanaele zusammengefasst:
-  - Bias, Varianz, RMSE von beta_hat vs. Ground Truth
-  - HbO/HbR-Plausibilitaet (Korrelation der beta ueber Kanaele; rueckgew. Ratio)
-  - Modellfit-Guete je Fit (fitstats): R^2 / adj. R^2 (variance explained) und
-    Residual-RMS, plus `resid_err_corr` -- die Korrelation zwischen Residual-RMS und
-    |beta_hat - GT| ueber (seed, Kanal). Sie prueft die Erwartung aus den
-    Gespraechsnotizen 2026-09-08: kleine Residuen <-> kleine GT-Abweichung.
-
-Schaetzer: AR-IRLS (Default). Ergebnisse -> results/.
-
-BETREUUNGSHINWEISE, die hier umgesetzt sind:
-  * Butterworth-Hochpass ist die Alternative STATT Driftregressoren -> dort keine
-    Drift-Regressoren (nur Offset). In allen anderen Armen wird NICHT gefiltert;
-    der Drift wird ausschliesslich ueber Regressoren modelliert.
-  * Short-Channel-Regression ist auf nn22 NICHT moeglich (keine Short-Separation-
-    Kanaele, min. Distanz 15.6 mm) -> ersetzt durch global_mean_regressor als
-    oberflaechliches/systemisches Surrogat. Echte SC-Regression erst mit realen
-    DOT-Daten, deren Montage Short-Channels enthaelt.
+Achsen: Driftfamilie (poly, DCT, Legendre, B-Spline, none, Butterworth-Hochpass als
+Vorverarbeitungs-Alternative ohne Driftregressoren), Analysefenster, Konstellation
+(baseline/motion/global/short_avg/short_maxcorr), Motion Correction, Rauschmodell, Seed.
+In den Filter-Armen gibt es nur den Offset, in allen anderen Armen wird nicht gefiltert.
+Metriken je HbO/HbR: Bias, Varianz, RMSE von beta_hat gegen die Ground Truth (ueber
+Seeds), HbO/HbR-Plausibilitaet, Modellfit (R^2, adj. R^2, Residual-RMS, resid_err_corr).
+Schreibt results/sweep_summary.csv, sweep_per_channel.nc und sweep_meta.json.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.sweep pilot   # kleiner Test + Timing
-    conda run -n cedalion python -m drift_glm.analysis.sweep full     # voller Sweep
+    conda run -n cedalion python -m drift_glm.analysis.sweep v4       # Hauptstudie
 """
 from __future__ import annotations
 
@@ -58,7 +39,7 @@ RESULTS = paths.RESULTS
 HRF_REG = "HRF Stim"
 
 
-PILOT = dict(   # klein, aber testet JEDEN Code-Pfad (alle Familien-Typen + Konstellationen)
+PILOT = dict(   # klein; deckt alle Familien-Typen und Konstellationen ab
     families=["poly:3", "dct:0.01", "legendre:3", "bspline:5", "none",
               "butter:0.01", "lowpass:0.5", "bandpass:0.01-0.5"],
     windows=[90.0],
@@ -70,86 +51,23 @@ PILOT = dict(   # klein, aber testet JEDEN Code-Pfad (alle Familien-Typen + Kons
     ar_order=30,
 )
 
-FULL = dict(
-    families=["poly:1", "poly:2", "poly:3", "poly:4", "poly:5",
-              "dct:0.005", "dct:0.01", "dct:0.02",
-              "legendre:1", "legendre:3", "legendre:5",
-              "none", "butter:0.01"],
-    windows=[90.0, 180.0, 368.0],
-    constellations=["baseline", "motion", "global", "motion+global"],
-    seeds=list(range(8)),
-    motion_methods=["wavelet"],
-    n_channels=20,
-    noise_models=["ar_irls"],
-    ar_order=30,
-)
+BASE_FAMILIES = ["poly:1", "poly:2", "poly:3", "poly:4", "poly:5",
+                 "dct:0.005", "dct:0.01", "dct:0.02",
+                 "legendre:1", "legendre:3", "legendre:5",
+                 "none", "butter:0.01"]
 
-# Schnelle Version (~3 h): volles Familien-/Konstellations-Raster, aber nur 2 Fenster
-# und 6 Seeds auf 20-Kanal-Subset.
-QUICK = dict(
-    families=FULL["families"],
-    windows=[90.0, 180.0],
-    constellations=FULL["constellations"],
-    seeds=list(range(6)),
-    motion_methods=["wavelet"],
-    n_channels=20,
-    noise_models=["ar_irls"],
-    ar_order=30,
-)
-
-# v3 (~4-5 h): volles Raster inkl. B-Splines, 3 Fenster {90,180,368 s}, 4 Seeds.
-V3 = dict(
-    families=FULL["families"] + ["bspline:5", "bspline:8"],
-    windows=[90.0, 180.0, 368.0],
-    constellations=["baseline", "motion", "global", "motion+global"],
-    seeds=list(range(4)),
-    motion_methods=["wavelet"],
-    n_channels=20,
-    noise_models=["ar_irls"],
-    ar_order=30,
-)
-
-# v4 (Nachtlauf, ~8-9 h): wie v3, aber mit ECHTER Short-Channel-Regression statt nur dem
-# Global-Mean-Surrogat, und mit der Motion Correction als eigener Achse.
-#
-# Warum die Motion-Achse: TDDR daempft das Driftband auf 55.6 % UND die eingemischte HRF
-# auf 70 %, Wavelet laesst beides unangetastet. Weil beide Verfahren aus der
-# Betreuungsvorgabe stammen, wird nicht stillschweigend eines gewaehlt, sondern der
-# Unterschied beziffert. Gekreuzt mit der Konstellation "motion" (Motion-REGRESSOREN in
-# der Designmatrix) beantwortet das zugleich die Frage, ob sich beides doppelt.
-#
-# Konstellationen: baseline / motion / global (Surrogat, fuer Anschluss an v3) /
-# short_avg + short_maxcorr (echte Short-Channel-Regression, Betreuungsvorgabe).
+# Hauptstudie (~8-9 h). Motion Correction ist eine eigene Achse, weil TDDR das Driftband
+# und die eingemischte HRF daempft (auf ~70 %), Wavelet nicht; gekreuzt mit der
+# Konstellation "motion" zeigt sich, ob sich Korrektur und Motion-Regressoren doppeln.
 # 15 Familien x 3 Fenster x 5 Konstellationen x 2 Motion x 4 Seeds = 1800 Fits.
 V4 = dict(
-    families=FULL["families"] + ["bspline:5", "bspline:8"],
+    families=BASE_FAMILIES + ["bspline:5", "bspline:8"],
     windows=[90.0, 180.0, 368.0],
     constellations=["baseline", "motion", "global", "short_avg", "short_maxcorr"],
     seeds=list(range(4)),
     motion_methods=["wavelet", "tddr+wavelet"],
     n_channels=20,
     noise_models=["ar_irls"],
-    ar_order=30,
-)
-
-# v5 (Nachtlauf): v4 plus die beiden restlichen Betreuungspunkte --
-#   * Filter-Arm vollstaendig: Hochpass 0.01 (butter), Tiefpass 0.5, und beides als
-#     Bandpass. Alle drei OHNE Driftregressoren (Alternative, nicht Ergaenzung), im
-#     Konzentrationsraum. Der Bandpass entspricht genau der Vorverarbeitung, die die
-#     Autoren des realen Datensatzes angewandt haben -- damit direkt anschlussfaehig.
-#   * OLS als zweites Rauschmodell neben AR-IRLS. Kostet wenig, weil OLS um ein
-#     Vielfaches schneller ist als AR-IRLS.
-# 17 Familien x 3 Fenster x 5 Konstellationen x 2 Motion x 2 Rauschmodelle x 4 Seeds
-# = 4080 Fits; davon die Haelfte OLS (billig).
-V5 = dict(
-    families=FULL["families"] + ["bspline:5", "bspline:8",
-                                 "lowpass:0.5", "bandpass:0.01-0.5"],
-    windows=[90.0, 180.0, 368.0],
-    constellations=["baseline", "motion", "global", "short_avg", "short_maxcorr"],
-    seeds=list(range(4)),
-    motion_methods=["wavelet", "tddr+wavelet"],
-    n_channels=20,
-    noise_models=["ar_irls", "ols"],
     ar_order=30,
 )
 
@@ -157,13 +75,10 @@ V5 = dict(
 def drift_dm(family: str, conc):
     """(DesignMatrix inkl. Offset, filter|None) fuer eine Driftfamilie.
 
-    `filter` ist None oder ein Paar `(fmin, fmax)` in Hz fuer `freq_filter`. Cedalions
-    Konvention dort: `fmax=0` -> Hochpass bei fmin, `fmin=0` -> Tiefpass bei fmax,
-    beides gesetzt -> Bandpass.
-
-    Die Filter-Familien sind Vorverarbeitungs-ALTERNATIVEN und bekommen deshalb KEINE
-    Driftregressoren, nur den Offset (Betreuungsvorgabe: "entweder Driftregressor oder
-    Highpassfilter"). Angewandt wird im Konzentrationsraum, ebenfalls laut Vorgabe.
+    `filter` ist None oder ein Paar `(fmin, fmax)` in Hz fuer `freq_filter` (Cedalion:
+    `fmax=0` -> Hochpass, `fmin=0` -> Tiefpass, beide gesetzt -> Bandpass). Die
+    Filter-Familien sind Vorverarbeitungs-Alternativen und bekommen nur den Offset;
+    gefiltert wird im Konzentrationsraum.
     """
     fam, _, param = family.partition(":")
     dmx = glm.design_matrix
@@ -192,10 +107,8 @@ def drift_dm(family: str, conc):
 def _bspline_dm(conc, n_splines, degree=3):
     """B-Spline-Drift-Regressoren als eigene Spalten (nicht nativ in Cedalion).
 
-    Kubische B-Spline-Basis ueber das Analysefenster. Eine geklemmte B-Spline-Basis
-    bildet eine Zerlegung der Eins und enthaelt damit den konstanten Offset. Namen
-    'Drift BS i'. (Optionale Expose-Erweiterung, ueber die xarray-Designmatrix
-    ohne Eingriff in Cedalion-Kernroutinen ergaenzt.)
+    Geklemmte kubische B-Spline-Basis ueber das Analysefenster; sie bildet eine Zerlegung
+    der Eins und enthaelt damit den Offset. Regressornamen 'Drift BS i'.
     """
     from scipy.interpolate import BSpline
     nt = conc.sizes["time"]
@@ -245,7 +158,7 @@ def constellation_dm(name, parts: dict):
     """Zusatz-DesignMatrix fuer eine Konstellation (None fuer baseline).
 
     `name` ist ein mit "+" verbundener Ausdruck aus den Schluesseln von `parts`, z.B.
-    "motion", "global", "short_avg", "motion+global". "baseline" bedeutet: nichts dazu.
+    "motion", "global", "short_avg", "short_maxcorr". "baseline" bedeutet: nichts dazu.
     Fehlende Bausteine (z.B. keine Short-Channels im Datensatz) werden uebersprungen.
     """
     dm = None
@@ -260,7 +173,7 @@ def constellation_dm(name, parts: dict):
 
 
 def _write_progress(done, total, t0, timings, last):
-    """Live-Fortschrittsdatei (nach jedem Fit aktualisiert) zum Mitverfolgen."""
+    """Fortschrittsdatei in results/logs, nach jedem Fit aktualisiert."""
     el = time.time() - t0
     med = float(np.median(timings)) if timings else 0.0
     eta = med * (total - done)
@@ -270,7 +183,6 @@ def _write_progress(done, total, t0, timings, last):
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
         f"median/Fit  : {med:4.1f} s\n"
         f"letzte Zelle: {last}\n"
-        f"(Datei wird nach JEDEM Fit aktualisiert)\n"
     )
 
 
@@ -299,17 +211,13 @@ def run(cfg: dict):
         for seed in cfg["seeds"]:
             P = pl.build(window_s=win, stage=stage, motion_method=mc, seed=seed)
             beta_true = P.beta_true
-            # Analysiert wird NUR ueber die langen Kanaele (Betreuungsvorgabe): die
-            # kurzen dienen als Regressor, nicht als Messgroesse. Sie haben ohnehin
-            # keine injizierte Aktivierung (pipeline.inject_long_only).
+            # Ausgewertet werden nur die langen Kanaele; die kurzen dienen als Regressor.
             ts_long, ts_short = sc.split(P.conc_syn, P.geo3d)
             bt_long = P.beta_true_map.sel(channel=ts_long.channel)
             if ref_channels is None:
-                # Fit-Subset = die N staerkst-aktivierten LANGEN Kanaele (Blob-Kern).
-                # EINMAL bestimmt und danach per Label festgehalten: die Kanalmasken
-                # werden nach der Motion Correction berechnet und koennen daher je
-                # Motion-Stufe leicht abweichen. Ohne feste Referenz wuerden die
-                # Achsen unterschiedliche Kanalmengen vergleichen.
+                # Fit-Subset: die N staerkst-aktivierten langen Kanaele (Blob-Kern), einmal
+                # bestimmt und per Label festgehalten, weil die Kanalmasken nach der Motion
+                # Correction berechnet werden und je Stufe leicht abweichen koennen.
                 w_hbo = np.abs(bt_long.sel(chromo="HbO").values)
                 order = np.argsort(-w_hbo)[:cfg["n_channels"]]
                 ref_channels = [str(c) for c in bt_long.channel.values[np.sort(order)]]
@@ -334,8 +242,7 @@ def run(cfg: dict):
                 dm_drift, filt = drift_dm(family, P.conc)
                 ts_fam = ts_base
                 if filt is not None:
-                    # Filter-Alternative: im KONZENTRATIONSRAUM, nach der Augmentation
-                    # (Betreuungsvorgabe). ts_base ist bereits Konzentration.
+                    # Filter-Alternative im Konzentrationsraum, nach der Augmentation.
                     ts_fam = ts_base.cd.freq_filter(
                         filt[0] * units.Hz, filt[1] * units.Hz, 4)
                 for con in cfg["constellations"]:
@@ -348,9 +255,7 @@ def run(cfg: dict):
                         betas = glm.fit(ts_fam, dm, noise_model=nm,
                                         ar_order=cfg["ar_order"],
                                         max_jobs=-1).sm.params
-                        # Modellfit-Guete am selben Fit: R^2 (variance explained)
-                        # und Residual-RMS je Kanal -- die Groessen aus den
-                        # Gespraechsnotizen 2026-09-08. Kostet nur ein predict.
+                        # Modellfit am selben Fit: R^2 und Residual-RMS je Kanal (ein predict).
                         fitq = fs.fit_metrics(ts_fam, betas, dm)
                         dt = time.time() - tc
                         raw[(family, win, con, mc, nm)][seed] = dict(
@@ -376,9 +281,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     sample = next(iter(raw.values()))[seeds[0]]["bhat"]
     chrom = [str(c) for c in sample.chromo.values]
 
-    # Kanal-Schnittmenge ueber ALLE Zellen: die Masken werden nach der Motion Correction
-    # bestimmt und koennen je Stufe minimal abweichen. Verglichen wird nur, was ueberall
-    # vorhanden ist -- sonst mischt sich ein Kanalauswahl-Effekt in den Achsenvergleich.
+    # Kanal-Schnittmenge ueber alle Zellen: die Masken haengen von der Motion Correction
+    # ab, verglichen wird nur, was ueberall vorhanden ist.
     common = None
     for by_seed in raw.values():
         for cell in by_seed.values():
@@ -443,9 +347,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
                         b = bias.sel(**sel, chromo=ch)
                         v = var.sel(**sel, chromo=ch)
                         r = rmse.sel(**sel, chromo=ch)
-                        # Modellfit-Guete der Zelle + die pruefbare Erwartung aus den
-                        # Gespraechsnotizen: korrelieren kleine Residuen mit kleiner
-                        # GT-Abweichung? Gepoolt ueber (seed, Kanal) innerhalb der Zelle.
+                        # resid_err_corr: Residual-RMS gegen |beta_hat - GT|, gepoolt
+                        # ueber (seed, Kanal) innerhalb der Zelle.
                         rr = residx.sel(**sel, chromo=ch)
                         ae = np.abs(bhat.sel(**sel, chromo=ch) - bt.sel(chromo=ch))
                         xv, yv = rr.values.ravel(), ae.values.ravel()
@@ -487,8 +390,8 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
     best = df.loc[df.groupby(["chromo", "window_s"])["rmse_med"].idxmin()]
     print(best[["chromo", "window_s", "family", "constellation", "motion",
                 "rmse_med", "absbias_med", "var_med"]].to_string(index=False))
-    # Bias getrennt nach Chromophor: TDDR daempft die HRF und kann so eine
-    # Ueberschaetzung zufaellig kompensieren -- am RMSE allein nicht erkennbar.
+    # Bias getrennt nach Chromophor: TDDR daempft die HRF, was am RMSE allein nicht
+    # sichtbar ist.
     print("\nMotion-Achse (Mittel ueber Familien/Fenster/Konstellationen):")
     print(df.groupby(["chromo", "motion"])[["bias_med", "rmse_med"]].mean()
             .to_string(float_format=lambda x: f"{x:+.4f}"))
@@ -496,5 +399,4 @@ def _aggregate_and_export(cfg, raw, beta_true, beta_true_map, timings, wall):
 
 if __name__ == "__main__":
     preset = sys.argv[1] if len(sys.argv) > 1 else "pilot"
-    run({"pilot": PILOT, "quick": QUICK, "full": FULL,
-         "v3": V3, "v4": V4, "v5": V5}[preset])
+    run({"pilot": PILOT, "v4": V4}[preset])

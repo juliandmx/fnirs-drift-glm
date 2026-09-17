@@ -1,17 +1,16 @@
-"""Auswertung/Abbildungen des Driftregressor-Sweeps (liest results/).
+"""Auswertung/Abbildungen des Driftregressor-Sweeps (liest results/sweep_summary.csv).
 
-Erzeugt PNGs in figures/:
-   6) RMSE je Driftfamilie x Fenster (Konstellation baseline)        -> Kernresultat
+Erzeugt PNGs in figures/ und results/tables.md:
+   6) RMSE je Driftfamilie x Fenster (Konstellation baseline)
    7) Bias-Varianz-Zerlegung je Familie (baseline)
    8) Konstellations-Effekt (RMSE je Familie x Konstellation)
-   9) HbO/HbR-Plausibilitaet (rueckgew. Ratio je Familie)
-  10) Motion-Correction-Achse: Bias UND RMSE (der RMSE allein taeuscht)
-  25) Variance explained (adj. R^2) je Familie x Fenster             -> Modellfit-Guete
-  26) Residuen vs. GT-Abweichung: prueft die Erwartung aus den Gespraechsnotizen
-      2026-09-08 (kleine Residuen <-> kleine Abweichung von der Ground Truth)
+   9) HbO/HbR-Plausibilitaet (rueckgewonnenes Ratio je Familie)
+  10) Motion-Correction-Achse: Bias und RMSE
+  25) Variance explained (adj. R^2) je Familie x Fenster
+  26) Residuen vs. GT-Abweichung (zwischen und innerhalb der Zellen)
 
-Abb. 25/26 brauchen die Metrik-Spalten aus dem Sweep-Re-Run (r2_adj_med, resid_rms_med,
-resid_err_corr); auf einer aelteren sweep_summary.csv werden sie uebersprungen.
+Abb. 25/26 brauchen die Spalten r2_adj_med, resid_rms_med und resid_err_corr; auf einer
+sweep_summary.csv ohne sie werden sie uebersprungen.
 
 Aufruf: conda run -n cedalion python -m drift_glm.reports.sweep_report
 """
@@ -53,10 +52,10 @@ def _md_table(df, cols):
 
 
 def _write_tables(df):
-    """Thesis-taugliche Markdown-Ergebnistabellen -> results/tables.md."""
+    """Markdown-Ergebnistabellen -> results/tables.md."""
     d = df.copy()
     d["window_s"] = d["window_s"].astype(int)
-    lines = ["# Ergebnistabellen (auto-generiert von sweep_report.py)", ""]
+    lines = ["# Ergebnistabellen (erzeugt von sweep_report.py)", ""]
 
     idx = d.groupby(["chromo", "window_s", "constellation"])["rmse_med"].idxmin()
     best = d.loc[idx, ["chromo", "window_s", "constellation", "family",
@@ -108,10 +107,9 @@ def _write_tables(df):
 def main():
     paths.ensure()
     df_all = pd.read_csv(RES / "sweep_summary.csv")
-    # Seit v4 ist die Motion Correction eine eigene Achse. Die Familien-/Konstellations-
-    # Abbildungen zeigen EINE Stufe (die erste, per Konvention die driftneutrale
-    # "wavelet"), damit sie nicht ueber zwei Vorverarbeitungen hinweg mitteln. Die
-    # Motion-Achse selbst bekommt eine eigene Abbildung.
+    # Die Familien-/Konstellations-Abbildungen zeigen nur die erste Motion-Stufe (per
+    # Konvention "wavelet"), damit sie nicht ueber zwei Vorverarbeitungen mitteln;
+    # die Motion-Achse selbst zeigt Abb. 10.
     if "motion" not in df_all.columns:
         df_all = df_all.assign(motion="n/a")
     motions = list(dict.fromkeys(df_all.motion))
@@ -125,11 +123,8 @@ def main():
     x = np.arange(len(fams))
 
     # ---- Abb. 6: RMSE je Familie x Fenster, Konstellation baseline ----
-    # Gemeinsame y-Skala je Chromophor-Zeile (Betreuungsvorgabe "ueber alle bilder
-    # gleiche skala"): nur so ist der Effekt der FENSTERLAENGE ablesbar -- bei
-    # teilbildweiser Autoskalierung sehen 90 s und 368 s gleich schlecht aus, obwohl
-    # sich der Fehler halbiert. HbO und HbR bekommen getrennte Skalen, weil sie sich um
-    # etwa das Fuenffache unterscheiden und HbR sonst zu einer flachen Linie wuerde.
+    # Gemeinsame y-Skala je Chromophor-Zeile, damit der Fenstereffekt ablesbar bleibt;
+    # HbO und HbR getrennt, weil sie sich um etwa das Fuenffache unterscheiden.
     fig, axes = plt.subplots(2, len(wins), figsize=(6 * len(wins), 8),
                              sharex=True, sharey="row")
     for i, ch in enumerate(["HbO", "HbR"]):
@@ -167,11 +162,8 @@ def main():
     fig.tight_layout(); fig.savefig(OUT / "07_sweep_bias_var.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 8: Konstellations-Effekt (RMSE je Familie x Konstellation) ----
-    # Konstellationen aus den Daten nehmen, nicht hartkodiert: das Raster aendert sich
-    # zwischen den Sweep-Versionen (v4 ersetzt "motion+global" durch die echten
-    # Short-Channel-Varianten).
-    order = ["baseline", "motion", "global", "motion+global",
-             "short_avg", "short_maxcorr", "short_closest"]
+    # Konstellationen aus den Daten nehmen, feste Reihenfolge nur fuer die Darstellung.
+    order = ["baseline", "motion", "global", "short_avg", "short_maxcorr", "short_closest"]
     present = list(df.constellation.unique())
     cons = [c for c in order if c in present] + [c for c in present if c not in order]
     fig, axes = plt.subplots(2, 1, figsize=(13, 9), sharex=True)
@@ -187,9 +179,8 @@ def main():
         ax.set_ylabel("RMSE_med [µM]"); ax.grid(axis="y", alpha=0.3)
         ax.legend(ncol=min(len(cons), 5), fontsize=8)
     axes[-1].set_xticks(x); axes[-1].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
-    fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: ein systemischer "
-                 "Regressor (Short-Channel oder Global) senkt den HbO-Fehler deutlich;\n"
-                 "Motion-Regressoren bleiben ~ohne Wirkung")
+    fig.suptitle("Konstellations-Effekt auf die β-Rückgewinnung: RMSE je Driftfamilie "
+                 "und Regressor-Konstellation")
     fig.tight_layout(); fig.savefig(OUT / "08_sweep_constellation_effect.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 9: HbO/HbR-Plausibilitaet (rueckgew. Ratio) ----
@@ -208,11 +199,9 @@ def main():
     fig.suptitle("HbO/HbR-Plausibilität: rückgewonnenes Amplituden-Ratio (Ziel −0.4)")
     fig.tight_layout(); fig.savefig(OUT / "09_sweep_plausibility.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 10: Motion-Achse -- Bias UND RMSE, getrennt nach Chromophor ----
-    # Eigene Abbildung, weil hier der RMSE allein in die Irre führt: TDDR dämpft die
-    # eingemischte HRF auf ~70 % und kompensiert damit zufällig die systemisch bedingte
-    # HbO-Überschätzung. Der RMSE sinkt, obwohl nicht besser geschätzt wird. Sichtbar
-    # wird das erst am Bias — und daran, dass HbR (ohne Überschätzung) sich verschlechtert.
+    # ---- Abb. 10: Motion-Achse -- Bias und RMSE, getrennt nach Chromophor ----
+    # Bias und RMSE zusammen: TDDR daempft die eingemischte HRF (~70 %) und kompensiert so
+    # die systemische HbO-Ueberschaetzung -- der RMSE sinkt, ohne dass besser geschaetzt wird.
     if len(motions) > 1:
         fig, axes = plt.subplots(1, 2, figsize=(13, 5))
         width = 0.8 / len(motions)
@@ -236,7 +225,7 @@ def main():
             ax.set_xticklabels(g.index, rotation=60, ha="right", fontsize=8)
             ax.grid(axis="y", alpha=0.3)
             ax.legend(fontsize=8)
-        fig.suptitle("Motion Correction als Achse: Bias verrät, was der RMSE verdeckt")
+        fig.suptitle("Motion Correction als Achse: Bias und RMSE je Driftfamilie")
         fig.tight_layout(); fig.savefig(OUT / "10_sweep_motion_axis.png", dpi=130)
         plt.close(fig)
 
@@ -245,11 +234,8 @@ def main():
               .to_string(float_format=lambda v: f"{v:+.4f}"))
 
     # ---- Abb. 25: Variance explained (adj. R^2) je Familie x Fenster ----
-    # Modellfit-Guete OHNE Ground Truth -- die Metrik, die es auch auf realen Daten
-    # gibt. Adjustiert, weil die Familien verschieden viele Spalten haben (dct:0.02
-    # hat bei 368 s ein Vielfaches von poly:1 -- unadjustiert gewinnt sonst mechanisch
-    # die groesste Designmatrix). butter ist markiert: sein R^2 bezieht sich auf die
-    # GEFILTERTE Zeitreihe, ein Teil der Varianz ist dort schon entfernt.
+    # Adjustiertes R^2, weil die Familien verschieden viele Spalten haben. Die Filter-Arme
+    # sind schraffiert: ihr R^2 bezieht sich auf die gefilterte Zeitreihe.
     if "r2_adj_med" in df.columns:
         fig, axes = plt.subplots(2, len(wins), figsize=(6 * len(wins), 8),
                                  sharex=True, sharey="row")
@@ -267,9 +253,8 @@ def main():
                         bar.set_hatch(h)
                 ax.set_title(f"{ch} | Fenster {wv:g}s | baseline")
                 ax.set_ylabel("median adj. R²")
-                # Negative Werte MITZEIGEN: unter AR-IRLS ist das bei kurzen Fenstern
-                # der Normalfall (Rohdatenraum vs. Prewhitening, s. Zusatz-Analyse 3).
-                # Boden bei -0.5; extremere Werte (poly bei 90 s) laufen aus dem Bild.
+                # Negative Werte mitzeigen (unter AR-IRLS bei kurzen Fenstern normal, R^2
+                # im Rohdatenraum nach Prewhitening); Boden bei -0.5, Extremwerte laufen aus.
                 ax.set_ylim(-0.5, 1)
                 ax.axhline(0, color="k", lw=0.8)
                 ax.grid(axis="y", alpha=0.3)
@@ -286,9 +271,8 @@ def main():
               "Sweep neu laufen lassen)")
 
     # ---- Abb. 26: Residuen vs. Abweichung von der Ground Truth ----
-    # Die pruefbare Erwartung: je kleiner die Residuen, desto kleiner die Abweichung.
-    # Links ZWISCHEN den Modellen (jeder Punkt eine Zelle: Familie x Fenster),
-    # rechts INNERHALB der Zellen (Korrelation ueber Seeds x Kanaele, aus dem Sweep).
+    # Links zwischen den Modellen (ein Punkt je Zelle Familie x Fenster), rechts innerhalb
+    # der Zellen (Korrelation ueber Seeds x Kanaele aus dem Sweep).
     if "resid_rms_med" in df.columns:
         from scipy import stats as sstats
         markers = {90.0: "o", 180.0: "s", 368.0: "^"}
@@ -326,8 +310,8 @@ def main():
         handles = [plt.Line2D([], [], color="0.4", marker=m, ls="", label=f"{int(w)} s")
                    for w, m in markers.items() if w in wins]
         axes[0, 0].legend(handles=handles, title="Fenster", fontsize=8)
-        fig.suptitle("Erwartung geprüft: kleinere Residuen ↔ kleinere Abweichung von "
-                     "der Ground Truth?\n(Farben = Driftfamilien wie in Abb. 6–10)")
+        fig.suptitle("Residual-RMS gegen Abweichung von der Ground Truth\n"
+                     "(Farben = Driftfamilien wie in Abb. 6–10)")
         fig.tight_layout(rect=(0, 0, 1, 0.94))
         fig.savefig(OUT / "26_sweep_resid_vs_error.png", dpi=130)
         plt.close(fig)

@@ -1,22 +1,20 @@
-"""Abbildungen zu den realen Daten (Stufe 2) -- Gespraechsgrundlage.
+"""Abbildungen zu den realen Daten (Khan-Datensatz, Abb. 15-18).
 
-Erzeugt aus `results/realglm_summary.csv` die Uebersichts-Abbildungen und rechnet fuer
-EINE repraesentative Konfiguration die Gruppen-beta-Karte nach, damit die Aktivierung auf
-dem Kopf sichtbar wird (das ist die Abbildung, die man im Gespraech zeigt).
+Liest `results/realglm_summary.csv` und rechnet fuer eine Konfiguration die
+Gruppen-beta-Karte nach (Abb. 17, ~13 min; Zwischenergebnis in results/realglm_group_map.nc).
 
-  Abb. 15  Reproduzierbarkeit je Driftfamilie (das wahrheitsfreie Hauptkriterium)
+  Abb. 15  Reproduzierbarkeit je Driftfamilie (Hauptkriterium ohne Ground Truth)
   Abb. 16  Signifikante Kanaele nach FDR je Familie x Konstellation
-  Abb. 17  Gruppen-beta-Karte auf dem Kopf (HbO/HbR), beste Familie
+  Abb. 17  Gruppen-beta-Karte im Montage-Layout (HbO/HbR)
   Abb. 18  HbO/HbR-Plausibilitaet
 
 Aufruf:
-    conda run -n cedalion python -m drift_glm.reports.realglm_report          # alles (Abb. 17 ~13 min)
+    conda run -n cedalion python -m drift_glm.reports.realglm_report          # alles
     conda run -n cedalion python -m drift_glm.reports.realglm_report quick    # ohne Abb. 17
 """
 
 from __future__ import annotations
 
-import importlib
 import sys
 import time
 from pathlib import Path
@@ -60,8 +58,8 @@ def load():
     return df
 
 
-def fig30_reliability(df):
-    """Reproduzierbarkeit je Familie -- das Hauptkriterium ohne Ground Truth."""
+def fig15_reliability(df):
+    """Abb. 15 -- Reproduzierbarkeit je Familie (Hauptkriterium ohne Ground Truth)."""
     d = df[(df.chromo == "HbO") & (df.constellation == "baseline")]
     fams = [f for f in ORDER if f in set(d.family)]
     x = np.arange(len(fams))
@@ -73,7 +71,7 @@ def fig30_reliability(df):
             v.append(float(r.reliability_r.iloc[0]) if len(r) else np.nan)
             deg.append(bool(r.degeneriert.iloc[0]) if len(r) else False)
         v = np.array(v, dtype=float)
-        v_plot = np.where(deg, np.nan, v)          # kaputte Zellen nicht zeichnen
+        v_plot = np.where(deg, np.nan, v)          # degenerierte Zellen nicht zeichnen
         ax.bar(x + (k - 0.5) * 0.4, v_plot, width=0.38,
                color=[_color(f) for f in fams], alpha=1.0 if k == 0 else 0.55,
                hatch=hatch, edgecolor="white",
@@ -91,8 +89,8 @@ def fig30_reliability(df):
     plt.close(fig)
 
 
-def fig31_significant(df):
-    """Wie viele Kanaele ueberstehen die FDR-Korrektur?"""
+def fig16_significant(df):
+    """Abb. 16 -- signifikante Kanaele nach FDR je Familie und Konstellation."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=True)
     for ax, nm in zip(axes, ["ar_irls", "ols"]):
         d = df[(df.chromo == "HbO") & (df.noise_model == nm) & (~df.degeneriert)]
@@ -107,14 +105,14 @@ def fig31_significant(df):
         ax.set_title(f"{nm}"); ax.grid(axis="y", alpha=0.3)
     axes[0].set_ylabel("signifikante Kanäle von 48 (FDR, q = 0,05)")
     axes[0].legend()
-    fig.suptitle("Aktivierungs-Detektion auf den realen Daten: der systemische Regressor "
-                 "entfernt einen großen Teil der Signifikanz")
+    fig.suptitle("Aktivierungs-Detektion auf den realen Daten: signifikante Kanäle "
+                 "je Driftfamilie und Konstellation")
     fig.tight_layout(); fig.savefig(OUT / "16_real_significant.png", dpi=130)
     plt.close(fig)
 
 
-def fig33_plausibility(df):
-    """HbR/HbO-Verhaeltnis und Antikorrelation."""
+def fig18_plausibility(df):
+    """Abb. 18 -- HbR/HbO-Verhaeltnis und HbO/HbR-Korrelation je Driftfamilie."""
     d = df[(df.chromo == "HbO") & (~df.degeneriert)]
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
     for ax, (col, ttl, ref) in zip(axes, [
@@ -139,19 +137,11 @@ def fig33_plausibility(df):
 
 
 def _montage_xy(conc, geo3d):
-    """2D-Layout der Kanaele aus den Optodenpositionen.
+    """2D-Layout der Kanaele aus den Optodenpositionen (Hauptkomponenten-Projektion).
 
-    Cedalions `scalp_plot` braucht die Landmarken Nz/LPA/RPA, um auf den Kopf zu
-    projizieren -- dieser Datensatz liefert nur die 32 Optodenpositionen, keine
-    Landmarken. Deshalb hier eine Hauptkomponenten-Projektion: die Kanal-Mittelpunkte
-    liegen naeherungsweise auf einer Kappenflaeche, deren zwei groesste
-    Hauptkomponenten das Layout aufspannen.
-
-    WICHTIG UND EHRLICH ZU BENENNEN: Diese Projektion ist **nicht anatomisch
-    orientiert**. Ohne Landmarken laesst sich links/rechts und vorn/hinten nicht
-    bestimmen. Die Abbildung zeigt also die raeumliche STRUKTUR der Aktivierung
-    (fokal? verteilt?), nicht ihre Lage am Kopf. Fuer die Zuordnung zu einer
-    Hirnregion braucht es entweder Landmarken oder den Bildraum.
+    Cedalions `scalp_plot` braucht die Landmarken Nz/LPA/RPA, die dieser Datensatz nicht
+    hat. Die Projektion ist deshalb nicht anatomisch orientiert: links/rechts und
+    vorn/hinten sind nicht bestimmt, die Abbildung zeigt nur die raeumliche Struktur.
     """
     g = geo3d.pint.dequantify() if hasattr(geo3d, "pint") else geo3d
     pos = {str(l): np.asarray(v, float) for l, v in zip(g.label.values, g.values)}
@@ -173,13 +163,12 @@ def _montage_plot(xy, values, ax, *, vmin, vmax, cmap, title, cb_label):
     plt.colorbar(sc, ax=ax, label=cb_label, fraction=0.046, pad=0.04)
 
 
-def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irls",
+def fig17_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irls",
                 reuse=True):
-    """Gruppen-beta-Karte im Montage-Layout -- rechnet die eine Konfiguration nach.
+    """Abb. 17 -- Gruppen-beta-Karte im Montage-Layout fuer eine Konfiguration.
 
-    Das Ergebnis wird als NetCDF gespeichert, BEVOR gezeichnet wird: die Rechnung kostet
-    ~13 min, ein Fehler beim Zeichnen soll sie nicht vernichten. Mit `reuse=True` wird
-    eine vorhandene Datei wiederverwendet.
+    Das Ergebnis (~13 min) wird vor dem Zeichnen als NetCDF gespeichert; mit `reuse=True`
+    wird eine vorhandene Datei wiederverwendet.
     """
     cache = RES / "realglm_group_map.nc"
     if reuse and cache.exists():
@@ -189,7 +178,7 @@ def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
               f"{ds.attrs.get('noise_model')})", flush=True)
         rec = rd.load(rd.find_files()[0])
         P, _ = rd.preprocess_recording(rec, motion_method=rg.MOTION_METHOD)
-        _draw_fig32(ds, P.conc, P.geo3d)
+        _draw_fig17(ds, P.conc, P.geo3d)
         return
 
     files = rd.find_files()
@@ -204,7 +193,7 @@ def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
         if geo3d is None:
             geo3d, conc0 = P.geo3d, P.conc
 
-    worker = importlib.import_module("realglm").first_level
+    worker = rg.first_level
     betas = Parallel(n_jobs=rg.N_JOBS, backend="loky")(
         delayed(worker)(prepped[f][0], prepped[f][1], family, constellation,
                         noise_model, 30, 1) for f in files)
@@ -216,17 +205,17 @@ def fig32_scalp(family="dct:0.02", constellation="baseline", noise_model="ar_irl
     t, p_adj, rej, mean = rg.group_test(by_sub)
     print(f"  fertig in {(time.time() - t0) / 60:.1f} min", flush=True)
 
-    # ZUERST speichern, dann zeichnen -- die Rechnung ist teuer, das Zeichnen billig.
+    # Erst speichern, dann zeichnen.
     ds = xr.Dataset(dict(beta=mean, t=t, p_fdr=p_adj,
                          significant=rej.astype("int8")))
     ds.attrs.update(family=family, constellation=constellation,
                     noise_model=noise_model, n_subjects=len(by_sub))
     ds.to_netcdf(cache)
     print(f"  -> {cache}", flush=True)
-    _draw_fig32(ds, conc0, geo3d)
+    _draw_fig17(ds, conc0, geo3d)
 
 
-def _draw_fig32(ds, conc, geo3d):
+def _draw_fig17(ds, conc, geo3d):
     xy = _montage_xy(conc, geo3d)
     fig, ax = plt.subplots(2, 2, figsize=(12, 10))
     for j, ch in enumerate(["HbO", "HbR"]):
@@ -244,10 +233,8 @@ def _draw_fig32(ds, conc, geo3d):
     fig.suptitle(
         f"Reale Daten, Finger-Tapping rechte Hand — {ds.attrs.get('family')} / "
         f"{ds.attrs.get('constellation')} / {ds.attrs.get('noise_model')}\n"
-        "Montage-Layout aus den Optodenpositionen (Hauptkomponenten-Projektion). "
-        "Der Datensatz enthält keine Landmarken —\ndie Darstellung zeigt die räumliche "
-        "Struktur der Aktivierung, ist aber NICHT anatomisch orientiert "
-        "(links/rechts nicht bestimmbar).", fontsize=10)
+        "Montage-Layout aus den Optodenpositionen (Hauptkomponenten-Projektion, "
+        "nicht anatomisch orientiert)", fontsize=10)
     fig.tight_layout(); fig.savefig(OUT / "17_real_scalp.png", dpi=130)
     plt.close(fig)
 
@@ -255,12 +242,12 @@ def _draw_fig32(ds, conc, geo3d):
 def main(quick=False):
     paths.ensure()
     df = load()
-    fig30_reliability(df)
-    fig31_significant(df)
-    fig33_plausibility(df)
+    fig15_reliability(df)
+    fig16_significant(df)
+    fig18_plausibility(df)
     print("Abb. 15, 16, 18 erzeugt.")
     if not quick:
-        fig32_scalp()
+        fig17_scalp()
     print("\nGespeichert:", *(p.name for p in sorted(OUT.glob("1?_real_*.png"))))
 
 

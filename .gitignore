@@ -4,13 +4,10 @@ __pycache__/
 .ipynb_checkpoints/
 pysnirf2.log
 
-# Persoenliche Arbeitsunterlagen -- bewusst NICHT versioniert
+# Persoenliche Arbeitsunterlagen, nicht versioniert
 BESPRECHUNG.md
 UMSETZUNGSPLAN.md
 
-# Zwischenstaende der Laeufe. In results/ liegen nur Ergebnisse, in results/logs/ die
-# Live-Fortschrittsdateien und Nachtlauf-Logs -- die aendern sich bei jedem Lauf.
-# (sweep_progress.txt war historisch versioniert; mit dem Umzug nach logs/ ist es
-#  ausgetragen, weil es nie ein Ergebnis war.)
+# Zwischenstaende der Laeufe: Testtabellen sowie Fortschrittsdateien und Logs in results/logs/
 results/*_summary_test.csv
 results/logs/

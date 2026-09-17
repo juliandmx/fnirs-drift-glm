@@ -1,29 +1,15 @@
-"""Multisubject: geschaetzte HRF je Driftfamilie GEGENUEBERGESTELLT (echte Shorts).
+"""Multisubject-Fingertapping: geschaetzte HRF je Driftfamilie gegenuebergestellt.
 
-Der Punkt aus den Gespraechsnotizen 2026-09-08: "bei realdaten hrf gegenuebergestellt
-visualisieren bei versch. vorgaben". Die Vorgaben sind die Driftfamilien; der Datensatz
-ist der Multisubject-Fingertapping (5 Probanden, 8 ECHTE Short-Channels bei 7-8 mm),
-weil nur er eine echte Short-Channel-Regression erlaubt (Khan folgt separat).
+Fit je (Proband, Familie) mit flexibler HRF-Basis (GaussianKernels, wie flex_basis.py),
+Driftfamilie und short_avg-Regressor (echte kurze Kanaele), OLS; mit fester Gamma-Basis
+waere jede Kurve nur ein skaliertes Abbild derselben Form. Familienunabhaengige Referenz
+ist das Block-Mittel der gemessenen Zeitreihe; ROI je Hand sind die ROI_N staerksten
+kontralateralen Kanaele daraus. OLS statt AR-IRLS aus dem in `msglm.py` genannten
+Laufzeit-/Speichergrund; fuer den Formvergleich zaehlt der Punktschaetzer.
 
-Damit sich die HRF-FORM zwischen den Familien ueberhaupt unterscheiden kann, wird mit
-der FLEXIBLEN Basis gefittet (GaussianKernels, wie flex_basis.py) -- mit fester
-Gamma-Basis waere jede Kurve nur ein skaliertes Abbild derselben Form. Als
-familienUNabhaengige Referenz dient der Block-Mittelwert der GEMESSENEN Zeitreihe:
-er zeigt, was in den Daten steckt, bevor ein Modell sie zerlegt.
-
-Aufbau je Zelle (Proband x Familie): GLM mit flexibler HRF-Basis + Driftfamilie +
-short_avg-Regressor (Designmatrix-Variante), OLS. OLS statt AR-IRLS aus dem in
-`msglm.py` dokumentierten Laufzeit-/Speichergrund (AR-IRLS kostet auf diesen
-Aufnahmen das ~200-fache und sprengte auf der dct:0.02-Matrix dreimal den Speicher);
-fuer den FORMvergleich zaehlt der Punktschaetzer, nicht dessen Standardfehler.
-
-ROI: je Hand die 3 staerksten KONTRAlateralen Kanaele, bestimmt aus dem
-Block-Mittel der DATEN (familienunabhaengig -- keine Familie wird bevorzugt).
-
-Erzeugt:
-  figures/29_ms_hrf_families.png   HRF je Familie vs. Datenreferenz, je Hand x Chromophor
-  figures/30_ms_fit_quality.png    Modellfit (adj. R^2, Residual-RMS) je Familie
-  results/mshrf_summary.csv        Fit-Metriken je (Proband, Familie, Chromophor)
+Erzeugt figures/29_ms_hrf_families.png (HRF je Familie vs. Datenreferenz),
+figures/30_ms_fit_quality.png (adj. R^2, Residual-RMS je Familie) und
+results/mshrf_summary.csv (Fit-Metriken je Proband, Familie, Chromophor).
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.mshrf         # voll (~20 min)
@@ -86,10 +72,9 @@ def _with_time(ts, like):
 
 
 def _roi_from_data(group_ba, geo3d) -> dict[str, list[str]]:
-    """Je Hand die ROI_N staerksten kontralateralen Kanaele -- aus den DATEN.
+    """Je Hand die ROI_N staerksten kontralateralen Kanaele aus den Daten.
 
-    Score = HbO-Peak des Block-Mittels im Fenster PEAK_WINDOW_S. Familienunabhaengig,
-    also fuer den Familienvergleich unverzerrt.
+    Score: HbO-Peak des Block-Mittels im Fenster PEAK_WINDOW_S; familienunabhaengig.
     """
     side = msglm.hemisphere_of(group_ba, geo3d)      # +1 links, -1 rechts
     rois = {}
@@ -212,7 +197,7 @@ def _fig29(families, curves, ref, n_subjects):
             ax.axvline(0, color="k", lw=0.6, ls=":")
             ax.grid(alpha=0.25)
             if i == 0:
-                ax.set_title(f"{tt} → kontralaterale ROI", fontsize=10)
+                ax.set_title(f"{tt}, kontralaterale ROI", fontsize=10)
             if j == 0:
                 ax.set_ylabel(f"Δ{c} [µM]")
             if i == 1:
@@ -220,8 +205,8 @@ def _fig29(families, curves, ref, n_subjects):
     axes[0, 0].legend(fontsize=6.5, ncol=2)
     fig.suptitle("Multisubject-Fingertapping: geschätzte HRF je Driftfamilie "
                  "(flexible Basis, +short_avg, OLS)\nDatenreferenz grau (±1 SD über "
-                 f"{n_subjects} Probanden) · grün schattiert: Stimulusdauer · ROI: die "
-                 f"{ROI_N} stärksten kontralateralen Kanäle", fontsize=11)
+                 f"{n_subjects} Probanden), Stimulusdauer grün, ROI: {ROI_N} stärkste "
+                 "kontralaterale Kanäle", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(OUT / "29_ms_hrf_families.png", dpi=130)
     plt.close(fig)
@@ -253,8 +238,8 @@ def _fig30(families, df, n_subjects):
         axes[-1, j].set_xticks(x)
         axes[-1, j].set_xticklabels(fams, rotation=60, ha="right", fontsize=8)
     fig.suptitle(f"Modellfit auf den Realdaten ({n_subjects} Probanden, ±1 SD): "
-                 "variance explained und Residual-RMS je Driftfamilie\nschraffiert: "
-                 "Filter-Arme (R² auf der gefilterten Zeitreihe)", fontsize=11)
+                 "adj. R² und Residual-RMS je Driftfamilie\nschraffiert: Filter-Arme",
+                 fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(OUT / "30_ms_fit_quality.png", dpi=130)
     plt.close(fig)

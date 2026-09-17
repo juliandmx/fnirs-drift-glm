@@ -1,19 +1,15 @@
-"""Farb- und Reihenfolge-Konventionen der Driftfamilien fuer ALLE Abbildungen.
+"""Farb- und Reihenfolge-Konventionen der Driftfamilien fuer alle Abbildungen.
 
-Eine Familie traegt in jeder Abbildung dieselbe Farbe -- die Farbe folgt der
-Identitaet, nie dem Rang oder der Position. Verwandte Familien teilen sich einen
-Farbton in Stufen (poly = Blau, legendre = Gruen, dct = Orange/Rot, bspline = Braun,
-Filter = Violett), sodass die Zugehoerigkeit auch ohne Legende erkennbar bleibt.
-
-Vorher lag das als `_color` nur in `sweep_report.py`; mit den Residual- und
-HRF-Vergleichsabbildungen brauchen es mehrere Module.
+Eine Familie traegt in jeder Abbildung dieselbe Farbe; verwandte Familien teilen sich
+einen Farbton in Stufen (poly blau, legendre gruen, dct orange/rot, bspline braun,
+Filter violett).
 """
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-#: Kanonische Reihenfolge auf Achsen (nach Familie gruppiert, in der Ordnung steigend).
+# Kanonische Reihenfolge auf Achsen (nach Familie gruppiert, Ordnung steigend).
 FAMILY_ORDER = [
     "none",
     "poly:1", "poly:2", "poly:3", "poly:4", "poly:5",

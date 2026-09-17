@@ -1,15 +1,12 @@
-"""Visualisierung der Demo-Pipeline (siehe pipeline.py / demo_recovery.py).
+"""Abbildungen der Demo-Pipeline (siehe pipeline.py).
 
 Erzeugt PNGs in figures/:
    1) Designmatrix (normierter HRF-Regressor + Polynom-Drift)
    2) Ein Kanal: Ruhesignal, eingespeiste Aktivierung, rueckgewonnene HRF
    3) rueckgewonnenes vs. wahres beta pro Kanal (Blob-Gradient), OLS
-   4) Scalp-Plot der Abweichung (beta_hat - Ground Truth) pro Kanal, farbkodiert
-   5) Scalp-Plot der RELATIVEN Abweichung: rel. beta-Peak-Fehler + rel. Formfehler
-  24) Scalp-Plot Ground Truth NEBEN der Schaetzung (gleiche Farbskala) + Abweichung --
-      die Kernvisualisierung aus den Gespraechsnotizen 2026-09-08 ("scalp plot ground
-      truth vs tats. result"): erst der direkte Vergleich zeigt, WO die Schaetzung das
-      raeumliche Muster trifft; Abb. 4/5 zeigen nur die Differenz.
+   4) Scalp-Plot der Abweichung (beta_hat - Ground Truth) pro Kanal
+   5) Scalp-Plot der relativen Abweichung: rel. beta-Peak-Fehler + rel. Formfehler
+  24) Scalp-Plot Ground Truth neben der Schaetzung (gleiche Farbskala) + Abweichung
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.reports.demo_figures
@@ -34,7 +31,7 @@ OUTDIR = paths.FIGURES
 
 
 def _sym_lim(values, pct=98.0):
-    """Robuste, um 0 symmetrische Farbgrenzen (unempfindlich ggü. Ausreissern)."""
+    """Robuste, um 0 symmetrische Farbgrenzen (Perzentil statt Maximum)."""
     r = float(np.nanpercentile(np.abs(np.asarray(values, dtype=float)), pct))
     return -r, r
 
@@ -47,7 +44,7 @@ def main():
     print("Fit OLS (alle Kanaele) ...")
     betas_ols = glm.fit(P.conc_syn, P.dm_full, noise_model="ols", max_jobs=-1).sm.params
 
-    # anschaulicher AKTIVER Kanal (nahe Blob-Zentrum): dort medianer HbO-Fehler
+    # Demo-Kanal: aktiver Kanal mit medianem HbO-Fehler
     bt_hbo = P.beta_true_map.sel(chromo="HbO")
     active = np.abs(bt_hbo) > 0.3 * abs(P.beta_true["HbO"])
     err = np.abs(betas_ols.sel(regressor=main_hrf, chromo="HbO")
@@ -73,9 +70,8 @@ def main():
     betas_hat = glm.fit(P.conc_syn.sel(channel=[demo_ch]), P.dm_full,
                         noise_model="ar_irls", max_jobs=1).sm.params
     pred = glm.predict(P.conc_syn.sel(channel=[demo_ch]), betas_hat, P.dm_full)
-    # Nur die rueckgewonnene HRF-Komponente (ohne Drift/Offset), damit sie mit der
-    # eingespeisten Ground-Truth-HRF auf derselben Nulllinie vergleichbar ist.
-    # dm_hrf enthaelt exakt den peak-normierten Regressor, der injiziert wurde.
+    # Nur die HRF-Komponente (ohne Drift/Offset), damit sie mit der eingespeisten HRF auf
+    # derselben Nulllinie liegt; dm_hrf ist der peak-normierte Regressor der Injektion.
     hrf_mask = betas_hat.regressor.str.startswith("HRF")
     pred_hrf = glm.predict(P.conc_syn.sel(channel=[demo_ch]),
                            betas_hat.sel(regressor=hrf_mask), P.dm_hrf)
@@ -116,14 +112,12 @@ def main():
     fig.tight_layout(); fig.savefig(OUTDIR / "03_beta_recovery.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 4: Scalp-Plot der Abweichung (beta_hat - Ground Truth) pro Kanal ----
-    # Analog zum Data-Augmentation-Tutorial (examples/tutorial/7) bzw. GLM-Notebook 32:
-    # jeder Kanal auf der 2D-Kopfprojektion, Abweichung diverging um 0 farbkodiert.
-    # Hier OLS ueber alle Kanaele (schnell); AR-IRLS-Betas liessen sich 1:1 einsetzen.
+    # Scalp-Plot wie in Cedalion-Notebook 32; OLS ueber alle Kanaele, weil schnell.
     print("Erzeuge Scalp-Plot der Abweichung ...")
     fig, ax = plt.subplots(1, 2, figsize=(12, 5.5))
     for j, c in enumerate(["HbO", "HbR"]):
         dev = betas_ols.sel(regressor=main_hrf, chromo=c) - P.beta_true_map.sel(chromo=c)
-        vlo, vhi = _sym_lim(dev.values)   # robuste, um 0 symmetrische Skala (Ausreisser)
+        vlo, vhi = _sym_lim(dev.values)
         cedalion.vis.anatomy.scalp_plot(
             P.conc, P.geo3d, dev, ax[j],
             vmin=vlo, vmax=vhi, cmap="RdBu_r",
@@ -133,20 +127,15 @@ def main():
         )
     fig.tight_layout(); fig.savefig(OUTDIR / "04_scalp_abweichung.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 5: Abweichung RELATIV zur HRF, pro Kanal (farbkodiert) ----
-    # Zwei gewuenschte Lesarten:
-    #   (a) rel. beta-Peak-Fehler: (beta_hat - GT)/GT  -> Fehler der Peak-Amplitude
-    #   (b) rel. Formfehler:       RMSE_t(rueckgewonnene HRF - GT-HRF) / HRF-Peak
-    # HINWEIS: In diesem PoC nutzen Injektion UND Fit dieselbe (einzelne) Gamma-Basis,
-    # d.h. die rueckgewonnene HRF hat per Konstruktion dieselbe FORM wie die Ground Truth
-    # und unterscheidet sich nur in der Amplitude. Dadurch ist (b) hier ~proportional zu
-    # (a) (Faktor = RMS des normierten Regressors). Unabhaengig informativ wird (b) erst
-    # mit einer FLEXIBLEN Recovery-Basis (z.B. GaussianKernels/GammaDeriv) oder auf realen
-    # Daten -- die Metrik-/Plot-Infrastruktur steht damit aber bereit.
+    # ---- Abb. 5: Abweichung relativ zur HRF, pro Kanal ----
+    # (a) rel. beta-Peak-Fehler (beta_hat - GT)/GT, (b) rel. Formfehler
+    # RMSE_t(rueckgewonnene HRF - GT-HRF)/Peak. Da Injektion und Fit dieselbe Gamma-Basis
+    # nutzen, ist (b) hier proportional zu (a); unabhaengig wird (b) erst mit einer
+    # flexiblen Recovery-Basis oder auf realen Daten.
     print("Erzeuge Scalp-Plots der relativen Abweichung ...")
     hrf_mask_all = betas_ols.regressor.str.startswith("HRF")
     recovered_hrf = glm.predict(P.conc_syn, betas_ols.sel(regressor=hrf_mask_all), P.dm_hrf)
-    # relative Fehler nur auf AKTIVEN Kanaelen (sonst Division durch GT~0 am Blob-Rand)
+    # relative Fehler nur auf aktiven Kanaelen (am Blob-Rand ist GT ~ 0)
     active = np.abs(P.beta_true_map.sel(chromo="HbO")) > 0.1 * abs(P.beta_true["HbO"])
     fig, ax = plt.subplots(2, 2, figsize=(12, 10))
     for j, c in enumerate(["HbO", "HbR"]):
@@ -156,12 +145,8 @@ def main():
         diff = recovered_hrf.sel(chromo=c) - P.activation.sel(chromo=c)
         rel_shape = (np.sqrt((diff ** 2).mean("time")) / np.abs(gt)).where(active)  # (b)
         rb, rs = rel_beta * 100.0, rel_shape * 100.0
-        # Feste Farbgrenzen bei +/-100 % (Betreuungsvorgabe "bei rel scalp plot: limit auf
-        # 100% setzen") statt perzentilbasiert. Zwei Gruende: 100 % ist eine
-        # interpretierbare Marke -- der Fehler ist so gross wie die gesuchte Groesse
-        # selbst --, und feste Grenzen machen die Teilbilder untereinander und ueber Laeufe
-        # hinweg vergleichbar. Werte darueber werden gesaettigt dargestellt und im Titel
-        # ausgewiesen, damit die Saettigung nicht unbemerkt bleibt.
+        # Feste Farbgrenzen bei +/-100 % statt Perzentilen: interpretierbare Marke und
+        # vergleichbar ueber Teilbilder und Laeufe; gesaettigte Kanaele stehen im Titel.
         n_clip = int((np.abs(rb.values) > 100.0).sum())
         clip_note = f"  ({n_clip} Kanal/Kanaele > 100 %)" if n_clip else ""
         cedalion.vis.anatomy.scalp_plot(
@@ -179,10 +164,8 @@ def main():
               f"  | median rel. Formfehler = {float(rel_shape.median()) * 100:.1f} %")
     fig.tight_layout(); fig.savefig(OUTDIR / "05_scalp_rel_abweichung.png", dpi=130); plt.close(fig)
 
-    # ---- Abb. 24: Ground Truth und Schaetzung NEBENEINANDER (+ Abweichung) ----
-    # GT und beta_hat teilen sich eine Farbskala je Chromophor -- nur so ist der
-    # Vergleich ehrlich (getrennte Autoskalen liessen jede Schaetzung "richtig"
-    # aussehen). Die Abweichung rechts hat ihre eigene, engere Skala.
+    # ---- Abb. 24: Ground Truth und Schaetzung nebeneinander (+ Abweichung) ----
+    # GT und beta_hat teilen sich eine Farbskala je Chromophor; die Abweichung hat ihre eigene.
     print("Erzeuge Scalp-Plot Ground Truth vs. Schaetzung ...")
     fig, ax = plt.subplots(2, 3, figsize=(16, 10))
     for i, c in enumerate(["HbO", "HbR"]):

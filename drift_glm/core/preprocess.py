@@ -1,24 +1,12 @@
-"""Preprocessing-Kette nach Betreuungsvorgabe (Gespraechsnotizen 2026-08-01).
+"""Preprocessing-Kette: Amplitude -> OD -> Motion Correction -> Masken -> Pruning -> Konzentration.
 
-Die Reihenfolge folgt exakt der Vorgabe aus dem Betreuungsgespraech -- und damit auch
-der kanonischen Cedalion-Kette (examples/tutorial/3_signal_processing.ipynb:
-"quality assessment -> OD conversion -> motion correction -> filtering ->
-haemoglobin concentration"):
+Reihenfolge wie in der Cedalion-Kette (Tutorial 3_signal_processing). Die Kanalqualitaet
+(dunkel/gesaettigt) wird an der Amplitude beurteilt, die Motion Correction laeuft auf OD.
+Dafuer wird die Baseline aus int2od aufgehoben: od2int(od, baseline) = baseline * exp(-od)
+ist der einzige Weg von der korrigierten OD zurueck zur Amplitude. Danach wird auf OD
+geprunt und per od2conc in Konzentration umgerechnet.
 
-    Rohamplitude
-      -> int2od  (BASELINE merken, sonst ist der Rueckweg nicht moeglich)
-      -> Motion Correction auf OD          [Schritt 1.3]
-      -> zurueck zur Amplitude via od2int  [Schritt 1.4]
-      -> Qualitaetsmasken auf der KORRIGIERTEN Amplitude   [Schritt 1.5]
-      -> Pruning, dann weiter auf OD -> od2conc            [Schritt 1.6]
-
-Der entscheidende Punkt der Vorgabe: die Kanalqualitaet (dunkel/gesaettigt) wird an der
-AMPLITUDE beurteilt, die Korrektur passiert aber auf OD. Deshalb der Umweg
-OD -> Amplitude -> Maske -> zurueck auf OD. Die Baseline ist das, was diesen Rueckweg
-ueberhaupt erlaubt: od = -log(amp / baseline), also amp = baseline * exp(-od).
-
-Stand: Schritt 1.2 -- OD-Umrechnung mit Baseline-Rueckgabe. Die weiteren Stufen
-kommen schrittweise dazu.
+Aufruf:  conda run -n cedalion python -m drift_glm.core.preprocess [motion_method]
 """
 
 from __future__ import annotations
@@ -40,9 +28,9 @@ class Preprocessed:
     """Ergebnis der Preprocessing-Kette samt Zwischenstufen fuer die Diagnose."""
 
     conc: xr.DataArray       # (time, channel, chromo) [µM], dequantifiziert
-    od: xr.DataArray         # Optical Density, Stand nach Korrektur/Pruning
+    od: xr.DataArray         # Optical Density nach Korrektur/Pruning
     amp_raw: xr.DataArray    # Rohamplitude [V], wie eingelesen (quantifiziert)
-    amp_corr: xr.DataArray   # Amplitude NACH Motion Correction [V] -- Basis der Masken
+    amp_corr: xr.DataArray   # Amplitude nach Motion Correction [V], Basis der Masken
     baseline: xr.DataArray   # mittlere Rohamplitude (channel, wavelength) [V]
     geo3d: object            # Optodengeometrie (LabeledPoints)
     aux: object              # rec.aux_ts (Accelerometer/Gyroskop/dark signal)
@@ -53,18 +41,10 @@ class Preprocessed:
 
 
 def gate_positive(amp: xr.DataArray) -> tuple[xr.DataArray, list[str]]:
-    """Verwirft Kanaele mit nicht-positiver Amplitude -- Vorbedingung fuer int2od.
+    """Verwirft Kanaele mit nicht-positiver Amplitude, Vorbedingung fuer int2od.
 
-    `int2od` bildet -log(amp/baseline) und bricht bei Werten <= 0 mit einer
-    AssertionError ab. Physikalisch ist eine nicht-positive Lichtintensitaet ohnehin
-    unmoeglich; solche Samples liegen unter dem Rauschboden des Detektors.
-
-    Das ist bewusst KEINE methodische Vorentscheidung, sondern die minimale technische
-    Vorbedingung: auf nn22 betrifft es 40 von 3.75 Mio. Samples (0.001 %) in 6 von 567
-    Kanaelen, und alle 6 werden von der spaeteren mean_amp-Grenze (1e-3 V) ebenfalls
-    verworfen -- die Vor-Maskierung nimmt also nichts weg, was sonst ueberlebt haette.
-    Die eigentliche Qualitaetsbewertung passiert weiterhin erst nach der Motion
-    Correction auf der korrigierten Amplitude (Betreuungsvorgabe).
+    int2od bildet -log(amp/baseline) und bricht bei Werten <= 0 ab. Auf nn22 betrifft das
+    6 von 567 Kanaelen, die spaeter ohnehin an der mean_amp-Grenze scheitern.
     """
     ok = (amp > 0).all(dim=[d for d in amp.dims if d != "channel"])
     dropped = [str(c) for c in amp.channel.values[~ok.values]]
@@ -72,38 +52,25 @@ def gate_positive(amp: xr.DataArray) -> tuple[xr.DataArray, list[str]]:
 
 
 def to_od(amp: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
-    """Amplitude -> Optical Density, mit Baseline.
+    """Amplitude -> Optical Density, mit Baseline (amp.mean("time")).
 
-    Cedalion bietet das direkt an (nirs/cw.py): `int2od(amp, return_baseline=True)`
-    liefert `(od, baseline)` mit `baseline = amp.mean("time")`. Der Parameter heisst
-    `return_baseline`, NICHT `baseline=`.
-
-    Die Baseline wird gebraucht, um nach der Motion Correction wieder auf die Amplitude
-    zu kommen (`od2int(od, baseline)`), denn nur dort sind "dunkel" und "gesaettigt"
-    ueberhaupt definierte Begriffe.
+    Die Baseline wird fuer den Rueckweg od2int nach der Motion Correction gebraucht.
+    Der Parameter von int2od heisst `return_baseline`.
     """
     return cedalion.nirs.cw.int2od(amp, return_baseline=True)
 
 
 MOTION_METHODS = ("none", "tddr", "wavelet", "tddr+wavelet")
 
-# Default fuer Demos/Tests. Im Sweep ist die Motion Correction eine eigene ACHSE
-# ({"wavelet", "tddr+wavelet"}), der Default entscheidet dort also nichts.
-#
-# Warum "wavelet" und nicht die woertliche Vorgabe "tddr+wavelet": TDDR daempft
-# gemessen das Driftband (<0.01 Hz) auf 55.6 % -- es entfernt fast die Haelfte dessen,
-# was die Driftregressoren modellieren sollen, und kollidiert damit mit dem
-# Betreuungshinweis vom 2026-07-11 (bei Drift-Modellierung nicht hochpassfiltern).
-# Wavelet ist im Driftband neutral (100.0 %) und entfernt trotzdem die Spikes.
-# Nachpruefbar mit `band_power_ratio` bzw. `python -m drift_glm.core.preprocess tddr+wavelet`.
+# Default fuer Demos/Tests; im Sweep ist die Motion Correction eine eigene Achse.
+# "wavelet" statt "tddr+wavelet": TDDR daempft das Driftband (<0.01 Hz) auf ~56 % und
+# entfernt damit einen Teil dessen, was die Driftregressoren modellieren sollen; Wavelet
+# laesst das Driftband unveraendert (siehe `band_power_ratio`).
 DEFAULT_MOTION = "wavelet"
 
-# Die uebrigen Vorverarbeitungs-Parameter -- an EINER Stelle, damit sie nicht
-# auseinanderlaufen. Aufrufer (pipeline.py, realdata.py) verweisen hierauf, statt die
-# Zahlen zu wiederholen: sonst behaelt ein Aufrufer beim Aendern still den alten Wert,
-# und weil er ihn explizit durchreicht, gewinnt der alte.
-DEFAULT_SNR_THRESHOLD = 3.0                  # Betreuungsvorgabe (vorher 10)
-DEFAULT_AMP_RANGE = (1e-3, 0.84)             # dunkel / gesaettigt [V], NinjaNIRS-Vorgabe
+# Vorverarbeitungs-Parameter an einer Stelle; pipeline.py und realdata.py referenzieren sie.
+DEFAULT_SNR_THRESHOLD = 3.0                  # SNR-Schwelle
+DEFAULT_AMP_RANGE = (1e-3, 0.84)             # dunkel / gesaettigt [V], NinjaNIRS
 DEFAULT_SD_RANGE = (0.0, 4.5)                # Quell-Detektor-Abstand [cm]
 DEFAULT_DPF = 6.0                            # differentieller Pfadlaengenfaktor
 
@@ -118,20 +85,10 @@ def motion_correct(
 ) -> xr.DataArray:
     """Motion Correction auf Optical Density.
 
-    Die Betreuungsvorgabe nennt zwei Artefakttypen, die entfernt werden sollen:
-    "scharfer Spike oder ruckartige Verschiebung". Genau darauf zielen die beiden
-    Verfahren, und daher auch ihre Reihenfolge (identisch zu Cedalion NB 25:
-    "apply TDDR first to correct jumps, then apply Wavelet motion artifact correction"):
-
-      * `tddr`    -- Temporal Derivative Distribution Repair: robuste Regression auf der
-                     zeitlichen Ableitung; faengt Baseline-Spruenge / ruckartige
-                     Verschiebungen. Parameterfrei (`motion.tddr(ts)`).
-      * `wavelet` -- verwirft Wavelet-Koeffizienten ausserhalb des IQR-Bandes; faengt
-                     scharfe Spikes. Groesseres `iqr` = drastischere Korrektur;
-                     `iqr < 0` laesst das Signal unveraendert.
-
-    Beide arbeiten laut Cedalion ausdruecklich auf OD, nicht auf Amplitude oder
-    Konzentration ("The correction algorithms operate on optical densities").
+    `tddr` (robuste Regression auf der zeitlichen Ableitung) faengt Baseline-Spruenge,
+    `wavelet` (Koeffizienten ausserhalb des IQR-Bandes verwerfen) faengt Spikes; bei
+    "tddr+wavelet" zuerst TDDR, wie in Cedalion NB 25. Beide arbeiten auf OD.
+    Groesseres `wavelet_iqr` = staerkere Korrektur, `iqr < 0` laesst das Signal unveraendert.
     """
     if method not in MOTION_METHODS:
         raise ValueError(f"Unbekannte Motion-Correction: {method!r} "
@@ -147,17 +104,11 @@ def motion_correct(
 
 
 def to_amp(od: xr.DataArray, baseline: xr.DataArray) -> xr.DataArray:
-    """Optical Density -> Amplitude, mit der beim Hinweg gemerkten Baseline.
+    """Optical Density -> Amplitude mit der Baseline aus `to_od`.
 
-    Das ist der Kern der Betreuungsvorgabe "erst motion correction, dann zu amplitude
-    umwandeln und dann schlechte channels markieren": korrigiert wird auf OD, bewertet
-    wird auf der Amplitude. `od2int(od, baseline)` = `baseline * exp(-od)` ist die exakte
-    Umkehrung von `int2od` -- ohne die Baseline waere der Rueckweg nicht eindeutig, weil
-    OD nur relative Aenderungen gegenueber dem eigenen Mittel kodiert.
-
-    Wichtig: die Baseline stammt aus der UNKORRIGIERTEN Amplitude. Die zurueckgerechnete
-    Amplitude traegt also die Motion-Korrektur, behaelt aber das urspruengliche
-    Helligkeitsniveau -- genau das, worauf "dunkel" und "gesaettigt" sich beziehen.
+    od2int(od, baseline) = baseline * exp(-od) ist die exakte Umkehrung von int2od. Die
+    Baseline stammt aus der unkorrigierten Amplitude; die zurueckgerechnete Amplitude
+    traegt also die Motion-Korrektur, behaelt aber das urspruengliche Helligkeitsniveau.
     """
     return cedalion.nirs.cw.od2int(od, baseline)
 
@@ -172,23 +123,10 @@ def quality_masks(
 ) -> dict[str, xr.DataArray]:
     """Qualitaetsmasken auf der (korrigierten) Amplitude. CLEAN = True.
 
-    Die drei Kriterien adressieren verschiedene Defekte und ersetzen einander nicht:
-
-      * `snr`      -- Verhaeltnis Mittelwert/Streuung ueber die Zeit. Faengt verrauschte
-                      Kanaele. Betreuungsvorgabe: Schwelle 3 (bisher 10). Der neue Wert
-                      ist PERMISSIVER; die eigentliche Arbeit macht jetzt `mean_amp`.
-      * `mean_amp` -- mittlere Amplitude innerhalb eines Fensters. Faengt DUNKLE (zu wenig
-                      Licht, Rauschen dominiert) und GESAETTIGTE Kanaele (Detektor am
-                      Anschlag, Signal geklippt). Vorgabe: NinjaNIRS-Grenzen
-                      1e-3 .. 0.84 V. Basiert auf Homer3 `hmR_PruneChannels.m`.
-      * `sd_dist`  -- Quell-Detektor-Abstand innerhalb eines Bereichs.
-
-    Gesaettigte Kanaele sind besonders heimtueckisch: durch das Klippen wirken sie
-    RAUSCHARM, weshalb varianzbasierte Metriken sie nicht erkennen (Cedalion NB 24:
-    "the metric cannot account for saturation"). Bei der Image Reconstruction bekommen
-    sie deshalb maximales Gewicht in der Pseudoinversen und schmieren ihren Fehler ueber
-    ihr gesamtes Sensitivitaetsprofil -- daher die Betreuungsvorgabe, sie spaetestens
-    dort zwingend zu entfernen.
+    `snr`: Mittelwert/Streuung ueber die Zeit. `mean_amp`: mittlere Amplitude innerhalb
+    (dunkel, gesaettigt), nach Homer3 hmR_PruneChannels. `sd_dist`: Quell-Detektor-Abstand.
+    Gesaettigte Kanaele wirken durch das Klippen rauscharm und werden von varianzbasierten
+    Metriken nicht erkannt; in der Image Reconstruction bekaemen sie maximales Gewicht.
     """
     _, snr_mask = quality.snr(amp, snr_threshold)
     _, amp_mask = quality.mean_amp(amp, (amp_range[0] * units.V,
@@ -201,21 +139,11 @@ def quality_masks(
 def dark_noise_floor(aux, key: str = "dark signal") -> float | None:
     """Robuster Rauschboden des Detektors aus der Dunkelmessung [V], oder None.
 
-    nn22 fuehrt eine Dunkelmessung als Aux-Zeitreihe mit (Schreibweise mit LEERZEICHEN:
-    "dark signal", nicht "dark_signal"), mit 1134 Spuren = 567 Kanaele x 2 Wellenlaengen.
-    Die Werte streuen um Null -- es ist eine RAUSCH-Referenz, kein Pegel. Deshalb wird
-    die Streuung ausgewertet und nicht der Mittelwert; robust ueber MAD, damit einzelne
-    defekte Detektoren den Wert nicht anheben.
-
-    Nutzen: die Untergrenze fuer "dunkel" (Vorgabe 1e-3 V) laesst sich damit datengetrieben
-    einordnen statt als Faustwert. Auf nn22 ergibt sich ein Rauschboden von ~9.5e-06 V,
-    die Vorgabe entspricht also dem ~105-fachen davon -- und liegt in einer Luecke: von
-    50x bis 105x Rauschboden faellt kein einziger weiterer Kanal heraus. Die Schwelle
-    trennt somit zwei klar getrennte Populationen und ist unempfindlich gegen ihre genaue
-    Lage.
-
-    Die Zuordnung der Aux-Spuren zu (Kanal, Wellenlaenge) ist NICHT belegt -- es gibt
-    keine aux_channel-Koordinate. Der Wert wird daher nur aggregiert verwendet.
+    nn22 fuehrt "dark signal" (Schreibweise mit Leerzeichen) als Aux-Zeitreihe mit 1134
+    Spuren. Die Werte streuen um Null, ausgewertet wird deshalb die Streuung (MAD), nicht
+    der Mittelwert. Die Zuordnung der Spuren zu (Kanal, Wellenlaenge) ist nicht belegt,
+    der Wert wird nur aggregiert verwendet. Auf nn22 liegt er bei ~9.5e-6 V, die
+    Untergrenze 1e-3 V also beim ~105-fachen.
     """
     if aux is None or key not in aux:
         return None
@@ -232,18 +160,11 @@ def dark_noise_floor(aux, key: str = "dark signal") -> float | None:
 
 
 def prune(ts: xr.DataArray, masks: dict[str, xr.DataArray]) -> tuple[xr.DataArray, list[str]]:
-    """Wendet die kombinierten Qualitaetsmasken an und VERWIRFT die Kanaele.
+    """Wendet die kombinierten Qualitaetsmasken an und verwirft die Kanaele.
 
-    Cedalions `prune_ch(ts, masks, "all")` verknuepft die Masken mit `&` und ruft
-    intern `apply_mask(..., "drop", dim_collapse="channel")` auf: ein Kanal faellt
-    heraus, sobald er in IRGENDEINER uebrigen Dimension (hier: einer der beiden
-    Wellenlaengen) als TAINTED markiert ist.
-
-    Verworfen wird bewusst, nicht auf NaN gesetzt: NaN wuerde sich durch AR-IRLS und
-    spaeter durch die Image Reconstruction fortpflanzen, und deren Kanalauswahl erwartet
-    ohnehin eine Teilmenge ("y may contain less channels then W due to pruning").
-
-    Angewandt wird auf OD -- entsprechend der Vorgabe "dann wieder mit od weiterarbeiten".
+    `prune_ch(ts, masks, "all")` verknuepft die Masken mit `&`; ein Kanal faellt heraus,
+    sobald er in einer der Wellenlaengen markiert ist. Verworfen statt auf NaN gesetzt,
+    weil NaN sich durch AR-IRLS und die Image Reconstruction fortpflanzen wuerde.
     """
     ts_pruned, dropped = quality.prune_ch(ts, list(masks.values()), "all")
     return ts_pruned, [str(c) for c in np.atleast_1d(dropped)]
@@ -256,14 +177,10 @@ DRIFT_BANDS = (("Drift   <0.01 Hz", 0.0, 0.01),
 
 
 def band_power_ratio(od_before: xr.DataArray, od_after: xr.DataArray) -> dict:
-    """Leistung je Frequenzband NACH der Korrektur relativ zu VORHER (Median).
+    """Leistung je Frequenzband nach der Korrektur relativ zu vorher (Median ueber Kanaele).
 
-    Diagnose fuer die zentrale methodische Frage dieser Arbeit: greift die Motion
-    Correction in das Driftband ein? Ein Verfahren, das unterhalb 0.01 Hz Leistung
-    entfernt, nimmt genau den Anteil weg, den die Driftregressoren modellieren sollen --
-    dann bestimmt die Vorverarbeitung das Ergebnis statt des Driftmodells, und der
-    Familienvergleich wird verfaelscht (Betreuungshinweis 2026-07-11).
-
+    Diagnose, ob die Motion Correction in das Driftband (<0.01 Hz) eingreift und damit
+    den Anteil entfernt, den die Driftregressoren modellieren sollen.
     Rueckgabe: {Bandname: Verhaeltnis}, 1.0 = unveraendert.
     """
     fs = 1.0 / float(np.median(np.diff(od_before.time.values)))
@@ -281,33 +198,19 @@ def band_power_ratio(od_before: xr.DataArray, od_after: xr.DataArray) -> dict:
     return out
 
 
-#: Amplitudenbereich, der nichts verwirft -- fuer Datensaetze ohne dunkle Population.
+# Amplitudenbereich, der nichts verwirft (Datensaetze ohne dunkle Population).
 AMP_RANGE_OFF = (0.0, 1e12)
 
 
 def amp_range_from_data(rec, min_gap: float = 3.0, max_share: float = 0.1):
-    """Amplitudengrenzen (dunkel/gesaettigt) aus den Daten -- oder bewusst keine.
+    """Amplitudengrenzen (dunkel/gesaettigt) aus den Daten, oder `AMP_RANGE_OFF`.
 
-    Die NinjaNIRS-Grenzen 1e-3..0.84 V aus der Betreuungsvorgabe gelten fuer nn22 und
-    sind NICHT uebertragbar: anderes Geraet, andere Aussteuerung, und andere Datensaetze
-    haben keine Dunkelmessung, aus der sich ein Rauschboden ableiten liesse.
-
-    Statt einer Perzentil-Faustregel -- die per Konstruktion IMMER etwas verwirft, egal
-    wie gut die Daten sind -- wird hier geprueft, ob es ueberhaupt eine ABGETRENNTE
-    dunkle Population gibt: die Kanalamplituden werden sortiert und die groesste
-    relative Luecke zwischen benachbarten Werten im unteren Bereich gesucht. Nur wenn
-    diese Luecke mindestens `min_gap` betraegt und hoechstens `max_share` der Messungen
-    darunter liegen, wird dort geschnitten.
-
-    Auf BEIDEN Realdatensaetzen greift das bewusst NICHT, und das ist das Ergebnis, nicht
-    ein Versagen. Khan (NIRScout): dunkelste Messung beim 0.116-fachen des Medians,
-    groesste Luecke Faktor 1.11 ueber 6624 Messungen -- passend dazu steht in
-    "Experimental notes.txt" "Masked channels removed". Multisubject-Fingertapping:
-    dunkelste Messung beim 0.21-fachen des Medians, ebenfalls lueckenlos. Zum Vergleich
-    nn22: dunkelste Messung beim 0.0001-fachen des Medians, klare Luecke zwischen 50x und
-    105x Rauschboden, 46 Kanaele verworfen.
-
-    Rueckgabe (lo, hi); `AMP_RANGE_OFF`, wenn keine Population gefunden wird.
+    Die NinjaNIRS-Grenzen gelten nur fuer nn22. Hier wird geprueft, ob es eine abgetrennte
+    dunkle Population gibt: die groesste relative Luecke zwischen benachbarten
+    Kanalamplituden im unteren Bereich muss mindestens `min_gap` betragen und hoechstens
+    `max_share` der Messungen unter sich lassen; dann wird in die Luecke geschnitten.
+    Auf Khan und Multisubject-Fingertapping greift das nicht (keine Luecke), auf nn22
+    liegt die Luecke zwischen 50x und 105x Rauschboden.
     """
     key = "amp" if "amp" in rec.timeseries else list(rec.timeseries.keys())[0]
     a = rec[key].pint.dequantify() if hasattr(rec[key], "pint") else rec[key]
@@ -338,13 +241,11 @@ def to_conc(od: xr.DataArray, geo3d, dpf: float = DEFAULT_DPF) -> xr.DataArray:
 
 @dataclass
 class ODStage:
-    """Zwischenstand: Ruhedaten als Optical Density, VOR der Motion Correction.
+    """Ruhedaten als Optical Density vor der Motion Correction.
 
-    Genau hier wird die synthetische Aktivierung eingemischt (`to_od_activation`),
-    damit die Motion Correction anschliessend ueber Signal UND Rauschen laeuft -- so
-    wie auf echten Daten. Wuerde man erst danach einmischen, koennte die Korrektur die
-    HRF per Konstruktion nicht beschaedigen, und ein Verfahren wie TDDR saehe kuenstlich
-    gut aus (gemessen: es daempft das Band 0.01-0.1 Hz, in dem die HRF liegt, auf 54 %).
+    Hier wird die synthetische Aktivierung eingemischt (`to_od_activation`), damit die
+    Motion Correction ueber Signal und Rauschen laeuft wie auf echten Daten. Nach der
+    Korrektur eingemischt koennte sie die HRF per Konstruktion nicht beschaedigen.
     """
 
     od: xr.DataArray         # (channel, wavelength, time), ungeprunt, unkorrigiert
@@ -357,8 +258,8 @@ class ODStage:
 
 def to_od_stage(rec) -> ODStage:
     """Rohamplitude -> Optical Density (inkl. Positivitaets-Gate und Baseline)."""
-    # nn22 liefert die Amplitude dimensionslos -> als Volt quantifizieren, damit die
-    # spaeteren Amplitudengrenzen (dunkel/gesaettigt) eine physikalische Einheit haben.
+    # nn22 liefert die Amplitude dimensionslos; als Volt quantifizieren, damit die
+    # Amplitudengrenzen (dunkel/gesaettigt) eine Einheit haben.
     amp_raw = rec["amp"].pint.dequantify().pint.quantify("V")
     amp, dropped_nonpos = gate_positive(amp_raw)
     od, baseline = to_od(amp)
@@ -368,19 +269,16 @@ def to_od_stage(rec) -> ODStage:
 
 def to_od_activation(activation_conc: xr.DataArray, geo3d, wavelength,
                      dpf: float = DEFAULT_DPF) -> xr.DataArray:
-    """Konzentrations-Aktivierung [µM] -> Optical Density, zum Einmischen.
+    """Konzentrations-Aktivierung [µM] -> Optical Density zum Einmischen.
 
-    `conc2od` ist die exakte Umkehrung von `od2conc` (beides das modifizierte
-    Beer-Lambert-Gesetz). Dadurch bleibt die Ground Truth in µM definiert und
-    interpretierbar: ohne Motion Correction ergibt der Weg
-    conc -> od -> (nichts) -> conc die Aktivierung exakt zurueck. Weicht sie ab, ist
-    das genau der Eingriff der Korrektur -- und damit die Groesse, die gemessen werden soll.
+    conc2od ist die exakte Umkehrung von od2conc; ohne Motion Correction kommt die
+    Aktivierung ueber conc -> od -> conc unveraendert zurueck, jede Abweichung ist der
+    Eingriff der Korrektur.
 
     Args:
         activation_conc: (time, channel, chromo) in µM, dequantifiziert.
-        geo3d: Optodengeometrie (fuer die Kanalabstaende).
         wavelength: Wellenlaengen-Koordinate der Ziel-OD.
-        dpf: Differentieller Pfadlaengenfaktor, identisch zu `to_conc`.
+        dpf: identisch zu `to_conc`.
     """
     dpf_da = xr.DataArray([dpf] * len(wavelength), dims="wavelength",
                           coords={"wavelength": wavelength})
@@ -405,37 +303,30 @@ def finish(
 
     Args:
         stage: Ergebnis von `to_od_stage`.
-        od_in: die zu verarbeitende OD. Default `stage.od` (reine Ruhedaten); fuer die
-            Augmentation wird hier `stage.od + Aktivierung` uebergeben.
-        motion_method: eines aus `MOTION_METHODS`. `"none"` schaltet die Korrektur ab.
-        snr_threshold: SNR-Schwelle (Betreuungsvorgabe: 3).
-        amp_range: (dunkel, gesaettigt) in Volt (NinjaNIRS-Vorgabe: 1e-3 .. 0.84).
+        od_in: zu verarbeitende OD, Default `stage.od`; fuer die Augmentation
+            `stage.od + Aktivierung`.
+        amp_range: (dunkel, gesaettigt) in Volt.
         sd_range: zulaessiger Quell-Detektor-Abstand in cm.
-        dpf: Differentieller Pfadlaengenfaktor fuer die Beer-Lambert-Umrechnung.
-        masks: vorgegebene Masken statt neu berechneter. Gebraucht, damit die
-            augmentierte und die reine Variante EXAKT dieselben Kanaele behalten --
-            die Kanalqualitaet ist eine Eigenschaft der Messung, nicht des
-            eingemischten Signals.
+        masks: vorgegebene Masken statt neu berechneter, damit augmentierte und reine
+            Variante dieselben Kanaele behalten (die Kanalqualitaet ist eine Eigenschaft
+            der Messung, nicht des eingemischten Signals).
     """
     od_raw = stage.od if od_in is None else od_in
     baseline, dropped_nonpos = stage.baseline, stage.dropped_nonpositive
     amp_raw = stage.amp_raw
     od = motion_correct(od_raw, motion_method)
-    # Zurueck zur Amplitude: dort -- und nur dort -- sind "dunkel" und "gesaettigt"
-    # definiert. Die Qualitaetsmasken (Schritt 1.5) setzen auf amp_corr auf.
+    # Zurueck zur Amplitude: nur dort sind "dunkel" und "gesaettigt" definiert.
     amp_corr = to_amp(od, baseline)
 
     if masks is None:
         masks = quality_masks(amp_corr, stage.geo3d, snr_threshold=snr_threshold,
                               amp_range=amp_range, sd_range=sd_range)
 
-    # Erst jetzt verwerfen -- und danach wieder auf OD weiterarbeiten (Vorgabe).
-    # amp_raw/amp_corr bleiben ungeprunt: sie dokumentieren die Stufe, AUF der die
-    # Masken bestimmt wurden.
+    # Pruning auf OD; amp_raw/amp_corr bleiben ungeprunt (die Stufe, auf der die Masken
+    # bestimmt wurden).
     od_pruned, dropped_quality = prune(od, masks)
     conc = to_conc(od_pruned, stage.geo3d, dpf)
-    # Die unkorrigierte OD auf dieselben Kanaele beschneiden, sonst vergleicht die
-    # Diagnose (band_power_ratio) unterschiedliche Kanalmengen.
+    # Unkorrigierte OD auf dieselben Kanaele, damit band_power_ratio gleiche Mengen sieht.
     od_raw = od_raw.sel(channel=od_pruned.channel)
 
     return Preprocessed(
@@ -454,12 +345,7 @@ def finish(
 
 
 def run(rec, **kwargs) -> Preprocessed:
-    """Komplette Kette auf einem Recording, ohne Augmentation.
-
-    Bequemlichkeits-Wrapper um `to_od_stage` + `finish`. Fuer die Augmentation wird
-    stattdessen `to_od_stage` -> Aktivierung einmischen -> `finish` benutzt, damit die
-    Motion Correction die HRF mit sieht (siehe `ODStage`).
-    """
+    """Komplette Kette ohne Augmentation (`to_od_stage` + `finish`)."""
     return finish(to_od_stage(rec), **kwargs)
 
 
@@ -484,21 +370,18 @@ if __name__ == "__main__":
     print(f"Konzentration [µM] : {dict(P.conc.sizes)}")
 
     # Rueckweg-Kontrolle: ohne Korrektur muss od2int(int2od(amp)) == amp gelten.
-    # Damit ist belegt, dass die Baseline den Rueckweg exakt traegt.
     amp_in = gate_positive(P.amp_raw)[0].pint.dequantify().values
     amp_out = P.amp_corr.pint.dequantify().values
     rel = np.abs(amp_out - amp_in) / np.abs(amp_in)
     hi, med = float(np.nanmax(rel)), float(np.nanmedian(rel))
     if hi < 1e-9:
-        print(f"\nRueckweg OD->Amp   : max. rel. Abweichung {hi:.2e} -- exakt "
-              f"(Baseline traegt den Rueckweg verlustfrei)")
+        print(f"\nRueckweg OD->Amp   : max. rel. Abweichung {hi:.2e} (exakt)")
     else:
-        # Erwartet, sobald korrigiert wurde: die Abweichung IST die Korrektur.
-        # Im Amplitudenraum wirkt sie exponentiell (amp = baseline * exp(-od)),
-        # eine OD-Aenderung von d entspricht dem Faktor exp(d) -- das Maximum wird
-        # daher von einzelnen Spikes in dunklen Kanaelen dominiert.
+        # Mit Korrektur ist die Abweichung die Korrektur selbst. Im Amplitudenraum wirkt
+        # sie exponentiell (amp = baseline * exp(-od)), das Maximum stammt daher von
+        # einzelnen Spikes in dunklen Kanaelen.
         print(f"\nRueckweg OD->Amp   : median {100 * med:.2f} %, max {hi:.2e} "
-              f"(entspricht {np.log(hi + 1):.1f} OD) -- das ist die Korrektur selbst")
+              f"(entspricht {np.log(hi + 1):.1f} OD, Anteil der Korrektur)")
 
     print(f"\nMotion Correction  : {P.motion_method}   ({time.time() - t0:.1f}s gesamt)")
     if P.od_uncorrected is not None and method != "none":
@@ -508,7 +391,7 @@ if __name__ == "__main__":
               f"(Spitzen der zeitlichen Ableitung)")
         print("  Restleistung je Band (100 % = unveraendert):")
         for name, r in band_power_ratio(P.od_uncorrected, P.od).items():
-            flag = "  <-- Driftband!" if name.startswith("Drift") and r < 0.9 else ""
+            flag = "  <-- Driftband" if name.startswith("Drift") and r < 0.9 else ""
             print(f"    {name} {100 * r:6.1f} %{flag}")
 
     nf = dark_noise_floor(P.aux)
@@ -520,15 +403,15 @@ if __name__ == "__main__":
         counts = {k: int((mp < k * nf).sum()) for k in (10, 20, 50, 100)}
         print("  Messungen unter k x Rauschboden: "
               + ", ".join(f"{k}x:{v}" for k, v in counts.items())
-              + f"  (Vorgabe: {int((mp < 1e-3).sum())})")
+              + f"  (unter 1e-3 V: {int((mp < 1e-3).sum())})")
 
     print("\nQualitaetsmasken auf der korrigierten Amplitude (CLEAN = True):")
     n_ch = P.amp_corr.sizes["channel"]
     keep_all = None
     for key in ("snr", "mean_amp", "sd_dist"):
         m = P.masks[key]
-        # ein Kanal ueberlebt nur, wenn er in ALLEN uebrigen Dims (z.B. beide
-        # Wellenlaengen) sauber ist -- dieselbe Logik wie in xrutils.apply_mask.
+        # Ein Kanal ueberlebt nur, wenn er in allen uebrigen Dims (beide Wellenlaengen)
+        # sauber ist; dieselbe Logik wie in xrutils.apply_mask.
         keep = m.all(dim=[d for d in m.dims if d != "channel"])
         keep_all = keep if keep_all is None else (keep_all & keep)
         print(f"  {key:9s}: {int(keep.sum()):4d} / {n_ch} behalten "

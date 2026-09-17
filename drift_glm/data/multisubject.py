@@ -1,35 +1,13 @@
-"""Datensatz 3: Multisubject-Fingertapping aus Cedalion -- mit ECHTEN Short Channels.
+"""Datensatz 3: Multisubject-Fingertapping aus Cedalion, mit echten Short Channels.
 
-Betreuungsvorgabe 2026-08-05: "multisubject fingertapping wird auch im notebook 50b
-erwaehnt -> Da shortchannel vorhanden sind findet meine Betreuerin diese Daten besser."
-
-Quelle: BIDS-NIRS-Tapping (Rob Luke), ueber `cedalion.data`. Referenz-Notebook:
-`examples/machine_learning/50b_advanced_finger_tapping_lda_classification.ipynb` -- von
-dort werden Datensatz, Event-Benennung und die Global-Component-Subtraktion uebernommen.
-Die KLASSIFIKATION wird bewusst nicht uebernommen (ausdrueckliche Vorgabe).
-
-WARUM DIESER DATENSATZ DIE LUECKE SCHLIESST (gemessen, nicht aus dem Paper):
-
-  * **8 echte Short-Separation-Kanaele bei 7-8 mm** neben 20 langen bei 33-41 mm. Das ist
-    der Unterschied zu allem, was bisher da war: nn22 hat als kuerzesten Abstand 15,5 mm,
-    und die 15,5-18-mm-Kanaele sehen noch Kortex (auf nn22 gemessen: der staerkste bekommt
-    18,9 % des eingemischten Peaks ab, siehe `pipeline.py leakage`). Der Khan-Datensatz
-    hat gar keine. Damit ist die Short-Channel-Regression hier erstmals kein
-    Naeherungs-Surrogat, sondern das, was sie sein soll.
-  * **Landmarken LPA / NASION / RPA vorhanden** -- also ist die Zuordnung links/rechts
-    gesichert. Beim Khan-Datensatz fehlen sie, weshalb dort nicht einmal gepruefft werden
-    kann, ob die kontralaterale Hemisphaere staerker reagiert.
-  * **Vorberechnete Sensitivitaetsmatrix** fuer genau diese Montage
-    (`get_precomputed_sensitivity("fingertapping", "icbm152")`, 28 Kanaele) -- der
-    Bildraum kostet hier also keine Extraarbeit.
-  * **Anatomische Erwartung statt Ground Truth:** getappt wird mit LINKER und RECHTER
-    Hand getrennt. Motorik ist kontralateral organisiert, also muss Tapping/Left ueber
-    C4 (rechts) und Tapping/Right ueber C3 (links) landen. Das ist keine Wahrheit im
-    Sinne der Simulation, aber eine ueberpruefbare Vorhersage -- und im Kanalraum
-    prinzipiell nicht pruefbar, weil Kanaele keine Hemisphaeren kennen.
-
-Eckdaten: 5 Probanden, 28 Kanaele, 7,8125 Hz, 2974,5 s je Aufnahme, 760/850 nm,
-je 30 Trials control / Tapping/Left / Tapping/Right (Blockdauer 5 s), kein Aux.
+Quelle: BIDS-NIRS-Tapping (Rob Luke) ueber `cedalion.data`; Datensatz, Event-Benennung und
+Global-Component-Subtraktion folgen Notebook 50b
+(`examples/machine_learning/50b_advanced_finger_tapping_lda_classification.ipynb`).
+Eckdaten: 5 Probanden, 28 Kanaele (8 kurze bei 7-8 mm, 20 lange bei 33-41 mm), 7,8125 Hz,
+2974,5 s je Aufnahme, 760/850 nm, je 30 Trials control / Tapping/Left / Tapping/Right
+(Blockdauer 5 s), kein Aux. Landmarken Nz/LPA/RPA sind vorhanden, die Sensitivitaetsmatrix
+fuer die Montage ist in Cedalion vorberechnet. Tapping links/rechts liefert eine anatomische
+Erwartung (kontralateral: Left -> C4, Right -> C3), die im Bildraum pruefbar ist.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.data.multisubject            # Inventar
@@ -52,23 +30,19 @@ from cedalion import units
 
 from drift_glm.core import preprocess as prep
 
-#: Trigger-Werte -> sprechende Namen, exakt wie in Notebook 50b. "15.0" ist ein
-#: Sentinel-Event am Aufnahmeende und gehoert in keine Analyse.
+#: Trigger-Werte -> Namen wie in Notebook 50b; "15.0" ist ein Sentinel-Event am Aufnahmeende.
 EVENT_MAP = {"1.0": "control", "2.0": "Tapping/Left", "3.0": "Tapping/Right",
              "15.0": "sentinel"}
 
-#: Bedingungen, die modelliert werden. Die Ruhe DAZWISCHEN ist die implizite Baseline und
-#: darf nicht zusaetzlich als Regressor auftauchen -- sonst waeren alle Bedingungen
-#: zusammen konstant und damit kollinear mit dem Offset (dieselbe Falle wie in
-#: `realdata.stim_df`).
+#: Modellierte Bedingungen. Die Ruhe dazwischen ist die implizite Baseline; als eigener
+#: Regressor waere sie kollinear mit dem Offset (wie in `realdata.stim_df`).
 CONDITIONS = ("control", "Tapping/Left", "Tapping/Right")
 TAPPING = ("Tapping/Left", "Tapping/Right")
 
-#: Long/Short-Grenze. 15 mm wie in Notebook 50b -- hier ist die Wahl unkritisch, weil die
-#: Verteilung eine echte Luecke hat: 8 Kanaele bei 7-8 mm, dann nichts bis 33 mm.
+#: Long/Short-Grenze wie in Notebook 50b; die Abstaende haben eine Luecke zwischen 8 und 33 mm.
 SHORT_THRESHOLD = 15.0 * units.mm
 
-#: Kontralaterale Erwartung: welche Landmarke soll bei welcher Hand aktiv werden?
+#: Kontralaterale Erwartung: Landmarke, unter der die Aktivierung je Hand liegen soll.
 EXPECTED_SIDE = {"Tapping/Left": "C4", "Tapping/Right": "C3"}
 
 #: Schluessel der Sensitivitaetsmatrix (siehe `imagespace.ADOT_KEYS`).
@@ -104,11 +78,8 @@ def load(path):
 def stim_df(rec, mode: str = "hands") -> pd.DataFrame:
     """Stimulus-Tabelle.
 
-    `"hands"`   Beide Haende getrennt (+ control). Das ist die Variante fuer die
-                Lateralisierungsfrage und fuer den Bildraum.
-    `"tapping"` Beide Haende zu EINEM Regressor zusammengefasst (+ control) -- mehr Trials
-                je Regressor, also stabiler; die Variante fuer den Driftfamilien-Vergleich,
-                analog zu `realdata.stim_df(mode="tapping")`.
+    `"hands"` haelt beide Haende getrennt (Lateralisierung, Bildraum); `"tapping"` fasst
+    sie zu einem Regressor zusammen (Driftfamilien-Vergleich, wie `realdata.stim_df`).
     """
     df = rec.stim.copy()
     if mode == "tapping":
@@ -167,8 +138,8 @@ def inventory_report():
     check("Trials je Bedingung", int(df.n_events.min() / 3), "30",
           bool((df.n_events >= 84).all()))
 
-    print("\nDamit anwendbar, was auf den anderen Datensaetzen ausfiel:")
-    print("  * short_avg / short_maxcorr / short_closest mit ECHTEN kurzen Kanaelen")
+    print("\nAnwendbar auf diesem Datensatz:")
+    print("  * short_avg / short_maxcorr / short_closest mit echten kurzen Kanaelen")
     print("  * Global-Component-Subtraktion nach Notebook 50b")
     print("  * Bildraum (vorberechnete Adot fuer ICBM152)")
     print("  * Lateralisierung: Tapping/Left -> C4, Tapping/Right -> C3")
@@ -180,11 +151,9 @@ def preprocess_recording(rec, *, motion_method: str = prep.DEFAULT_MOTION,
                          amp_range=None, dpf: float = prep.DEFAULT_DPF):
     """Preprocessing-Kette (`preprocess.py`) auf eine Aufnahme. Rueckgabe (Pre, amp_range).
 
-    Identische Reihenfolge wie bei Simulation und Khan-Datensatz. Nur die
-    Amplitudengrenzen sind geraeteabhaengig: dieser Datensatz ist dimensionslos skaliert
-    (Median 0,284) und hat keine abgetrennte dunkle Population -- die datengetriebene
-    Suche schaltet die Grenze daher korrekt ab (dunkelste Messung beim 0,21-fachen des
-    Medians). Verworfen wird hier also ueber SNR und Kanalabstand.
+    Gleiche Reihenfolge wie bei Simulation und Khan-Datensatz. Die Amplituden sind hier
+    dimensionslos skaliert und ohne dunkle Population, die datengetriebene Amplitudengrenze
+    schaltet sich daher ab; verworfen wird ueber SNR und Kanalabstand.
     """
     if amp_range is None:
         amp_range = prep.amp_range_from_data(rec)

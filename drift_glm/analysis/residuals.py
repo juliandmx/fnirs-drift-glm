@@ -1,23 +1,13 @@
-"""Residual-Analyse auf den simulierten nn22-Daten: WAS konnte das Modell nicht fitten?
+"""Residual-Analyse auf den simulierten nn22-Daten: Zeitspuren, Spektren, HRF-Form.
 
-Der Sweep liefert die Residual-KENNZAHLEN (R^2, Residual-RMS) fuer das volle Raster;
-dieses Modul zeigt die Residuen selbst -- als Zeitspuren und als Spektren -- und
-beantwortet damit die Frage aus den Gespraechsnotizen 2026-09-08 inhaltlich: Bleibt
-niederfrequenter Drift uebrig ("Modell zu schwach"), oder nur breitbandiges Rauschen?
-Dazu die zweite Notiz-Frage: WIE unterscheiden sich die HRF-Schaetzungen der Familien?
-Mit der FLEXIBLEN Recovery-Basis (GaussianKernels, wie flex_basis.py) wird die
-rueckgewonnene HRF-Form je Familie sichtbar, onset-gelockt und gegen die eingemischte
-Ground Truth gestellt.
+Der Sweep liefert nur die Residual-Kennzahlen; hier werden die Residuen selbst je
+Driftfamilie gezeigt (Beispielspur und Median-Spektrum, Rohsignal als Referenz), dazu die
+mit flexibler Basis (GaussianKernels, wie flex_basis.py) rueckgewonnene HRF-Form gegen
+die eingemischte Ground Truth. `lowfreq_frac` ist der Anteil der Residualleistung
+unterhalb DRIFT_FMAX (0,02 Hz); gross = das Driftmodell hat Trend uebrig gelassen.
 
-Erzeugt:
-  figures/27_residual_analysis.png     Beispiel-Residualspuren + Residual-Spektren je
-                                       Familie (mit dem Rohsignal als Referenz)
-  figures/28_hrf_family_comparison.png rueckgewonnene HRF je Familie vs. Ground Truth
-                                       (flexible Basis, Mittel ueber die Blob-Kanaele)
-  results/residuals_summary.csv        R^2 / Residual-RMS / Niederfrequenz-Anteil
-
-Der Niederfrequenz-Anteil (`lowfreq_frac`) ist der Anteil der Residualleistung
-unterhalb von DRIFT_FMAX (0,02 Hz): gross = das Driftmodell hat Trend uebrig gelassen.
+Erzeugt figures/27_residual_analysis.png, figures/28_hrf_family_comparison.png und
+results/residuals_summary.csv (R^2, Residual-RMS, lowfreq_frac).
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.residuals         # voll (~20 min)
@@ -59,7 +49,7 @@ HBO_COLOR, HBR_COLOR = "#c44e52", "#4c72b0"   # Konvention wie Abb. 19
 
 
 def _subset(P):
-    """Fit-Subset wie im Sweep: die NCH staerkst-aktivierten LANGEN Kanaele."""
+    """Fit-Subset wie im Sweep: die NCH staerkst-aktivierten langen Kanaele."""
     ts_long, _ = sc.split(P.conc_syn, P.geo3d)
     bt = P.beta_true_map.sel(channel=ts_long.channel)
     if "trial_type" in bt.dims:
@@ -229,8 +219,7 @@ def _fig27(families, windows, traces, spectra):
         ax.set_ylabel("PSD [µM²/Hz]")
         ax.grid(alpha=0.3, which="both")
         ax.legend(fontsize=7, ncol=2)
-    fig.suptitle("Was konnte das Modell nicht fitten? Residuen im Zeit- und "
-                 "Frequenzraum (AR-IRLS, baseline)")
+    fig.suptitle("Residuen im Zeit- und Frequenzraum je Driftfamilie (AR-IRLS, baseline)")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(OUT / "27_residual_analysis.png", dpi=130)
     plt.close(fig)
@@ -261,10 +250,9 @@ def _fig28(families, hrf_curves, win):
         axes[r * ncol].set_ylabel(r"$\Delta c$ [µM]")
     for k in range(len(families) - ncol, len(families)):
         axes[k].set_xlabel("Zeit nach Stimulus-Onset [s]")
-    fig.suptitle("Wie unterscheiden sich die HRF-Schätzungen? Rückgewonnene HRF je "
-                 "Driftfamilie (flexible Basis, gestrichelt)\ngegen die eingemischte "
-                 f"Ground Truth (dick, blass) · rot HbO, blau HbR · Fenster {win:g} s, "
-                 "Mittel über die Blob-Kanäle", fontsize=11)
+    fig.suptitle("Rückgewonnene HRF je Driftfamilie (flexible Basis, gestrichelt) gegen "
+                 "die eingemischte Ground Truth (dick, blass)\nrot HbO, blau HbR, "
+                 f"Fenster {win:g} s, Mittel über die Blob-Kanäle", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.9))
     fig.savefig(OUT / "28_hrf_family_comparison.png", dpi=130)
     plt.close(fig)

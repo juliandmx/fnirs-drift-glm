@@ -1,43 +1,16 @@
-"""Gemeinsame Augmentations-/GLM-Pipeline fuer die Bachelorarbeit.
+"""Augmentations-/GLM-Pipeline: Ruhedaten plus HRF mit bekannter Amplitude, Designmatrix.
 
-Laedt Ruhedaten, speist eine HRF mit BEKANNTER Peak-Amplitude ein und baut die
-Designmatrix.
+Die Aktivierung wird im Bildraum erzeugt (Gauss-Blob auf dem Kortex unter C3/C4), ueber
+die Sensitivitaetsmatrix in Optical Density je Kanal getragen und dort vor der Motion
+Correction in die Ruhedaten eingemischt. Die Vorverarbeitung liegt in `preprocess.py`;
+die erste Haelfte (Rohamplitude -> OD) kann ueber `build(stage=...)` durchgereicht
+werden, die zweite laeuft je Build.
 
-WO DIE GROUND TRUTH LIEGT (Betreuungsvorgabe 2026-08-05). Die Aktivierung wird im
-BILDRAUM erzeugt -- als Gauss-Blob auf dem Kortex unter C3 und C4 -- und von dort ueber
-das Vorwaertsmodell (Sensitivitaetsmatrix) in den Kanalraum getragen. Erst dort kommen
-die Ruhedaten dazu. Damit gelten beide Vorgaben gleichzeitig, die sich zu widersprechen
-schienen: erzeugt wird im Bildraum (2026-08-05), eingemischt im Kanalraum (2026-07-11).
+Der HRF-Regressor ist auf Peak = 1 normiert, die Ground-Truth-Amplitude ist damit die
+Peak-Konzentrationsaenderung in µM und exakt der GLM-Koeffizient. Der Gamma-Parameter T
+(`smooth_T_s`) ist nicht die Stimulusdauer; hrf_regressors faltet bereits mit ihr.
 
-Der Unterschied zur alten Fassung ist nicht kosmetisch. Vorher war die Wahrheit ein Blob
-ueber den KANAL-MITTELPUNKTEN -- eine Hilfskonstruktion ohne Kopfmodell, bei der die
-raeumliche Ausdehnung nichts mit Anatomie zu tun hatte und ein Kanal genau dann aktiv war,
-wenn sein Mittelpunkt nah am Zentrum lag. Jetzt ergibt sich die Aktivierung eines Kanals
-daraus, wie stark sein Sensitivitaetsprofil den Blob ueberlappt. Das ist zugleich der
-einzige Weg, den Fehler AM ORT zu messen statt nur je Kanal. Die alte Variante bleibt
-ueber `activation_space="channel"` erreichbar, damit die v4-Zahlen anschlussfaehig
-bleiben.
-
-Die Vorverarbeitung selbst liegt vollstaendig in `preprocess.py` -- dieses Modul ruft
-sie nur auf und haelt KEINE eigenen Preprocessing-Schritte und keine eigenen
-Standardwerte dafuer (die Defaults werden aus `preprocess` referenziert, damit sie nicht
-auseinanderlaufen). Die erste Haelfte der Kette (Rohamplitude -> Optical Density) haengt
-weder vom Analysefenster noch vom Seed ab und kann ueber `build(stage=...)`
-durchgereicht werden; die zweite Haelfte (Motion Correction -> Pruning -> Konzentration)
-laeuft je Build, weil die Aktivierung VOR der Korrektur eingemischt wird.
-
-Der HRF-Regressor wird auf Peak = 1 normiert -- dadurch ist die Ground-Truth-Amplitude
-direkt die Peak-Konzentrationsaenderung in µM (realistisch ~0.1..1 µM) statt eines
-uninterpretierbaren Koeffizienten auf einem ungenormten Regressor. Injektion und Fit
-nutzen denselben (normierten) Regressor, sodass die Amplitude exakt der GLM-Koeffizient
-ist.
-
-Hinweis zur Form: Nur die AMPLITUDE ist physiologisch (~0.1..1 µM), nicht
-automatisch die Kurvenform. Die Blockbreite entsteht aus der Faltung der
-Gamma-Basis mit der Stimulusdauer (in hrf_regressors). Der Gamma-Parameter T
-ist davon ENTKOPPELT (Parameter smooth_T_s, Default 0). Fruehere Versionen
-setzten T=stim_dur und falteten die Boxcar dadurch doppelt -> unrealistisch
-breite/spaete HRF.
+Aufruf:  conda run -n cedalion python -m drift_glm.core.pipeline [leakage]
 """
 
 from __future__ import annotations
@@ -64,29 +37,26 @@ class Pipeline:
     conc: xr.DataArray          # Ruhe-Konzentration (time, channel, chromo) [µM]
     activation: xr.DataArray    # eingespeiste HRF (Ground Truth) [µM]
     conc_syn: xr.DataArray      # conc + activation [µM]
-    geo3d: object               # Sonden-/Optodengeometrie (LabeledPoints, fuer scalp_plot)
+    geo3d: object               # Optodengeometrie (LabeledPoints, fuer scalp_plot)
     dm_hrf: glm.design_matrix.DesignMatrix    # nur HRF (normiert)
     dm_full: glm.design_matrix.DesignMatrix   # HRF + Drift
     stim_df: object
     hrf_names: list[str]
-    beta_true: dict[str, float]  # {"HbO": .., "HbR": ..}  PEAK-Amplitude (Blob-Max) [µM]
-    beta_true_map: xr.DataArray  # per-Kanal Ground-Truth-Peak (channel, chromo) [µM]
-    raw_hrf_peak: dict[str, float]  # Peak jeder HRF-Spalte VOR der Normierung
+    beta_true: dict[str, float]  # {"HbO": .., "HbR": ..} Peak-Amplitude (Blob-Maximum) [µM]
+    beta_true_map: xr.DataArray  # Ground-Truth-Peak je Kanal (channel, chromo) [µM]
+    raw_hrf_peak: dict[str, float]  # Peak jeder HRF-Spalte vor der Normierung
     chromo: np.ndarray
-    aux: object                  # rec.aux_ts (Accelerometer/Gyroscope, fuer Motion-Regr.)
+    aux: object                  # rec.aux_ts (Accelerometer/Gyroskop, fuer Motion-Regr.)
     pre: object = None           # preprocess.Preprocessed (verworfene Kanaele, Masken, ...)
-    activation_space: str = "image"   # "image" (Kortex-Blob) oder "channel" (alte Fassung)
     beta_true_img: xr.DataArray = None   # Ground Truth auf dem Kortex (vertex, chromo) [µM]
     seeds: dict = None           # {Landmarke: Vertexindex} des Blob-Zentrums
     dataset: str = "nn22_resting"        # bestimmt die Sensitivitaetsmatrix
 
 
 def _normalize_hrf_to_unit_peak(dm_hrf, hrf_names):
-    """Skaliere jede HRF-Regressorspalte auf Peak = 1 (ueber Zeit & chromo).
+    """Skaliert jede HRF-Regressorspalte auf Peak = 1 (ueber Zeit und chromo).
 
-    Gibt zusaetzlich die Peaks VOR der Normierung zurueck (dict pro Regressor),
-    damit die eingespeiste Amplitude ohne Normierung reproduzierbar gemeldet
-    werden kann.
+    Gibt zusaetzlich die Peaks vor der Normierung zurueck ({Regressor: Peak}).
     """
     raw_peaks = {}
     for name in hrf_names:
@@ -98,116 +68,66 @@ def _normalize_hrf_to_unit_peak(dm_hrf, hrf_names):
     return dm_hrf, raw_peaks
 
 
-def _spatial_beta(conc, geo3d, peak_hbo, hbr_ratio, sigma_mm):
-    """Per-Kanal Ground-Truth-Peak als raeumlicher Gauss-Blob (im Kanal-Raum).
-
-    beta_true(Kanal) = Peak * exp(-d^2 / 2 sigma^2), d = Abstand des Kanal-Mittelpunkts
-    (Mittel aus Quell- und Detektorposition) zum Blob-Zentrum (Kanal am naechsten zum
-    Zentroid aller Mittelpunkte). sigma_mm=None -> flach (Gewicht 1 ueberall).
-
-    Bewusste Vereinfachung ggue. dem Augmentations-Notebook (build_spatial_activation
-    ueber Vertices + Forward-Modell): der Blob wird DIREKT im Kanal-Konzentrationsraum
-    definiert -> kein Kopfmodell/Adot noetig, beta_true(Kanal) ist exakt der
-    Kanal-Raum-Peak in µM. Rueckgabe: DataArray (channel, chromo).
-    """
-    chromo = conc.chromo.values
-    if sigma_mm is None:
-        w = np.ones(conc.sizes["channel"])
-    else:
-        g = geo3d
-        try:
-            if g.pint.units is not None:
-                g = g.pint.to("mm").pint.dequantify()
-        except Exception:
-            pass
-        src = np.asarray(g.sel(label=conc.source.values).values, dtype=float)
-        det = np.asarray(g.sel(label=conc.detector.values).values, dtype=float)
-        mid = 0.5 * (src + det)                                  # (channel, 3)
-        center = mid[int(np.argmin(np.linalg.norm(mid - mid.mean(0), axis=1)))]
-        d = np.linalg.norm(mid - center, axis=1)
-        w = np.exp(-(d ** 2) / (2.0 * sigma_mm ** 2))
-    scale = {"HbO": peak_hbo, "HbR": peak_hbo * hbr_ratio}
-    arr = np.stack([w * scale[str(c)] for c in chromo], axis=1)   # (channel, chromo)
-    return xr.DataArray(arr, dims=("channel", "chromo"),
-                        coords={"channel": conc.channel.values, "chromo": chromo})
-
-
 def build(
     *,
-    motion_method: str = prep.DEFAULT_MOTION,   # Achsenstufe, Begruendung in preprocess
+    motion_method: str = prep.DEFAULT_MOTION,   # Sweep-Achse, s. preprocess.DEFAULT_MOTION
     snr_threshold: float = prep.DEFAULT_SNR_THRESHOLD,
     amp_range: tuple[float, float] = prep.DEFAULT_AMP_RANGE,
     sd_range: tuple[float, float] = prep.DEFAULT_SD_RANGE,
     drift_order: int = 3,
     beta_true_hbo: float = 0.6,
     hbr_ratio: float = -0.4,
-    activation_space: str = "image",      # "image" = Kortex-Blob (Vorgabe), "channel" = alt
     dataset: str = "nn22_resting",        # Schluessel der Sensitivitaetsmatrix
-    act_labels=ims.MOTOR_LANDMARKS,       # Blob-Zentren, Vorgabe: C3 und C4
+    act_labels=ims.MOTOR_LANDMARKS,       # Blob-Zentren (C3, C4)
     spatial_scale_mm: float = 20.0,       # Blob-Streuung auf dem Kortex (geodaetisch)
     separate_trial_types: bool = False,   # C3/C4 getrennt statt bilateral (s. imagespace)
-    blob_sigma_mm: float | None = 30.0,   # nur activation_space="channel": Kanalraum-Blob
-    inject_long_only: bool | None = None,  # None = automatisch, s.u.
-    short_threshold=sc.SHORT_THRESHOLD,   # Grenze lang/kurz (Betreuungsvorgabe 1,8 cm)
 
     stim_dur_s: float = 10.0,
     min_interval_s: float = 25.0,
     max_interval_s: float = 35.0,
     tau_s: float = 0.0,
     sigma_s: float = 3.0,
-    smooth_T_s: float = 0.0,   # optionale Gamma-Glaettung; NICHT die Stimulusdauer
+    smooth_T_s: float = 0.0,   # Gamma-Parameter T; nicht die Stimulusdauer
     window_s: float | None = None,   # Analysefenster [s]; None = volle Aufnahme
     rec=None,                  # vorgeladenes Recording (spart Neuladen im Sweep)
     stage=None,                # vorberechnete preprocess.ODStage (spart int2od im Sweep)
     dpf: float = prep.DEFAULT_DPF,
     seed: int = 42,
 ) -> Pipeline:
-    # build_stim_df nutzt Pythons random-Modul -> seeden fuer Reproduzierbarkeit.
-    # (Eine einzelne Stimulus-Platzierung ist nur eine Stichprobe; fuer stabile
-    #  Bias/Varianz-Schaetzung ueber mehrere Seeds mitteln.)
+    # build_stim_df nutzt Pythons random-Modul; beide Generatoren seeden.
     random.seed(seed)
     np.random.seed(seed)
 
-    # Erste Haelfte der Kette: Rohamplitude -> OD. Sie haengt weder vom Fenster noch vom
-    # Seed ab und kann im Sweep als `stage` durchgereicht werden.
+    # Erste Haelfte der Kette (Rohamplitude -> OD) haengt weder von Fenster noch Seed ab.
     if stage is None:
         if rec is None:
             rec = cedalion.data.get_nn22_resting_state()
         stage = prep.to_od_stage(rec)
     geo3d = stage.geo3d
 
-    # Analysefenster: auf die ersten window_s Sekunden kuerzen. Das passiert VOR der
-    # Motion Correction, damit Korrektur und Auswertung dieselbe Zeitreihe sehen.
+    # Analysefenster vor der Motion Correction kuerzen, damit Korrektur und Auswertung
+    # dieselbe Zeitreihe sehen.
     if window_s is not None:
         fs = 1.0 / float(np.median(np.diff(stage.od.time.values)))
         n = int(round(window_s * fs))
         stage = dc_replace(stage, od=stage.od.isel(time=slice(0, n)),
                            amp_raw=stage.amp_raw.isel(time=slice(0, n)))
 
-    # Gitter fuer Stimulus/Designmatrix/Blob: Konzentration OHNE Korrektur und OHNE
-    # Pruning -- hier zaehlen nur die Koordinaten (Zeit, Kanaele, Chromophore).
+    # Koordinatengitter (Zeit, Kanaele, Chromophore) fuer Stimulus/Designmatrix/Blob:
+    # Konzentration ohne Korrektur und ohne Pruning.
     conc_grid = prep.to_conc(stage.od, geo3d, dpf)
 
     conc = conc_grid
 
-    # Die Ground Truth zuerst -- sie legt fest, WIE VIELE HRF-Regressoren es gibt.
-    if activation_space == "image":
-        gt = ims.ground_truth(
-            dataset, conc.channel.values, geo3d, labels=act_labels,
-            spatial_scale_mm=spatial_scale_mm, hbr_scale=hbr_ratio,
-            target_uM=beta_true_hbo, separate_trial_types=separate_trial_types, dpf=dpf)
-        beta_true_map, beta_true_img, seeds = gt["beta_true_map"], gt["img"], gt["seeds"]
-        sees_cortex = gt["sees_cortex"]
-        trial_types = ([str(t) for t in beta_true_map.trial_type.values]
-                       if "trial_type" in beta_true_map.dims else ["Stim"])
-    elif activation_space == "channel":
-        beta_true_map = _spatial_beta(conc, geo3d, beta_true_hbo, hbr_ratio,
-                                      blob_sigma_mm)
-        beta_true_img, seeds, trial_types = None, None, ["Stim"]
-        sees_cortex = np.ones(conc.sizes["channel"], dtype=bool)
-    else:
-        raise ValueError(f"activation_space muss 'image' oder 'channel' sein, "
-                         f"nicht {activation_space!r}")
+    # Die Ground Truth legt fest, wie viele HRF-Regressoren es gibt.
+    gt = ims.ground_truth(
+        dataset, conc.channel.values, geo3d, labels=act_labels,
+        spatial_scale_mm=spatial_scale_mm, hbr_scale=hbr_ratio,
+        target_uM=beta_true_hbo, separate_trial_types=separate_trial_types, dpf=dpf)
+    beta_true_map, beta_true_img, seeds = gt["beta_true_map"], gt["img"], gt["seeds"]
+    sees_cortex = gt["sees_cortex"]
+    trial_types = ([str(t) for t in beta_true_map.trial_type.values]
+                   if "trial_type" in beta_true_map.dims else ["Stim"])
 
     stim_df = synhrf.build_stim_df(
         max_time=conc.time.values[-1] * units.seconds,
@@ -221,10 +141,8 @@ def build(
         order="random",
     )
 
-    # T (smooth_T_s) ist bewusst von der Stimulusdauer entkoppelt: hrf_regressors
-    # faltet die Basis bereits mit der Stimulusdauer (=> Blockbreite). Mit
-    # T=stim_dur wuerde die Boxcar doppelt gefaltet -> unrealistisch breite/spaete
-    # HRF. Default 0; 3.0 reproduziert die Glaettung aus Notebook 62.
+    # T ist von der Stimulusdauer entkoppelt: hrf_regressors faltet die Basis bereits mit
+    # ihr, T=stim_dur wuerde die Boxcar doppelt falten. 3.0 entspricht Notebook 62.
     basis = glm.Gamma(tau=tau_s * units.s, sigma=sigma_s * units.s,
                       T=smooth_T_s * units.s)
     dm_hrf = glm.design_matrix.hrf_regressors(conc, stim_df, basis)
@@ -235,38 +153,16 @@ def build(
 
     chromo = conc.chromo.values
 
-    # Kurze Kanaele duerfen die HRF nicht enthalten: ihre "Banane" erreicht den Kortex
-    # nicht, sie messen nur Kopfhaut. Enthielte der Short-Channel-Regressor die HRF, wuerde
-    # er sie aus den langen Kanaelen herausregressieren -- exakt das Artefakt, das in
-    # Sweep v1 der Global-Mean-Regressor bei raeumlich flacher Injektion erzeugte.
-    #
-    # Im Bildraum erledigt das die Physik: der Blob sitzt auf dem Kortex, und die
-    # Sensitivitaet eines 8-18-mm-Kanals fuer Hirnvertices ist um Groessenordnungen
-    # kleiner als die eines 3-cm-Kanals. Das Nullen von Hand ist dann nicht nur
-    # unnoetig, sondern falsch -- es wuerde einen real vorhandenen (kleinen) Anteil
-    # unterdruecken und den Short-Channel-Regressor besser aussehen lassen, als er ist.
-    # Wie klein der Restanteil tatsaechlich ist, misst `python -m drift_glm.core.pipeline leakage`.
-    if inject_long_only is None:
-        inject_long_only = (activation_space == "channel")
-    if inject_long_only:
-        _, ts_short = sc.split(conc, geo3d, short_threshold)
-        short_labels = {str(c) for c in ts_short.channel.values}
-        is_long = xr.DataArray(
-            [str(c) not in short_labels for c in beta_true_map.channel.values],
-            dims="channel", coords={"channel": beta_true_map.channel.values})
-        beta_true_map = beta_true_map.where(is_long, 0.0)
+    # Kurze Kanaele bekommen ueber das Vorwaertsmodell den kleinen Anteil, den ihre
+    # Sensitivitaet fuer Hirnvertices hergibt (`python -m drift_glm.core.pipeline leakage`).
 
-    # Peak-Referenz: der staerkste Kanal bei HbO, und der HbR-Wert DESSELBEN Kanals.
-    # Bei der Kanalraum-Variante ist das per Konstruktion (beta_true_hbo, ratio*peak); im
-    # Bildraum wird es gemessen, weil der Weg Bildraum -> Adot -> Beer-Lambert das
-    # Verhaeltnis leicht verschiebt (verschiedene Extinktionskoeffizienten und
-    # Kanalabstaende).
+    # Peak-Referenz: staerkster HbO-Kanal und der HbR-Wert desselben Kanals. Das
+    # HbR/HbO-Verhaeltnis wird gemessen, weil Adot und Beer-Lambert es leicht verschieben.
     _bt = beta_true_map
     if "trial_type" in _bt.dims:
         _bt = _bt.max("trial_type")
-    # Nur Kanaele, die den Kortex sehen, duerfen die Peak-Referenz stellen: die
-    # "Konzentration" eines kurzen Kanals ist wegen des kurzen Nenners in od2conc keine
-    # Amplitude (Begruendung in imagespace.calibrate_to_channel_peak).
+    # Nur Kanaele, die den Kortex sehen: die Konzentration eines kurzen Kanals ist wegen
+    # des kurzen Nenners in od2conc keine Amplitude (s. imagespace.calibrate_to_channel_peak).
     _v = np.abs(np.asarray(_bt.sel(chromo="HbO").values, float))
     _j = int(np.nanargmax(np.where(sees_cortex, _v, -np.inf)))
     beta_true = {str(c): float(_bt.sel(chromo=c).isel(channel=_j)) for c in chromo}
@@ -279,49 +175,40 @@ def build(
                 "regressor": dm_hrf.common.regressor.values, "chromo": chromo},
     )
     for name in hrf_names:
-        # Regressorname ist "HRF <trial_type>" -- bei getrennten Seiten bekommt jeder
-        # Regressor sein eigenes raeumliches Muster.
+        # Regressorname ist "HRF <trial_type>"; bei getrennten Seiten hat jeder Regressor
+        # sein eigenes raeumliches Muster.
         bt = beta_true_map
         if "trial_type" in bt.dims:
             bt = bt.sel(trial_type=str(name).removeprefix("HRF ").strip())
-        # Explizit nach LABEL ausrichten, bevor .values positional zugewiesen wird.
-        # Der Bug vom 08.09.: ground_truth lieferte die Karte in od2conc-sortierter
-        # Kanalreihenfolge, die positionale Zuweisung hat die Injektion dadurch auf
-        # falsche Kanaele verteilt -- beta_true_map (Label-korrekt) und tatsaechlich
-        # eingemischte Aktivierung passten nicht mehr zusammen. ground_truth ordnet
-        # inzwischen selbst zurueck; diese Zeile haelt die Invariante unabhaengig davon.
+        # Nach Label ausrichten, bevor .values positional zugewiesen wird: od2conc liefert
+        # die Kanaele in anderer Reihenfolge.
         bt = bt.sel(channel=betas_true.channel.values)
         for c in chromo:
             betas_true.loc[:, name, c] = bt.sel(chromo=c).values
 
-    # Die INTENDIERTE Aktivierung in Konzentration (µM) -- das ist die Ground Truth.
+    # Intendierte Aktivierung in Konzentration [µM], die Ground Truth.
     activation = glm.predict(conc, betas_true, dm_hrf).transpose(*conc.dims)
-    # glm.predict reicht source/detector nicht durch; conc2od braucht sie aber fuer die
-    # Kanalabstaende. Vom Konzentrationsgitter uebernehmen.
+    # glm.predict reicht source/detector nicht durch; conc2od braucht sie fuer die
+    # Kanalabstaende.
     activation = activation.assign_coords(
         {k: conc[k] for k in ("source", "detector") if k in conc.coords})
 
-    # ... und jetzt der eigentliche Punkt des Umbaus: die Aktivierung wird in die OD
-    # zurueckgerechnet und dort EINGEMISCHT, also VOR der Motion Correction. Dadurch
-    # laeuft die Korrektur ueber Signal und Rauschen -- so wie auf echten Daten. In der
-    # frueheren Fassung wurde erst nach dem kompletten Preprocessing addiert; die
-    # Korrektur konnte die HRF dann per Konstruktion nicht beschaedigen und ein
-    # Verfahren wie TDDR sah kuenstlich gut aus.
+    # In OD zurueckrechnen und vor der Motion Correction einmischen, damit die Korrektur
+    # ueber Signal und Rauschen laeuft wie auf echten Daten.
     act_od = prep.to_od_activation(activation, geo3d, stage.od.wavelength, dpf)
 
     kw = dict(motion_method=motion_method, snr_threshold=snr_threshold,
               amp_range=amp_range, sd_range=sd_range, dpf=dpf)
-    # Reine Ruhedaten durch dieselbe Kette -> liefert zugleich die Kanalmasken.
+    # Ruhedaten durch dieselbe Kette; liefert zugleich die Kanalmasken.
     pre_clean = prep.finish(stage, **kw)
-    # Augmentiert, mit den IDENTISCHEN Masken: die Kanalqualitaet ist eine Eigenschaft
-    # der Messung, nicht des eingemischten Signals. Sonst haetten conc und conc_syn
-    # unterschiedliche Kanalmengen.
+    # Augmentiert mit denselben Masken, sonst haetten conc und conc_syn unterschiedliche
+    # Kanalmengen.
     pre_syn = prep.finish(stage, stage.od + act_od,
                           masks={k: v for k, v in pre_clean.masks.items()
                                  if k != "nonpositive"}, **kw)
 
     conc, conc_syn = pre_clean.conc, pre_syn.conc
-    # Ground Truth und intendierte Aktivierung auf die ueberlebenden Kanaele beschneiden.
+    # Ground Truth und Aktivierung auf die ueberlebenden Kanaele beschneiden.
     keep = conc_syn.channel
     activation = activation.sel(channel=keep)
     beta_true_map = beta_true_map.sel(channel=keep)
@@ -331,19 +218,13 @@ def build(
                     hrf_names=hrf_names, beta_true=beta_true,
                     beta_true_map=beta_true_map, raw_hrf_peak=raw_hrf_peak,
                     chromo=chromo, aux=pre_syn.aux, pre=pre_syn,
-                    activation_space=activation_space, beta_true_img=beta_true_img,
+                    beta_true_img=beta_true_img,
                     seeds=seeds, dataset=dataset)
 
 
 def _leakage_report(dataset: str = "nn22_resting", window_s: float = 180.0):
-    """Wie viel der eingemischten HRF landet in den kurzen Kanaelen?
-
-    Die Zahl entscheidet, ob das Nullen von Hand (`inject_long_only`) noch gebraucht
-    wird. Bei Bildraum-Injektion sollte der Anteil klein sein, weil ein kurzer Kanal fuer
-    Hirnvertices kaum sensitiv ist -- die Frage ist, WIE klein.
-    """
-    P = build(dataset=dataset, window_s=window_s, activation_space="image",
-              inject_long_only=False)
+    """Anteil der eingemischten HRF, der in den kurzen Kanaelen landet."""
+    P = build(dataset=dataset, window_s=window_s)
     bt = P.beta_true_map
     if "trial_type" in bt.dims:
         bt = bt.max("trial_type")
@@ -357,16 +238,15 @@ def _leakage_report(dataset: str = "nn22_resting", window_s: float = 180.0):
     print(f"Abstaende: kurz {d[is_short].min():.1f}-{d[is_short].max():.1f} mm, "
           f"lang {d[~is_short].min():.1f}-{d[~is_short].max():.1f} mm")
 
-    # Die scharfe Fassung der Limitation aus shortchannel.py: sehen die "kurzen" Kanaele
-    # den Kortex? Auf einer echten Short-Separation-Montage (7-8 mm) ist die Antwort nein,
-    # auf nn22 (15,5-18 mm) ja -- und dann ist der Regressor kein reiner Systemik-Proxy.
+    # Sehen die kurzen Kanaele den Kortex? Auf einer echten Short-Separation-Montage
+    # (7-8 mm) nein, auf nn22 (15.5-18 mm) ja; dann ist der Regressor kein reiner
+    # Systemik-Proxy.
     Ab = ims.brain_adot(ims.adot(dataset), channels=[str(c) for c in bt.channel.values])
     sees = ims.cortex_channels(Ab)
     print(f"Sehen den Kortex (>= {100 * ims.CORTEX_CHANNEL_FRAC:.0f} % der maximalen "
           f"Hirnsensitivitaet): {int(sees.sum())} Kanaele, davon "
           f"{int((sees & is_short).sum())} von {int(is_short.sum())} kurzen")
-    print("\nWie viel der eingemischten HRF steckt in welchem systemischen Regressor?")
-    print("(Ein Regressor, der einen Teil des Gesuchten enthaelt, rechnet ihn weg.)")
+    print("\nAnteil der eingemischten HRF je systemischem Regressor:")
     for c in ("HbO", "HbR"):
         v = np.asarray(bt.sel(chromo=c).values, float)
         a = np.abs(v)
@@ -387,7 +267,7 @@ if __name__ == "__main__":
         _leakage_report(*(sys.argv[2:3] or ["nn22_resting"]))
     else:
         P = build(window_s=180.0)
-        print(f"activation_space : {P.activation_space}  (Datensatz {P.dataset})")
+        print(f"Datensatz        : {P.dataset}")
         print(f"Kanaele          : {P.conc.sizes['channel']}")
         print(f"HRF-Regressoren  : {P.hrf_names}")
         print(f"Ground Truth Peak: " + ", ".join(f"{k} {v:+.3f} µM"

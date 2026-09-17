@@ -1,19 +1,11 @@
-"""Fokus-Analyse: Verzerrt die Driftwahl die FORM der geschaetzten HRF?
+"""Form der geschaetzten HRF je Driftfamilie, gefittet mit flexibler Basis.
 
-Bisher nutzten Injektion und Fit dieselbe feste Gamma-Form -> ein Formfehler war nicht
-unabhaengig von der Amplitude messbar. Hier wird mit einer FLEXIBLEN HRF-Basis
-(GaussianKernels) gefittet, deren Form frei ist; die injizierte HRF bleibt eine feste
-Gamma-Form (Ground Truth). So kann die Drift-Modellierung die geschaetzte HRF-Form
-verzerren -- und genau das wird gemessen.
-
-Metriken je aktiver Kanal (dann Median ueber Kanaele/Seeds), pro Driftfamilie:
-  - Form-Treue = Pearson-Korrelation zwischen rueckgewonnener und injizierter
-    HRF-Zeitreihe. Pearson ist SKALENINVARIANT -> misst reine FORM, unabhaengig von der
-    Amplitude. 1.0 = perfekte Form.
-  - Amplituden-Fehler = (rueckgew. Peak - wahrer Peak)/wahrer Peak, am Ort des wahren Peaks.
-
-Fenster 180 s, Konstellation baseline. Ausgabe: results/flex_basis_summary.csv
-und Abbildungen 20/21 in figures/.
+Injiziert wird eine feste Gamma-HRF (Ground Truth), gefittet mit GaussianKernels, deren
+Form frei ist; so wird eine Verzerrung der HRF-Form durch die Drift-Modellierung
+unabhaengig von der Amplitude messbar. Metriken je aktiver Kanal (Median ueber Kanaele
+und Seeds): Form-Treue (Pearson r zwischen rueckgewonnener und injizierter HRF,
+skaleninvariant) und relativer Amplitudenfehler am Ort des wahren Peaks. Fenster 180 s,
+Konstellation baseline. Ausgabe: results/flex_basis_summary.csv, Abb. 12/13 in figures/.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.flex_basis        # voll
@@ -64,8 +56,7 @@ def _progress(done, total, t0, last):
         f"flex_basis: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
-        f"letzte Zelle: {last}\n"
-        f"(nach jedem Fit aktualisiert)\n")
+        f"letzte Zelle: {last}\n")
 
 
 def main(mode="full"):
@@ -90,8 +81,6 @@ def main(mode="full"):
         dm_flex_hrf = glm.design_matrix.hrf_regressors(P.conc, P.stim_df, flex)
         tvec = P.conc.time.values
         for fam in families:
-            # drift_dm liefert seit v5 ein Filter-TUPEL (fmin, fmax) statt eines
-            # Skalars -- der alte Aufruf liess butter:0.01 hier abstuerzen (08.09.).
             dm_drift, filt = drift_dm(fam, P.conc)
             ts_f = ts if filt is None else ts.cd.freq_filter(
                 filt[0] * units.Hz, filt[1] * units.Hz, 4)
@@ -142,7 +131,7 @@ def main(mode="full"):
         ax[j].set_ylim(0, 1); ax[j].axhline(1.0, color="k", ls=":", lw=1)
         ax[j].set_title(f"{c}: Form-Treue (Pearson r, rueckgew. vs. wahre HRF)")
         ax[j].set_ylabel("median r"); ax[j].grid(axis="y", alpha=0.3)
-    fig.suptitle("Flexible Recovery-Basis (GaussianKernels): erhaelt die Driftwahl die HRF-Form?")
+    fig.suptitle("Form-Treue der rueckgewonnenen HRF je Driftfamilie (flexible Basis, GaussianKernels)")
     fig.tight_layout(); fig.savefig(OUT / "12_flex_shape_corr.png", dpi=130); plt.close(fig)
 
     # ---- Abb. 13: Beispiel-Formspuren rueckgewonnen vs injiziert ----

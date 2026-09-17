@@ -1,14 +1,10 @@
-"""Pipeline-Flowchart als Abbildung fuer die Arbeit (Gespraechsnotiz 2026-09-08).
+"""Pipeline-Flowchart als Abbildung fuer die Arbeit (Abb. 00).
 
-Erzeugt figures/00_pipeline_flowchart.pdf (Vektor, fuer LaTeX) und .png (Vorschau).
-Reines matplotlib -- keine Zusatzabhaengigkeit (graphviz o.ae.), damit die Abbildung
-aus demselben Environment reproduzierbar ist wie alle anderen.
-
-Inhalt: beide Straenge der Arbeit (Simulation mit bekannter Ground Truth auf nn22;
-Realdaten Khan/Multisubject) durch die GEMEINSAME Vorverarbeitung und das GLM, mit
-den jeweiligen Auswertungsmetriken. Die Injektion der synthetischen Aktivierung ist
-als Seitenpfad eingezeichnet, an der methodisch entscheidenden Stelle: in die
-optische Dichte, VOR der Motion Correction.
+Erzeugt figures/00_pipeline_flowchart.pdf (Vektor, fuer LaTeX) und .png (Vorschau) mit
+reinem matplotlib, ohne Zusatzabhaengigkeit. Gezeigt werden beide Straenge (Simulation mit
+Ground Truth auf nn22; Realdaten Khan/Multisubject) durch die gemeinsame Vorverarbeitung
+und das GLM bis zu den jeweiligen Auswertungsmetriken; die Injektion der synthetischen
+Aktivierung ist als Seitenpfad in die optische Dichte vor der Motion Correction gezeichnet.
 
 Aufruf: conda run -n cedalion python -m drift_glm.reports.flowchart
 """
@@ -91,8 +87,8 @@ def main():
     # --- Gemeinsame Vorverarbeitung ---------------------------------------------
     _box(ax, xm, 0.700, wm, 0.052,
          "Intensität → optische Dichte (OD)\n"
-         "Strang A: Injektion der Aktivierung in die OD — VOR der Motion Correction,"
-         " damit die Korrektur Signal UND Rauschen sieht", C_PREP)
+         "Strang A: Injektion der Aktivierung in die OD, vor der Motion Correction",
+         C_PREP)
     _box(ax, xm, 0.628, wm, 0.042,
          "Motion Correction auf OD\n"
          "TDDR und/oder Wavelet (eigene Vergleichsachse)", C_PREP)
@@ -106,7 +102,7 @@ def main():
          "GLM je Kanal × Chromophor\n"
          "Designmatrix  =  HRF-Regressor (Gamma, Peak = 1; Formanalyse: flexible"
          " Gauß-Basis)\n"
-         "⊕  DRIFTFAMILIE (die unabhängige Variable): Polynom n=1…5 · Legendre 1/3/5 ·"
+         "⊕  Driftfamilie (unabhängige Variable): Polynom n=1…5 · Legendre 1/3/5 ·"
          " DCT 0,005/0,01/0,02 Hz · B-Spline 5/8 · none\n"
          "     Alternative statt Regressoren: Butterworth-Hochpass (bzw. Tief-/Bandpass)"
          " auf der Zeitreihe\n"
@@ -152,9 +148,8 @@ def main():
     _arrow(ax, (a_x, 0.235), (a_x, 0.177))
     _arrow(ax, (b_x, 0.235), (b_x, 0.177))
 
-    ax.set_title("Verarbeitungspipeline der Arbeit: Simulation (Strang A) und "
-                 "Realdaten (Strang B)\ndurch identische Vorverarbeitung und "
-                 "identisches GLM — nur die Bewertungsmaßstäbe unterscheiden sich",
+    ax.set_title("Verarbeitungspipeline: Simulation (Strang A) und Realdaten (Strang B)\n"
+                 "mit gemeinsamer Vorverarbeitung und gemeinsamem GLM",
                  fontsize=11.5, pad=14)
 
     fig.tight_layout()

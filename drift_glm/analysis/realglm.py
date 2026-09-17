@@ -1,30 +1,13 @@
-"""Stufe 2, Kern: GLM je Driftfamilie auf den realen Daten, Gruppenebene.
+"""GLM je Driftfamilie auf den realen Fingertapping-Daten (Khan), Gruppenebene.
 
-Zweistufig, wie in der fNIRS-Literatur ueblich:
-  1. Ebene (je Datei = Proband x Durchgang): GLM mit HRF-Regressor "Tapping" + Drift.
-     Der HRF-Regressor ist auf Peak 1 normiert, damit beta direkt die Peak-Aenderung
-     in µM ist -- dieselbe Konvention wie in der Simulation.
-  2. Ebene (Gruppe): beta je Proband ueber seine Durchgaenge mitteln, dann Einstichproben-
-     t-Test ueber die 25 Probanden je Kanal, danach Benjamini-Hochberg-FDR ueber Kanaele.
-
-DER ENTSCHEIDENDE UNTERSCHIED ZUR SIMULATION: hier gibt es KEINE Ground Truth. Ob eine
-Driftfamilie "besser" ist, laesst sich nicht am Fehler gegen die Wahrheit messen. Deshalb
-drei ersatzweise Kriterien, die ohne Wahrheit auskommen:
-
-  * **Detektion**  -- wie viele Kanaele ueberstehen die FDR-Korrektur? Mehr ist nicht
-    automatisch besser (koennten Falsch-Positive sein), aber im Zusammenspiel mit den
-    beiden folgenden Kriterien aussagekraeftig.
-  * **Reproduzierbarkeit** -- die Probanden haben 2-3 Durchgaenge. Die Korrelation der
-    beta-Karten zwischen den Durchgaengen EINES Probanden misst, wie stabil die Schaetzung
-    ist. Das ist das staerkste wahrheitsfreie Kriterium: eine Driftfamilie, die Rauschen
-    als Aktivierung modelliert, ist zwischen Durchgaengen inkonsistent.
-  * **Plausibilitaet** -- HbO und HbR muessen gegenlaeufig sein. Das Verhaeltnis HbR/HbO
-    ueber die aktiven Kanaele sollte um -0.4 liegen; Werte nahe 0 deuten auf systemische
-    Kontamination statt neuronaler Antwort.
-
-Konstellationen: nur `baseline` und `global`. Der Datensatz hat weder Short-Separation-
-Kanaele (kuerzester Abstand 25.9 mm) noch Bewegungs-Aux -- `short_*` und `motion` sind
-hier nicht anwendbar und bleiben Simulationsbefunde.
+Erste Ebene je Datei (Proband x Durchgang): GLM mit HRF-Regressor "Tapping" (auf Peak 1
+normiert, beta in µM) plus Driftfamilie. Zweite Ebene: beta je Proband ueber die
+Durchgaenge mitteln, Einstichproben-t-Test ueber Probanden je Kanal, Benjamini-Hochberg-
+FDR ueber Kanaele. Ohne Ground Truth zaehlen drei Kriterien: Zahl signifikanter Kanaele,
+Reproduzierbarkeit (Korrelation der beta-Karten zwischen Durchgaengen eines Probanden)
+und HbO/HbR-Plausibilitaet (Verhaeltnis HbR/HbO, Korrelation). Konstellationen nur
+baseline und global: der Datensatz hat weder Short-Channels (kuerzester Abstand 25.9 mm)
+noch Bewegungs-Aux. Ergebnis: results/realglm_summary.csv.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.realglm test    # 2 Probanden, 2 Familien (Timing)
@@ -63,20 +46,11 @@ FAMILIES = ["none", "poly:1", "poly:2", "poly:3", "poly:5",
             "legendre:1", "legendre:3", "bspline:5", "bspline:8",
             "butter:0.01", "bandpass:0.01-0.5"]
 
-#: Familien, die mit AR-IRLS NICHT auswertbar sind -- gemessen, nicht vermutet.
-#:
-#: Jeder TIEFPASS laesst beta auf ~1e-05 kollabieren (fuenf Groessenordnungen zu klein),
-#: waehrend derselbe Datensatz mit OLS normale Werte liefert und ein reiner HOCHPASS
-#: (butter:0.01) mit AR-IRLS problemlos laeuft. Ursache ist die Prewhitening-Stufe:
-#: AR-IRLS schaetzt ein AR-Modell des Rauschens und wendet dessen Inverse an. Ein
-#: Tiefpass bei 0.5 Hz entfernt bei fs=3.906 Hz rund drei Viertel des Spektrums
-#: (0.5 Hz = 0.256 x Nyquist); das Residuum hat oberhalb davon praktisch keine Leistung
-#: mehr, und der Whitening-Filter muesste dort unendlich verstaerken. Uebrig bleibt
-#: numerisches Rauschen -- der HRF-Anteil verschwindet mit.
-#:
-#: Konsequenz fuer die Arbeit: **Tiefpassfilterung und AR-IRLS schliessen einander aus.**
-#: Der Tiefpass aus der Betreuungsvorgabe ist daher nur mit OLS auswertbar. Die
-#: betroffenen Zellen werden im Report ausgewiesen und nicht in Ranglisten gemischt.
+#: Tiefpass- und Bandpass-Familien sind mit AR-IRLS nicht auswertbar: ein Tiefpass bei
+#: 0.5 Hz (fs = 3.9 Hz) nimmt dem Residuum oberhalb der Grenze praktisch alle Leistung,
+#: der Prewhitening-Filter verstaerkt dort unbegrenzt und beta kollabiert auf ~1e-5. Mit
+#: OLS und mit reinem Hochpass tritt das nicht auf. Betroffene Zellen werden ausgewiesen
+#: und nicht in Ranglisten gemischt.
 AR_IRLS_INCOMPATIBLE = ("lowpass:", "bandpass:")
 
 
@@ -86,8 +60,7 @@ def is_degenerate(family: str, noise_model: str) -> bool:
 CONSTELLATIONS = ["baseline", "global"]
 NOISE_MODELS = ["ar_irls", "ols"]
 MOTION_METHOD = "wavelet"      # driftneutral, s. preprocess.DEFAULT_MOTION
-#: Prozesse fuer die Parallelisierung ueber Dateien. 8 Kerne verfuegbar, aber jeder
-#: Prozess braucht ~0.5 GB -- bei ~4 GB freiem RAM sind 5 die sichere Obergrenze.
+#: Prozesse ueber Dateien; ~0.5 GB je Prozess, bei ~4 GB freiem RAM sind 5 die Obergrenze.
 N_JOBS = 5
 
 
@@ -105,8 +78,7 @@ def first_level(conc, stim, family, constellation, noise_model, ar_order=30,
                 max_jobs=-1):
     """GLM einer Datei -> beta des Tapping-Regressors, Dims (channel, chromo).
 
-    `max_jobs=1`, wenn schon auf Datei-Ebene parallelisiert wird (s. `main`) -- sonst
-    ueberzeichnen sich die Prozesse gegenseitig.
+    `max_jobs=1`, wenn bereits auf Datei-Ebene parallelisiert wird (s. `main`).
     """
     basis = glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=0 * units.s)
     dm_hrf = glm.design_matrix.hrf_regressors(conc, stim, basis)
@@ -116,7 +88,7 @@ def first_level(conc, stim, family, constellation, noise_model, ar_order=30,
     dm_drift, filt = drift_dm(family, conc)
     ts = conc
     if filt is not None:
-        # Filter-Alternative im Konzentrationsraum (Betreuungsvorgabe)
+        # Filter-Alternative im Konzentrationsraum
         ts = conc.cd.freq_filter(filt[0] * units.Hz, filt[1] * units.Hz, 4)
 
     dm = dm_hrf & dm_drift
@@ -158,9 +130,7 @@ def split_run_reliability(beta_by_run: dict[str, dict[str, xr.DataArray]], chrom
     """Reproduzierbarkeit: Korrelation der beta-Karten zwischen Durchgaengen.
 
     Je Proband mit mindestens zwei Durchgaengen die Pearson-Korrelation der
-    Kanal-beta-Karten aller Durchgangspaare; anschliessend Median ueber Probanden.
-    Wahrheitsfreies Guetemass -- eine Familie, die Rauschen als Aktivierung modelliert,
-    ist zwischen Durchgaengen inkonsistent.
+    Kanal-beta-Karten aller Durchgangspaare, danach Median ueber Probanden.
     """
     rs = []
     for runs in beta_by_run.values():
@@ -202,20 +172,12 @@ def main(mode="full"):
 
     total = len(files) * len(families) * len(CONSTELLATIONS) * len(noise_models)
     done, recs = 0, []
-    # Parallelisierung auf DATEI-Ebene. Cedalions glm.fit parallelisiert intern kaum:
-    # alle 48 Kanaele teilen dieselbe Designmatrix und landen in EINER Rechengruppe,
-    # gemessen ~1.5 von 8 Kernen. Die Dateien sind dagegen voneinander unabhaengig.
-    # Innen daher max_jobs=1, sonst ueberzeichnen sich die Prozesse.
-    #
-    # Zwei Fallstricke, beide gemessen:
-    #   * backend="threading" bringt NICHTS (gemessen Faktor 1.0-1.1): AR-IRLS ist
-    #     GIL-gebunden,
-    #     es sind Python-Schleifen in statsmodels, keine BLAS-Operationen, die den GIL
-    #     freigeben wuerden. Es braucht echte Prozesse (loky).
-    #   * loky serialisiert Funktionen aus __main__ per WERT (cloudpickle) und scheitert
-    #     dabei an cedalion-Objekten. Deshalb wird der Worker ueber importlib aus dem
-    #     MODUL geholt -- so wird er per Referenz gepickelt, und die Kinder importieren
-    #     ihn selbst.
+    # Parallelisierung auf Datei-Ebene: glm.fit parallelisiert intern kaum (alle Kanaele
+    # teilen eine Designmatrix), die Dateien sind unabhaengig; innen daher max_jobs=1.
+    # backend="threading" bringt nichts, AR-IRLS ist GIL-gebunden (Python-Schleifen in
+    # statsmodels), also loky. loky pickelt Funktionen aus __main__ per Wert und scheitert
+    # an cedalion-Objekten; der Worker wird deshalb per importlib aus dem Modul geholt und
+    # so per Referenz gepickelt.
     _self = __spec__.name if __spec__ else "drift_glm.analysis.realglm"
     worker = importlib.import_module(_self).first_level
     n_jobs = min(N_JOBS, len(files))
@@ -275,7 +237,7 @@ def main(mode="full"):
 
     d = df[(df.chromo == "HbO") & (df.noise_model == noise_models[0])]
     print("\nHbO, Rauschmodell "
-          f"{noise_models[0]} — signifikante Kanaele / Reproduzierbarkeit:")
+          f"{noise_models[0]} -- signifikante Kanaele / Reproduzierbarkeit:")
     print(d.pivot_table(index="family", columns="constellation",
                         values=["n_significant", "reliability_r"])
            .to_string(float_format=lambda x: f"{x:.3f}"))

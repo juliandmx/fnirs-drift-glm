@@ -1,15 +1,11 @@
-"""Statistik-Ebene: Signifikanz je Kanal + Multiple-Comparison-Korrektur (FDR),
-und Detektionsguete gegen die Ground Truth.
+"""Signifikanz je Kanal mit FDR-Korrektur und Detektionsguete gegen die Ground Truth.
 
-Fittet je Driftfamilie ueber ALLE Kanaele (nicht nur den aktiven Subset), bestimmt den
-p-Wert des HRF-Regressors je Kanal (aus AR-IRLS), korrigiert ueber alle Kanaele mit
-Benjamini-Hochberg (FDR, q=0.05) und vergleicht die als aktiv erkannten Kanaele mit der
-Ground Truth (dem raeumlichen Blob). Das (a) demonstriert die komplette Inferenz-Pipeline
-(bereit fuer die realen DOT-Daten) und (b) zeigt, welche Driftfamilie die beste
-Aktivierungs-Detektion liefert.
-
-Metriken je Familie/chromo (Mittel ueber Seeds): Sensitivitaet (TPR), Spezifitaet (TNR),
-Praezision, Youden-J, Zahl detektierter Kanaele. Fenster 180 s, Konstellation baseline.
+Fittet je Driftfamilie ueber alle Kanaele, bildet t = beta/SE des HRF-Regressors je Kanal
+(AR-IRLS), korrigiert mit Benjamini-Hochberg (q = 0.05) und vergleicht die detektierten
+Kanaele mit dem wahren Blob (aktiv: |beta_true| > 10 % des Peaks). Metriken je
+Familie/Chromophor, Mittel ueber Seeds: Sensitivitaet, Spezifitaet, Praezision, Youden-J,
+Zahl detektierter Kanaele. Fenster 180 s, Konstellation baseline.
+Ausgabe: results/detection_summary.csv, Abb. 14.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.detection        # voll (alle Kanaele, langsam)
@@ -56,17 +52,14 @@ def _progress(done, total, t0, last):
         f"detection: {done}/{total} ({100 * done / total:.0f} %)\n"
         f"verstrichen : {el / 60:5.1f} min\n"
         f"ETA (Rest)  : {eta / 60:5.1f} min\n"
-        f"letzte Zelle: {last}\n"
-        f"(Hinweis: Full-Channel-Fits ~5-6 min/Stueck)\n")
+        f"letzte Zelle: {last}\n")
 
 
 def _hrf_tvalues(res):
-    """t-Werte des HRF-Regressors je Kanal aus beta/SE (SE via regressor_variances()).
+    """t-Werte des HRF-Regressors je Kanal als beta/SE (SE aus regressor_variances()).
 
-    Cedalions .sm.p_values ist fuer die rohen Fit-Ergebnisse nicht implementiert (nur fuer
-    Kontrast-/Hypothesentests). Daher t = beta/SE selbst; p wird zweiseitig aus der
-    Normalverteilung abgeleitet -- bei ~1600 Zeitpunkten ist df sehr gross, die
-    Normal-Approximation also unkritisch.
+    Cedalions .sm.p_values ist fuer die rohen Fit-Ergebnisse nicht implementiert; p wird
+    zweiseitig aus der Normalverteilung abgeleitet, bei ~1600 Zeitpunkten unkritisch.
     """
     beta = res.sm.params.sel(regressor="HRF Stim")
     se = np.sqrt(np.abs(res.sm.regressor_variances().sel(regressor="HRF Stim")))
@@ -105,9 +98,6 @@ def main(mode="full"):
             ts_all, btm = P.conc_syn, P.beta_true_map
         peak = abs(P.beta_true["HbO"])
         for fam in families:
-            # drift_dm liefert seit v5 ein Filter-TUPEL (fmin, fmax) statt eines
-            # Skalars. In der aktuellen Familienliste gibt es keinen Filter-Arm,
-            # aber der alte Aufruf waere beim ersten butter:* abgestuerzt (08.09.).
             dm_drift, filt = drift_dm(fam, P.conc)
             ts_f = ts_all if filt is None else ts_all.cd.freq_filter(
                 filt[0] * units.Hz, filt[1] * units.Hz, 4)

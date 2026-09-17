@@ -1,31 +1,13 @@
-"""Was macht die neue Preprocessing-Kette mit der beta-Rueckgewinnung?
+"""Einfluss der Vorverarbeitungskette auf die beta-Rueckgewinnung (Abb. 11).
 
-Vergleicht die alte Kette (nur SNR>10, keine Motion Correction) gegen die neue Kette
-nach Betreuungsvorgabe, und darin die beiden Stufen der Motion-Correction-Achse. Damit
-sind zwei Fragen auf einmal beantwortet:
-
-  1. Muessen die v3-Zahlen wirklich neu gerechnet werden -- also aendert die neue Kette
-     die Schaetzung ueberhaupt?
-  2. Doppelt sich die Motion Correction mit den Motion-Regressoren in der Designmatrix
-     (Betreuungshinweis "evtl keine motion-correction ... sonst gedoppelt -> ueberpruefen")?
-     Dafuer wird jede Preprocessing-Variante einmal OHNE und einmal MIT Motion-Regressoren
-     gefittet.
-
-Die ALTE Kette wird nicht als Code-Kopie nachgebaut, sondern ueber die Parameter der
-neuen ausgedrueckt: `motion_method="none"`, `snr_threshold=10`, `amp_range` so weit, dass
-mean_amp nichts verwirft. Das ist nachweislich aequivalent -- ohne Motion Correction gilt
-od2int(int2od(amp)) == amp exakt (verifiziert: rel. Fehler 7.7e-16), also ist die
-SNR-Maske auf der "korrigierten" Amplitude dieselbe wie auf der Rohamplitude.
-
-WICHTIG (Umbau 2026-08-01): Die synthetische HRF wird inzwischen VOR der Motion
-Correction in die OD eingemischt, nicht mehr danach in die Konzentration. Eine fruehere
-Fassung dieses Vergleichs kam deshalb zum Ergebnis "tddr+wavelet ist am besten" -- ein
-Artefakt: die Korrektur konnte die HRF gar nicht erreichen und durfte nur das Rauschen
-putzen. Mit der realistischen Einmischung daempft TDDR die HRF-Amplitude gemessen auf
-~70 % (Wavelet: 100 %), was als Unterschaetzung von beta durchschlaegt.
-
-Verglichen wird auf IDENTISCHEN Kanaelen (Schnittmenge aller Varianten), sonst waere der
-Unterschied teils nur eine andere Kanalauswahl.
+Vergleicht die alte Kette (SNR > 10, keine Motion Correction) mit der neuen Kette und
+darin die Stufen der Motion-Correction-Achse; jede Variante wird einmal ohne und einmal
+mit Motion-Regressoren gefittet, um eine Doppelung mit der Korrektur zu pruefen. Die alte
+Kette wird ueber die Parameter der neuen ausgedrueckt (`motion_method="none"`,
+`snr_threshold=10`, offenes `amp_range`); ohne Motion Correction ist od2int(int2od(amp))
+exakt amp, die SNR-Maske also dieselbe. Die synthetische HRF wird vor der Motion
+Correction in die OD eingemischt, TDDR daempft sie dadurch messbar (~70 %, Wavelet 100 %).
+Verglichen wird auf der Kanal-Schnittmenge aller Varianten.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.compare_preprocessing        # voll (~6 min)
@@ -69,15 +51,11 @@ RETENTION_METHODS = ("none", "wavelet", "tddr", "tddr+wavelet")
 
 
 def hrf_retention(stage, methods=RETENTION_METHODS, seeds=(0, 1)):
-    """Wie viel der EINGEMISCHTEN HRF-Amplitude ueberlebt die Bewegungskorrektur?
+    """Anteil der eingemischten HRF-Amplitude, der die Bewegungskorrektur ueberlebt.
 
-    Das ist die Kernzahl fuer die Bewertung der Korrekturverfahren -- und sie braucht
-    keinen GLM-Fit: die Aktivierung ist bekannt, also laesst sich direkt vergleichen,
-    was nach der Kette davon ankommt. Gemessen am Ort des wahren Maximums, je Chromophor.
-
-    1.00 = unveraendert. Ohne Korrektur muss der Wert exakt 1 sein (der Weg
-    Konzentration -> OD -> Konzentration ist verlustfrei); jede Abweichung darunter ist
-    der Eingriff des Verfahrens in das gesuchte Signal.
+    Braucht keinen GLM-Fit: die Aktivierung ist bekannt, gemessen wird am Ort des wahren
+    Maximums je Chromophor. 1.00 = unveraendert; ohne Korrektur ist der Wert exakt 1, weil
+    Konzentration -> OD -> Konzentration verlustfrei ist.
     """
     recs = []
     for m in methods:
@@ -98,7 +76,7 @@ def hrf_retention(stage, methods=RETENTION_METHODS, seeds=(0, 1)):
 
 
 def figure(df, ret):
-    """Zwei Bilder: was die Korrektur mit dem Signal macht, und was daraus folgt."""
+    """Abb. 11: Erhalt der HRF-Amplitude je Korrektur und Bias der Schaetzung je Variante."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -116,8 +94,8 @@ def figure(df, ret):
     ax.axhline(100, ls="--", color="k", lw=1)
     ax.set_xticks(x); ax.set_xticklabels(g.index, rotation=20, ha="right")
     ax.set_ylabel("erhaltene HRF-Amplitude [%]")
-    ax.set_title("Was die Bewegungskorrektur mit der gesuchten Antwort macht\n"
-                 "(100 % = unangetastet; gemessen am Ort des wahren Maximums)")
+    ax.set_title("Erhalt der eingemischten HRF-Amplitude je Bewegungskorrektur\n"
+                 "(am Ort des wahren Maximums)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
 
     # rechts: Folge fuer die Schaetzung (Bias, aus dem Vergleichslauf)
@@ -134,12 +112,11 @@ def figure(df, ret):
         ax.axhline(0, color="k", lw=1)
     ax.set_xticks(x); ax.set_xticklabels(order, rotation=20, ha="right", fontsize=8)
     ax.set_ylabel("Bias [µM]")
-    ax.set_title("Folge für die Schätzung: der Fehler\n"
-                 "(0 = unverzerrt; positiv = Überschätzung)")
+    ax.set_title("Bias der beta-Schätzung je Vorverarbeitungsvariante\n"
+                 "(Konstellation baseline)")
     ax.grid(axis="y", alpha=0.3); ax.legend()
 
-    fig.suptitle("Warum die Bewegungskorrektur eine eigene Vergleichsachse ist: "
-                 "TDDR dämpft die gesuchte Antwort selbst")
+    fig.suptitle("Bewegungskorrektur: Erhalt der HRF-Amplitude und Bias der Schätzung")
     fig.tight_layout()
     fig.savefig(paths.FIGURES / "11_preprocessing_effect.png", dpi=130)
     plt.close(fig)
@@ -149,7 +126,7 @@ def metrics(bhat, truth):
     """Bias/RMSE/Streuung von beta_hat gegen die per-Kanal-Wahrheit.
 
     `bhat` hat Dims (seed, channel), `truth` (channel,). Der Bias wird ueber Seeds
-    gemittelt (echter Monte-Carlo-Bias), RMSE ueber Seeds UND Kanaele.
+    gemittelt (Monte-Carlo-Bias), RMSE ueber Seeds und Kanaele.
     """
     bias = np.nanmedian(np.nanmean(bhat, axis=0) - truth)
     rmse = float(np.sqrt(np.nanmean((bhat - truth[None, :]) ** 2)))
@@ -164,9 +141,8 @@ def main(seeds):
 
     stage = prep.to_od_stage(rec)
 
-    # Ein Build je Variante/Seed vorab, um die gemeinsame Kanalbasis zu bestimmen.
-    # (Die Einmischung passiert jetzt VOR der Motion Correction, deshalb haengt die
-    # Vorverarbeitung am Seed und laesst sich nicht mehr einmal vorab berechnen.)
+    # Ein Build je Variante/Seed vorab, um die gemeinsame Kanalbasis zu bestimmen. Die
+    # Einmischung liegt vor der Motion Correction, die Vorverarbeitung haengt also am Seed.
     print("Varianten aufbauen ...", flush=True)
     builds = {}
     for name, kw in VARIANTS.items():
@@ -223,8 +199,7 @@ def main(seeds):
     df = pd.DataFrame(recs)
     df.to_csv(RESULTS / "preprocessing_comparison.csv", index=False)
 
-    # Der Erhalt der eingemischten Amplitude -- die Kernzahl fuer die Bewertung der
-    # Korrekturverfahren. Braucht keinen Fit, deshalb hier billig mitgemessen.
+    # Erhalt der eingemischten Amplitude je Korrekturverfahren; braucht keinen Fit.
     print("\nErhalt der eingemischten HRF-Amplitude:", flush=True)
     ret = hrf_retention(stage, seeds=seeds[:2])
     ret.to_csv(RESULTS / "hrf_retention.csv", index=False)

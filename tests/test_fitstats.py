@@ -1,7 +1,6 @@
-"""Tests fuer die Modellfit-Metriken (fitstats) und die neuen Analyse-Bausteine.
+"""Tests fuer die Modellfit-Metriken (fitstats), residuals und figstyle.
 
-Alle Tests hier sind schnell (synthetische Mini-Daten, kein Datendownload, kein
-AR-IRLS) -- die Invarianten sind mathematisch exakt pruefbar.
+Synthetische Mini-Daten, kein Datendownload, kein AR-IRLS.
 """
 import numpy as np
 import pytest
@@ -19,7 +18,7 @@ def _ts(nt=200, nch=2, seed=0):
 
 
 def _dm_common(ts, k=3):
-    """DesignMatrix mit k Regressoren (Offset + Sinus/Cosinus), fuer alle Chromo gleich."""
+    """DesignMatrix mit k Regressoren (Offset + Sinus), fuer alle Chromo gleich."""
     import cedalion.models.glm as glm
     t = ts.time.values
     cols = [np.ones_like(t)]

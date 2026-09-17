@@ -1,34 +1,12 @@
-"""GLM-Ergebnis zurueck in den Bildraum -- geschaetzte HRF und Residuum.
+"""GLM-Ergebnisse im Bildraum: geschaetzte HRF und Residuum je Driftfamilie.
 
-Betreuungsvorgabe 2026-08-05: "vorgehen fuer alle datasets: ich mache glm, dann
-geschaetzte hrf (in alternativlauf auch residuals nutzen) in den image space bringen".
-
-WAS HIER GEMESSEN WIRD, UND WARUM DAS ETWAS ANDERES IST ALS BISHER. Im Kanalraum lautet
-die Frage "wie genau ist die Amplitude je Kanal?". Im Bildraum kommt eine zweite Frage
-dazu, die der Kanalraum grundsaetzlich nicht beantworten kann: **landet die Aktivierung am
-richtigen Ort?** Genau das ist der Grund fuer die Vorgabe -- eine Driftfamilie kann die
-Amplitude gut treffen und die Aktivierung trotzdem an die falsche Stelle des Kortex
-schmieren, weil die Rekonstruktion die Fehler ueber ganze Sensitivitaetsprofile verteilt.
-
-DREI PROJEKTIONEN, und sie beantworten verschiedene Fragen:
-
-  `hrf`       Die beta-Karte des HRF-Regressors. Das ist die parametrische Schaetzung:
-              was das Modell fuer die Aktivierung HAELT. Der Hauptlauf.
-
-  `residual`  Das Residuum allein, an den Stimuluszeiten blockgemittelt. Wenn das
-              Driftmodell passt, ist hier zur HRF-Zeit nichts Systematisches -- Rauschen
-              mittelt sich weg. Bleibt dort HRF-Struktur uebrig, hat das Modell
-              Aktivierung NICHT erklaert. Fuer eine Arbeit ueber Driftregressoren ist das
-              das direkteste Mass fuer "Modell zu schwach".
-
-  `cleaned`   Residuum + HRF-Anteil, also die Zeitreihe ohne Drift und ohne Stoerregressoren,
-              blockgemittelt. Die nichtparametrische Gegenprobe: sie braucht die
-              HRF-Kurvenform nicht und zeigt, wieviel von der Uebereinstimmung der
-              parametrischen Annahme geschuldet ist.
-
-Alle drei werden auf DIESELBE Weise zu einer Amplitudenkarte je Kanal verdichtet und
-DIESELBE Verdichtung wird auf die Ground Truth angewandt -- dadurch sind sie ohne
-Umrechnungsannahme miteinander und mit der Wahrheit vergleichbar.
+Drei Projektionen je Fit werden zu einer Amplitudenkarte je Kanal (channel, chromo)
+verdichtet, per conc2od in OD ueberfuehrt und mit demselben Rekonstruktionsoperator in den
+Bildraum gebracht: `hrf` (beta des HRF-Regressors), `residual` (blockgemitteltes Residuum)
+und `cleaned` (Residuum + HRF-Anteil, blockgemittelt). Dieselbe Verdichtung wird auf die
+Ground Truth angewandt; zusaetzlich laeuft die wahre Kanalkarte als rauschfreie Referenz
+(`truth_ref`) durch denselben Rueckweg. Kennzahlen im Kanal- und Bildraum (Korrelation,
+Lokalisationsfehler, Trefferanteil) -> results/imageglm_summary.csv.
 
 Aufruf:
     conda run -n cedalion python -m drift_glm.analysis.imageglm test    # 2 Familien, kurzes Fenster
@@ -59,33 +37,26 @@ RESULTS = paths.RESULTS
 
 PROJECTIONS = ("hrf", "residual", "cleaned")
 
-#: Zusaetzliche "Projektion", die keine Schaetzung ist: die WAHRE Kanalkarte durch
-#: denselben Rueckweg. Sie ist die Obergrenze, die die Rekonstruktion ueberhaupt erreichen
-#: kann, und ohne sie ist keine der anderen Zahlen interpretierbar -- ein
-#: Lokalisationsfehler von 12 mm kann hervorragend oder schlecht sein, je nachdem, was
-#: rauschfrei herauskaeme. Auf nn22 sind es rauschfrei r = 0.80 und 11.9 mm
-#: (alpha_spatial = 0.001) bzw. r = 0.87 und 3.0 mm (alpha_spatial = 0.01).
+#: Die wahre Kanalkarte durch denselben Rueckweg: rauschfreie Obergrenze der Rekonstruktion
+#: (auf nn22 r = 0.80 / 11.9 mm bei alpha_spatial = 0.001, r = 0.87 / 3.0 mm bei 0.01).
 TRUTH_REF = "truth_ref"
 
-#: Fenster nach Stimulusbeginn, ueber das die Blockantwort gemittelt wird [s].
-#: Bei 10 s Blockdauer und einer Gamma-Basis mit sigma = 3 s liegt das Plateau hier.
-#: Die genaue Wahl ist unkritisch, weil Schaetzung UND Wahrheit dasselbe Fenster benutzen.
+#: Fenster nach Stimulusbeginn fuer die Blockamplitude [s]; bei 10 s Block und Gamma mit
+#: sigma = 3 s liegt hier das Plateau. Schaetzung und Wahrheit benutzen dasselbe Fenster.
 AMP_WINDOW = (4.0, 10.0)
 EPOCH_BEFORE = 5.0 * units.s
 EPOCH_AFTER = 20.0 * units.s
 
-#: Radius um das wahre Blob-Zentrum, innerhalb dessen eine Rekonstruktion als "am
-#: richtigen Ort" gilt [mm]. 30 mm ist etwa die Ortsauflaesung, die von einer
-#: Einzelabstandsmontage bei 3 cm ueberhaupt erwartbar ist.
+#: Radius um das wahre Blob-Zentrum, innerhalb dessen rekonstruierte Masse als Treffer
+#: zaehlt [mm]; etwa die Ortsaufloesung einer Einzelabstandsmontage bei 3 cm.
 HIT_RADIUS_MM = 30.0
 
 
 def with_time_coords(ts: xr.DataArray, like: xr.DataArray) -> xr.DataArray:
     """Stellt die `samples`-Koordinate und die Zeiteinheit wieder her.
 
-    `glm.predict` reicht sie nicht durch, `to_epochs` verlangt sie aber (es rechnet die
-    Fensterlaengen in Samples um). Ohne diesen Schritt scheitert jede Blockmittelung auf
-    einer vorhergesagten Zeitreihe.
+    `glm.predict` reicht sie nicht durch, `to_epochs` braucht sie fuer die Umrechnung der
+    Fensterlaengen in Samples.
     """
     if "samples" in ts.coords or "samples" not in like.coords:
         return ts
@@ -99,12 +70,9 @@ def block_amplitude(ts: xr.DataArray, stim_df, trial_types=None,
                     like: xr.DataArray | None = None) -> xr.DataArray:
     """Zeitreihe -> Amplitudenkarte je Kanal (channel, chromo), ueber `AMP_WINDOW`.
 
-    Blockmittelung mit Baseline-Abzug vor dem Reiz, danach Mittel ueber das
-    Plateaufenster. Der Baseline-Abzug ist nicht Kosmetik: ohne ihn traegt jeder Epoch
-    seinen Drift-Offset mit in den Mittelwert, und genau der ist hier die Stoergroesse.
-
-    Bei mehreren Trial-Typen wird ueber sie gemittelt -- die Karten sind dann direkt mit
-    der bilateralen Ground Truth vergleichbar.
+    Blockmittelung mit Baseline-Abzug vor dem Reiz, dann Mittel ueber das Plateaufenster;
+    ohne Baseline-Abzug ginge der Drift-Offset jedes Epochs in den Mittelwert ein. Mehrere
+    Trial-Typen werden gemittelt.
     """
     tt = trial_types
     if tt is None:
@@ -120,13 +88,10 @@ def block_amplitude(ts: xr.DataArray, stim_df, trial_types=None,
 
 def conc_map_to_od(m: xr.DataArray, geo3d, wavelength, dpf: float = prep.DEFAULT_DPF,
                    like: xr.DataArray | None = None) -> xr.DataArray:
-    """Amplitudenkarte in Konzentration [µM] -> Optical Density, fuer die Rekonstruktion.
+    """Amplitudenkarte in Konzentration [µM] -> Optical Density fuer `ImageRecon`.
 
-    `ImageRecon` erwartet OD. Die Schaetzung liegt aber in Konzentration vor, weil das GLM
-    im Konzentrationsraum laeuft. `conc2od` ist die exakte Umkehrung des `od2conc` aus der
-    Vorverarbeitung -- Hin- und Rueckweg sind also dieselbe Transformation, und ohne
-    Stoerung ist der Kreis Bildraum -> Kanal -> Bildraum geschlossen. Nur deshalb ist eine
-    gemessene Abweichung im Bildraum ein Effekt der Methode und kein Umrechnungsartefakt.
+    `conc2od` ist die exakte Umkehrung des `od2conc` aus der Vorverarbeitung, der Kreis
+    Bildraum -> Kanal -> Bildraum ist also ohne Stoerung geschlossen.
     """
     x = m
     if like is not None:                     # source/detector fuer die Kanalabstaende
@@ -141,13 +106,11 @@ def conc_map_to_od(m: xr.DataArray, geo3d, wavelength, dpf: float = prep.DEFAULT
 def fit_projections(P: pl.Pipeline, family: str, constellation: str = "baseline",
                     noise_model: str = "ar_irls", *, ar_order: int = 30,
                     max_jobs: int = -1) -> dict:
-    """GLM fitten und die drei Amplitudenkarten (Kanalraum) zurueckgeben.
+    """GLM fitten und die Amplitudenkarten (Kanalraum) zurueckgeben.
 
-    Rueckgabe: {"hrf": .., "residual": .., "cleaned": .., "truth": ..} je (channel, chromo)
-    in µM, plus `"fit_s"` als Laufzeit.
-
-    Der Fit laeuft -- wie im gesamten Projekt -- auf den LANGEN Kanaelen, sobald ein
-    Short-Channel-Regressor im Spiel ist; ausgewertet wird ohnehin nur dort.
+    Rueckgabe: {"hrf", "residual", "cleaned", "truth", "beta_truth"} je (channel, chromo)
+    in µM, dazu "fit_s" (Laufzeit) und "channels". Sobald ein Short-Channel-Regressor
+    beteiligt ist, wird nur auf den langen Kanaelen gefittet.
     """
     ts_all = P.conc_syn
     ts_long, ts_short = sc.split(ts_all, P.geo3d, sc.SHORT_THRESHOLD)
@@ -209,11 +172,10 @@ def _values(a, chromo):
 
 def channel_metrics(hat: xr.DataArray, truth: xr.DataArray, chromo: str,
                     active_frac: float = 0.1) -> dict:
-    """Bias/RMSE/Korrelation im Kanalraum, ueber die aktiven Kanaele.
+    """Bias/RMSE/Korrelation im Kanalraum ueber die aktiven Kanaele.
 
-    "Aktiv" heisst: die Wahrheit liegt ueber `active_frac` des Peaks. Ohne diese
-    Einschraenkung dominieren die vielen Kanaele ohne Aktivierung jede Kennzahl, und der
-    relative Fehler ist am Blob-Rand per Konstruktion riesig (siehe Abb. 5).
+    Aktiv: |Wahrheit| > `active_frac` des Peaks. Ohne diese Einschraenkung dominieren die
+    Kanaele ohne Aktivierung jede Kennzahl.
     """
     h, t = _values(hat, chromo), _values(truth, chromo)
     m = np.isfinite(h) & np.isfinite(t) & (np.abs(t) > active_frac * np.nanmax(np.abs(t)))
@@ -228,24 +190,17 @@ def channel_metrics(hat: xr.DataArray, truth: xr.DataArray, chromo: str,
 
 def image_metrics(img_hat: xr.DataArray, img_true: xr.DataArray, seeds: dict,
                   chromo: str, head_ras=None, mask: np.ndarray | None = None) -> dict:
-    """Guetemasse im Bildraum. `loc_err_mm` und `hit_frac` gibt es nur hier.
+    """Guetemasse im Bildraum.
 
-      `r`          Korrelation ueber die sichtbaren Vertices -- die Form des Bildes.
-      `peak_ratio` Verhaeltnis der Spitzenwerte -- die Amplitudentreue. Werte weit unter 1
-                   sind normal: jede Regularisierung verschmiert und daempft.
-      `rmse_rel`   RMSE, bezogen auf den Peak der Wahrheit.
-      `loc_err_mm` Abstand des rekonstruierten Maximums zum naechsten wahren Blob-Zentrum.
-                   Das ist die Frage, um die es der Betreuung geht.
-      `hit_frac`   Anteil der rekonstruierten Masse innerhalb von `HIT_RADIUS_MM` um ein
-                   wahres Zentrum. Ergaenzt `loc_err_mm`: ein Maximum kann zufaellig
-                   richtig sitzen, waehrend der Rest des Bildes ueber den Kortex schmiert.
+    `r` Korrelation ueber die sichtbaren Vertices, `peak_ratio` Verhaeltnis der
+    Spitzenwerte (Regularisierung daempft, Werte unter 1 sind normal), `rmse_rel` RMSE
+    bezogen auf den Peak der Wahrheit, `loc_err_mm` Abstand des rekonstruierten Maximums
+    zum naechsten wahren Blob-Zentrum, `hit_frac` Anteil der rekonstruierten Masse
+    innerhalb von `HIT_RADIUS_MM` um ein wahres Zentrum.
 
-    `mask` MUSS die Sichtbarkeitsmaske sein (`imagespace.sensitivity_mask`). Ohne sie
-    laufen alle Kennzahlen ins Leere, und zwar nicht subtil: die Rekonstruktion liefert
-    auch fuer Vertices Werte, zu denen kein Photon gelangt ist, und die Tiefenkorrektur
-    (`alpha_spatial`) blaest genau diese am staerksten auf. Gemessen ohne Maske lag das
-    rekonstruierte Maximum 65-110 mm vom wahren Zentrum entfernt und die Korrelation bei
-    0.00 -- gemessen wurde dabei das Verhalten des Regularisierers, nicht die Schaetzung.
+    `mask` muss die Sichtbarkeitsmaske sein (`imagespace.sensitivity_mask`): die
+    Rekonstruktion liefert auch fuer unsichtbare Vertices Werte, und die Tiefenkorrektur
+    (`alpha_spatial`) verstaerkt genau diese; ohne Maske misst man den Regularisierer.
     """
     h, t = _values(img_hat, chromo), _values(img_true, chromo)
     if h.ndim > 1:
@@ -276,17 +231,8 @@ def image_metrics(img_hat: xr.DataArray, img_true: xr.DataArray, seeds: dict,
                 loc_err_mm=dmin, hit_frac=hit, n_vertices=int(keep.sum()))
 
 
-#: Seeds fuer den Volllauf -- gemessen EINER, und das ist eine Kostenentscheidung.
-#:
-#: Ein AR-IRLS-Fit ueber die 519 Kanaele bei 368 s kostet gemessen **420 s**. Bei 12
-#: Familien x 2 Konstellationen sind das je Seed 24 Zellen, also ~2,8 h, plus rund 20 min
-#: fuer den `pipeline.build` selbst (die Wavelet-Korrektur laeuft zweimal: reine Ruhedaten
-#: und augmentiert). Mit zwei Seeds waere der Lauf bei ~10 h -- und danach soll noch
-#: `msglm.py` laufen. Ein Seed haelt die Kette in einer Nacht.
-#:
-#: Der Verlust ist vertretbar: die Varianz ueber Stimulus-Platzierungen ist die Frage, die
-#: der Kanalraum-Sweep mit 4 Seeds x 3 Fenstern beantwortet. Hier geht es um den Ort, und
-#: den beantwortet ein Seed gegen die mitlaufende rauschfreie Obergrenze.
+#: Ein Seed: ein AR-IRLS-Fit ueber 519 Kanaele bei 368 s dauert ~420 s, die 24 Zellen je
+#: Seed damit ~3 h. Die Varianz ueber Stimulus-Platzierungen liefert der Kanalraum-Sweep.
 DEFAULT_SEEDS = (0,)
 
 
@@ -308,25 +254,18 @@ def run(mode: str = "full", *, dataset: str = "nn22_resting", window_s: float = 
                               else "imageglm_summary.csv"))
 
     for seed in seeds:
-        P = pl.build(dataset=dataset, window_s=window_s, seed=seed,
-                     activation_space="image")
-        if P.beta_true_img is None:
-            raise ValueError("run() braucht die Bildraum-Wahrheit "
-                             "(activation_space='image')")
+        P = pl.build(dataset=dataset, window_s=window_s, seed=seed)
         img_true = P.beta_true_img
         if "trial_type" in img_true.dims:
             img_true = img_true.sum("trial_type")
 
-        # EINE Rekonstruktion je Build: W haengt nur an Montage, Kanalmenge und
-        # Messvarianz, nicht an der Driftfamilie. Neu bauen je Familie waere der
-        # Kostentreiber (und bei ~450 MB je Instanz auch das Speicherproblem).
+        # Ein Rekonstruktionsoperator je Build: W haengt nur an Montage, Kanalmenge und
+        # Messvarianz, nicht an der Driftfamilie (~450 MB je Instanz).
         A = ims.adot(dataset).sel(channel=[str(c) for c in P.pre.od.channel.values])
         recon, c_meas = ims.recon_operator(A, P.pre.od)
         sens = ims.sensitivity_mask(A)
 
-        # Die Obergrenze: die WAHRE Kanalkarte durch denselben Rueckweg. Ohne diese Zeile
-        # ist keine der folgenden interpretierbar -- 12 mm Lokalisationsfehler koennen
-        # ausgezeichnet oder schlecht sein, je nachdem, was rauschfrei herauskommt. Haengt
+        # Rauschfreie Referenz: die wahre Kanalkarte durch denselben Rueckweg. Haengt
         # nicht von Familie oder Konstellation ab, also einmal je Build.
         bt_ref = P.beta_true_map
         if "trial_type" in bt_ref.dims:

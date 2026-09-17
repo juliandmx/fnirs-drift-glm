@@ -1,20 +1,11 @@
 """Short-Channel-Regression: Long/Short-Split und Regressor-Varianten.
 
-Hintergrund (Betreuungsgespraech): Ein Kanal mit kleinem Quell-Detektor-Abstand hat eine
-flache "Banane" -- sein Licht erreicht den Kortex nicht und misst nur Kopfhaut und
-Schaedel, also die SYSTEMISCHE Physiologie (Herzschlag, Atmung, Mayer-Wellen, Hautdurch-
-blutung). Nimmt man ihn als Regressor in die Designmatrix auf, laesst sich dieser Anteil
-aus den langen Kanaelen herausrechnen; ausgewertet wird dann nur ueber die langen.
-
-Auf nn22 gibt es keine echten Short-Separation-Kanaele (<10 mm). Der kuerzeste Abstand
-betraegt 15,55 mm. Die Betreuungsvorgabe ist daher, **1,8 cm als Schwelle zu testen** --
-dieselbe Konstruktion verwendet das Cedalion-Workshop-Notebook 36 auf `fingertappingDOT`
-mit 22,5 mm ("The montage has longer (3-3.5cm) and shorter (~1.7-2.2cm) distance
-channels. Define a cut-off at 22.5 mm").
-
-LIMITATION, die in die Arbeit gehoert: 15,5-18 mm sehen noch etwas Kortex. Der Regressor
-entfernt daher potenziell auch echtes Hirnsignal, nicht nur Systemik. Er ist ein
-Naeherungs-Surrogat fuer eine echte Short-Separation-Montage, kein Ersatz.
+Ein Kanal mit kleinem Quell-Detektor-Abstand misst nur Kopfhaut und Schaedel, also die
+systemische Physiologie; als Regressor in der Designmatrix nimmt er diesen Anteil aus den
+langen Kanaelen heraus. nn22 hat keine echten Short-Separation-Kanaele (<10 mm), der
+kuerzeste Abstand ist 15.55 mm; die Schwelle 1.8 cm folgt der Konstruktion aus
+Cedalion-Workshop-Notebook 36 (22.5 mm auf fingertappingDOT). Kanaele mit 15.5-18 mm
+sehen noch etwas Kortex, der Regressor kann also auch Hirnsignal entfernen.
 
 Aufruf:  conda run -n cedalion python -m drift_glm.core.shortchannel
 """
@@ -28,8 +19,7 @@ import cedalion
 import cedalion.nirs
 from cedalion import units
 
-# Betreuungsvorgabe: 1,8 cm testen (kuerzester Abstand im Datensatz: 15,55 mm)
-SHORT_THRESHOLD = 1.8 * units.cm
+SHORT_THRESHOLD = 1.8 * units.cm     # Grenze lang/kurz; kuerzester Abstand in nn22: 15.55 mm
 
 
 def distances_mm(ts: xr.DataArray, geo3d) -> np.ndarray:
@@ -39,20 +29,15 @@ def distances_mm(ts: xr.DataArray, geo3d) -> np.ndarray:
 
 
 def split(ts: xr.DataArray, geo3d, threshold=SHORT_THRESHOLD):
-    """Zerlegt eine Zeitreihe in lange und kurze Kanaele.
+    """Zerlegt eine Zeitreihe in lange und kurze Kanaele; Rueckgabe (long, short).
 
-    Duenner Wrapper um `cedalion.nirs.split_long_short_channels`, damit die Schwelle an
-    genau einer Stelle steht. Rueckgabe-Reihenfolge wie in Cedalion: **(long, short)**.
-    Der Vergleich ist einheitenbewusst, `threshold` muss eine pint-Laenge sein.
+    `threshold` muss eine pint-Laenge sein.
     """
     return cedalion.nirs.split_long_short_channels(ts, geo3d, distance_threshold=threshold)
 
 
 def report(ts: xr.DataArray, geo3d, thresholds_cm=(1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.2)) -> dict:
-    """Kennzahlen zur Schwellenwahl: wie viele Kanaele gelten bei welcher Schwelle als kurz.
-
-    Belegt, dass 1,8 cm eine sinnvolle Wahl ist und nicht auf einer Kante sitzt.
-    """
+    """Kennzahlen zur Schwellenwahl: Anzahl kurzer Kanaele je Schwelle."""
     d = distances_mm(ts, geo3d)
     return {
         "n_channels": int(d.size),
@@ -68,24 +53,14 @@ VARIANTS = ("short_avg", "short_maxcorr", "short_closest")
 
 
 def short_dm(variant: str, ts_long: xr.DataArray, ts_short: xr.DataArray, geo3d):
-    """Short-Channel-Regressor als DesignMatrix. Alle drei Varianten sind nativ.
+    """Short-Channel-Regressor als DesignMatrix.
 
-      * `short_avg`     -- Mittel ueber ALLE kurzen Kanaele
-        (`average_short_channel_regressor`). Ein gemeinsamer Regressor fuer alle Kanaele;
-        robust, aber ohne raeumliche Zuordnung. Entspricht der Notiz "oder einfach short
-        avg nutzen".
-      * `short_maxcorr` -- je langem Kanal der am staerksten mit ihm korrelierende kurze
-        Kanal (`max_corr_short_channel_regressor`). Entspricht der Notiz "der am meisten
-        zu ihm korreliert". Das Maximum wird ueber die Chromophore gebildet, damit HbO
-        und HbR denselben kurzen Kanal zugewiesen bekommen.
-      * `short_closest` -- je langem Kanal der raeumlich naechste kurze Kanal
-        (`closest_short_channel_regressor`). Nicht in der Notiz, aber die dritte native
-        Variante und die in den Cedalion-Notebooks 32/34/35 verwendete.
-
-    `maxcorr` und `closest` liefern KANALWEISE Designmatrizen (`channel_wise`), d.h. jeder
-    lange Kanal bekommt seinen eigenen Regressor namens "short"; `avg` liefert einen
-    gemeinsamen `common`-Regressor. `glm.fit` verarbeitet beides, gruppiert bei den
-    kanalweisen aber intern nach `comp_group`.
+    `short_avg`: Mittel ueber alle kurzen Kanaele, ein gemeinsamer `common`-Regressor.
+    `short_maxcorr`: je langem Kanal der am staerksten korrelierende kurze Kanal (Maximum
+    ueber die Chromophore, damit HbO und HbR denselben bekommen). `short_closest`: je
+    langem Kanal der raeumlich naechste kurze Kanal (Cedalion NB 32/34/35). Die letzten
+    beiden liefern kanalweise Designmatrizen (`channel_wise`) mit dem Regressornamen
+    "short"; `glm.fit` gruppiert dabei intern nach `comp_group`.
     """
     import cedalion.models.glm as glm
 
@@ -106,37 +81,16 @@ GLOBAL_COMP_MODES = ("none", "dm", "subtract")
 def subtract_global_component(ts_long, ts_short, stim_df, basis, *,
                               variant: str = "short_avg", geo3d=None,
                               noise_model: str = "ols"):
-    """Den vom Short-Regressor erklaerten Anteil ABZIEHEN, statt ihn im Modell zu lassen.
+    """Den vom Short-Regressor erklaerten Anteil abziehen statt ihn im Modell zu lassen.
 
-    Das ist die Variante aus Notebook 50b (`subtract_global_component`) und der Punkt
-    "global components subtraction anschauen" aus den Gespraechsnotizen vom 2026-08-05.
-    Sie tut etwas anderes als der Regressor in der Designmatrix, auch wenn beides
-    denselben Regressor benutzt:
+    Variante aus Notebook 50b. Beim Regressor in der Designmatrix (`dm`) wird die HRF
+    gemeinsam mit dem Short-Regressor geschaetzt, also gegen ihn orthogonalisiert. Hier
+    wird der Anteil auf Daten geschaetzt, die die HRF enthalten; ist die Systemik
+    aufgabengekoppelt, nimmt der Abzug einen Teil der Antwort mit, den ein spaeterer Fit
+    nicht zurueckholen kann. Der Vorteil ist praktisch: die bereinigte Zeitreihe laesst
+    sich ohne GLM weiterverarbeiten (Blockmittel, Epochen, Bildraum).
 
-      `dm`        Der Short-Regressor bleibt im Modell. Der HRF-Koeffizient wird GEMEINSAM
-                  mit ihm geschaetzt, ist also gegen ihn orthogonalisiert. Unter dem
-                  Modell ist er damit unverzerrt, auch wenn Systemik und Aufgabe
-                  korrelieren.
-
-      `subtract`  Der Anteil des Short-Regressors wird geschaetzt und abgezogen, danach
-                  wird auf der bereinigten Zeitreihe weitergearbeitet. Der Haken: der
-                  Anteil wird auf Daten geschaetzt, die die HRF ENTHALTEN. Systemische
-                  Antworten sind aufgabengekoppelt (Herzrate und Blutdruck reagieren auf
-                  die Aufgabe), also korreliert der Short-Regressor mit der HRF -- und der
-                  Abzug nimmt einen Teil der gesuchten Antwort mit. Ein spaeterer Fit kann
-                  ihn nicht zurueckholen, weil er aus den Daten verschwunden ist.
-
-    Es ist genau das Muster, das in Sweep v1 der Global-Mean-Regressor zeigte (siehe
-    `DOKUMENTATION.md`, v1 -> v2) -- nur an einer anderen Stelle der Kette. Deshalb wird
-    hier nicht eine der beiden Varianten gewaehlt, sondern beide als Achse gefuehrt und
-    der Unterschied beziffert.
-
-    Der Vorteil von `subtract` ist praktisch, nicht statistisch: die bereinigte Zeitreihe
-    laesst sich anschliessend beliebig weiterverarbeiten -- blockmitteln, epochieren, in
-    den Bildraum bringen -- ohne dass jeder dieser Schritte ein GLM braucht. Genau deshalb
-    benutzt Notebook 50b sie.
-
-    Rueckgabe: `ts_long` minus dem erklaerten systemischen Anteil.
+    Rueckgabe: `ts_long` minus dem erklaerten Anteil.
     """
     import cedalion.models.glm as glm
 
@@ -163,9 +117,9 @@ if __name__ == "__main__":
     print(f"Kanaele nach Preprocessing : {r['n_channels']}")
     print(f"Abstaende [mm]             : min {r['min_mm']:.2f}  "
           f"median {r['median_mm']:.2f}  max {r['max_mm']:.2f}")
-    print("\nWie viele Kanaele gelten als 'kurz'?")
+    print("\nKurze Kanaele je Schwelle:")
     for cm, n in r["counts"].items():
-        mark = "   <-- Vorgabe" if abs(cm - 1.8) < 1e-9 else ""
+        mark = "   <-- Default" if abs(cm - 1.8) < 1e-9 else ""
         print(f"  < {cm:.1f} cm : {n:4d} kurz / {r['n_channels'] - n:4d} lang{mark}")
 
     ts_long, ts_short = split(P.conc, P.geo3d)
@@ -176,5 +130,4 @@ if __name__ == "__main__":
     short = np.sort(d[d < 18.0])
     print(f"Abstaende der kurzen Kanaele: {short.min():.2f} .. {short.max():.2f} mm "
           f"(Median {np.median(short):.2f})")
-    print("\nHinweis: das sind keine echten Short-Separation-Kanaele (<10 mm) --")
-    print("sie sehen noch etwas Kortex. Als Limitation dokumentieren.")
+    print("\nKeine echten Short-Separation-Kanaele (<10 mm); sie sehen noch etwas Kortex.")
