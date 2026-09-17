@@ -1,0 +1,491 @@
+{
+  "created_utc": "2026-09-17T15:34:58.168965+00:00",
+  "git_commit": "999a15cc3435c5e64e532dd93c1e0dd617878b00",
+  "git_status": "M figures/15_real_reliability.png\n M figures/16_real_significant.png\n M figures/17_real_scalp.png\n M figures/18_real_plausibility.png\n M results/realglm_summary.csv\n?? results/archive/index.jsonl\n?? results/archive/msglm_summary_2026-09-17_153453_690925_2026-08-12_splitfit_reliability.csv\n?? results/archive/realglm_summary_2026-09-17_153016_983109_before-merge-realglm_summary_supplement.csv\n?? results/khan_group_maps.nc\n?? results/khan_lateralisation.csv\n?? results/khan_lateralisation.meta.json\n?? results/realglm_summary.meta.json\n?? results/realglm_summary_supplement.csv\n?? results/realglm_summary_supplement.meta.json",
+  "cedalion_commit": "a7eb625312d15c54f294c1fb9017e43c3a419d7d",
+  "config": {
+    "analysis": "msglm",
+    "mode": "reliability",
+    "motion_method": "wavelet",
+    "with_halves": true,
+    "with_image": true,
+    "cells": [
+      [
+        "bspline:5",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "bspline:5",
+        "none",
+        "ols"
+      ],
+      [
+        "bspline:5",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "bspline:5",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "bspline:5",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "bspline:5",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "none",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "bspline:8",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "none",
+        "ar_irls"
+      ],
+      [
+        "butter:0.01",
+        "none",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "short_avg_dm",
+        "ar_irls"
+      ],
+      [
+        "butter:0.01",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "short_avg_sub",
+        "ar_irls"
+      ],
+      [
+        "butter:0.01",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "butter:0.01",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "none",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "dct:0.005",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "none",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "dct:0.01",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "none",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "dct:0.02",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "none",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "legendre:1",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "none",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "legendre:3",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "none",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "none",
+        "none",
+        "ar_irls"
+      ],
+      [
+        "none",
+        "none",
+        "ols"
+      ],
+      [
+        "none",
+        "short_avg_dm",
+        "ar_irls"
+      ],
+      [
+        "none",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "none",
+        "short_avg_sub",
+        "ar_irls"
+      ],
+      [
+        "none",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "none",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "none",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "none",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "poly:1",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "none",
+        "ar_irls"
+      ],
+      [
+        "poly:3",
+        "none",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "short_avg_dm",
+        "ar_irls"
+      ],
+      [
+        "poly:3",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "short_avg_sub",
+        "ar_irls"
+      ],
+      [
+        "poly:3",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "poly:3",
+        "short_maxcorr_dm",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "global_dm",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "none",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "short_avg_dm",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "short_avg_sub",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "short_closest_dm",
+        "ols"
+      ],
+      [
+        "poly:5",
+        "short_maxcorr_dm",
+        "ols"
+      ]
+    ],
+    "reliability_method": "joint_even_odd_v1",
+    "ar_order": 30,
+    "reuse_full_from": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/msglm_summary_2026-09-17_153453_690925_2026-08-12_splitfit_reliability.csv"
+  },
+  "data_files": [
+    {
+      "path": "/home/julianmd/.cache/cedalion/26.5.1/multisubject-fingertapping.zip.unzip/BIDS-NIRS-Tapping/sub-01/nirs/sub-01_task-tapping_nirs.snirf",
+      "bytes": 10765840,
+      "sha256": "d6d58c3fdbe0c3263255d0e15978b91c7e27775e173d680464528cf2e3ff8729"
+    },
+    {
+      "path": "/home/julianmd/.cache/cedalion/26.5.1/multisubject-fingertapping.zip.unzip/BIDS-NIRS-Tapping/sub-02/nirs/sub-02_task-tapping_nirs.snirf",
+      "bytes": 8777224,
+      "sha256": "f24e4e4f6102caf32aab215e1fef66f95e2d54c0d2f48efbf431939f3ebeca53"
+    },
+    {
+      "path": "/home/julianmd/.cache/cedalion/26.5.1/multisubject-fingertapping.zip.unzip/BIDS-NIRS-Tapping/sub-03/nirs/sub-03_task-tapping_nirs.snirf",
+      "bytes": 8775856,
+      "sha256": "6b088ce486c625178726932a8053056b07a4f25a00f426c6a93c1c76b9137bfc"
+    },
+    {
+      "path": "/home/julianmd/.cache/cedalion/26.5.1/multisubject-fingertapping.zip.unzip/BIDS-NIRS-Tapping/sub-04/nirs/sub-04_task-tapping_nirs.snirf",
+      "bytes": 10712032,
+      "sha256": "22b850a9fc171d5d19766a77f72dc5d3ffa93a994ce987a18eb04f319f387275"
+    },
+    {
+      "path": "/home/julianmd/.cache/cedalion/26.5.1/multisubject-fingertapping.zip.unzip/BIDS-NIRS-Tapping/sub-05/nirs/sub-05_task-tapping_nirs.snirf",
+      "bytes": 10660048,
+      "sha256": "73464fdda13fa0511806d70c97f017224477f4abd97f652268f004913ebd760b"
+    },
+    {
+      "path": "/mnt/c/Julian/Studium/Bachelorarbeit/fnirs-drift-glm/results/archive/msglm_summary_2026-09-17_153453_690925_2026-08-12_splitfit_reliability.csv",
+      "bytes": 119463,
+      "sha256": "2a034a1984fa1d0a217cb492f871fad3551ab28a1d01d5277c1a68a77a82f213"
+    }
+  ],
+  "source_sha256": {
+    "drift_glm/__init__.py": "f8a9152e2f0ee7fe206d8995ff585c373565e4118d4fdcbcd52e93539d570c8a",
+    "drift_glm/analysis/__init__.py": "5423549c313757c028c51a52338c34aae544a8da246eba39e1bd5f0f3631a87b",
+    "drift_glm/analysis/compare_preprocessing.py": "ad10e97a8b770e30586be71f2a8b38f3c0b045b76a8d07e7390099eafed9aed9",
+    "drift_glm/analysis/detection.py": "89129c0065174341def709d8c79f66632e1475f3642882a18f52ce48ec689403",
+    "drift_glm/analysis/flex_basis.py": "c0b9e0da0bb821482d625e7e59df671d9151eb99771cbab85101cfac9a779dce",
+    "drift_glm/analysis/imageglm.py": "9157f408fea089bc8c2832d3b4d17df182a6299da1e3a1b98f11fc12f74a91c3",
+    "drift_glm/analysis/khan_lateralisation.py": "6278d7539739f6361e98ad9d22fe094f37df1f9117d486209fe653bd09497aed",
+    "drift_glm/analysis/msglm.py": "8e82ad64089dcb1b13350b28a00ad41ca85a2db1e3638c25d20ebf3bcfb092aa",
+    "drift_glm/analysis/mshrf.py": "f32c32958f05a5306a0f32921ca657d1e98eeb6b5c2e978961e97de2f66295f1",
+    "drift_glm/analysis/realglm.py": "15b0a3534691f060cd4c90de13d44d932b09089a5c6dc9ba1b37bff7f21a5a9e",
+    "drift_glm/analysis/recon_check.py": "e182e04e63967b12f54b9ea8bd1d310377b8fca7dfd192206291ce5981be3db4",
+    "drift_glm/analysis/residuals.py": "fbe0672082679f8ce9ebb105dc5593c2005e6f8ebef20669372f66ce310084d3",
+    "drift_glm/analysis/sweep.py": "c509e2e965ec29a1b323adbef9f074ce863dd03c2452bbc4a3012ae3ef1e6c1b",
+    "drift_glm/core/__init__.py": "6c88a60972e35abe6229b9605cac369b9c60ddc96e4ee29f4c049d385a10c832",
+    "drift_glm/core/filtering.py": "a257fbf441c6bc4c5a861fc12658fb08f222e13dd36b23e1513c14a5ff1092e0",
+    "drift_glm/core/fitstats.py": "a8d28cd287d8e953828175fd167646b18b3b31ebd0bb9dc9ffb73f6d6c600018",
+    "drift_glm/core/imagespace.py": "c52fcbcdc3ade87c5f428ece75afa67c885447042887eb2c93b145c502979eb2",
+    "drift_glm/core/pipeline.py": "6a0bf7de153cf53316a12974c9bc3f4b035caa52d81fa8e7c7dfbae777faee7a",
+    "drift_glm/core/preprocess.py": "26c82cd7d8ff9e39bc59e77c0c64c56769390bf620752b07a6154205bacacfdc",
+    "drift_glm/core/provenance.py": "d57973c59d13185c28af05ad649d029119b40fd61b62eba8b44c41ec74877046",
+    "drift_glm/core/shortchannel.py": "ea9ded267d7f382379bae4d26b2f329d6a8d1f500be45cd9acd2af79beac9e68",
+    "drift_glm/data/__init__.py": "8965c617cb16fe807adecfed681a4faf4e7fee9b6e1d756c9c9c747ecc197389",
+    "drift_glm/data/coregister.py": "6cac8ff7c5656399afc3c93b36b9a1893a2f98bb4b7f9166605e5dfddd9f6c81",
+    "drift_glm/data/multisubject.py": "3edb03795ea1ec37cedff3eb13c6ee823d1aa3100057d40390ec8868edef07e7",
+    "drift_glm/data/realdata.py": "25747c6ae189812bfc663a229ac5845c78ed7ba73b6179a10c2eb31777c62c6b",
+    "drift_glm/figstyle.py": "6591c85de6d0eb975987c93eeccb75148dd2e071b9e80fe5cbdaac40ea5c908a",
+    "drift_glm/paths.py": "13e9abc9ad0f5a236c612a4b7e11ac74e76bf1dee87b1a6fd453daee66f00f63",
+    "drift_glm/reports/__init__.py": "06bcc1611cf27df258efa5d4e748206b86f679bb5bc25fc0dc06713f92599770",
+    "drift_glm/reports/demo_figures.py": "6cad75f3b283b95ffd0fa717ae937753efa8992ec487cd5b90f602ebadb3c2d8",
+    "drift_glm/reports/flowchart.py": "228b85e8acbd1245528d12caed03565802c61ee50ef46c07bafb4b0783979e80",
+    "drift_glm/reports/imagespace_report.py": "013992725e668c43cb0c35a1f4c00672065e04bff8ad6c757b352a4fc4662306",
+    "drift_glm/reports/realglm_report.py": "4b1b87ab705739e75da7f425eac6737ad58a821bcf30aaaa3aaae8a5c6e98180",
+    "drift_glm/reports/sweep_report.py": "8efec57a0a447cb8472bc6932c78890b6c0d26477b52e76fbe4b3132f1081fb4"
+  },
+  "config_fingerprint": "2cbf00b52bd8bbf9f4b631f664483d11ba01c05576785c301ea94305580de11a"
+}
