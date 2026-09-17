@@ -556,5 +556,13 @@ blieben unangetastet (Filter-Arm nur Daten, 50b-Subtraktion, TDDR-Achse, alpha_s
   über OLS. Die alte Rangfolge (DCT zuletzt, 0,14-0,58; Tabelle vom 12.08. im Archiv) war
   ein Artefakt der getrennten Fits mit unmodellierten Trials. Vollfit-, Gruppen-,
   Lateralisierungs- und Bildraumspalten sind unverändert (geprüft).
+- **Abbildungen (17.09., 20:19).** Alle Plot-Module beschriften englisch (`reports/*`,
+  `analysis/residuals.py`, `mshrf.py`, `compare_preprocessing.py`, `detection.py`,
+  `flex_basis.py`); `compare_preprocessing plot` und `detection plot` zeichnen Abb. 11/14 nur
+  aus den CSVs. Abb. 00, 06-11, 14-18, 21-23, 25, 26 aus gespeicherten Ergebnissen, Abb. 01-05,
+  19, 24, 27-30 aus Neuläufen von demo_figures, imagespace_report hrf, residuals und mshrf
+  (`residuals_summary.csv`, `mshrf_summary.csv` dabei mit einer DCT-Konstante neu geschrieben,
+  Vorgänger archiviert). Nicht neu: Abb. 12/13 (flex_basis, ~1 h) und Abb. 20 (Kortex-Rendering
+  unter WSL leer).
 - **Nicht neu gerechnet:** voller Sweep, `realglm` voll, `imageglm`, `detection`;
   `hrf_retention.csv` (10.09.) ist der gültige Stand (Wavelet 100,00 %, TDDR 51-60 %).
