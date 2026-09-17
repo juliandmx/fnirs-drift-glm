@@ -1,7 +1,7 @@
 """Multisubject-Fingertapping: GLM je Driftfamilie, Gruppenebene, Kanal- und Bildraum.
 
 Ohne Ground Truth zaehlen zwei Kriterien: Halbierungs-Reproduzierbarkeit (gerade und
-ungerade Trials je Bedingung getrennt gefittet, Korrelation der beta-Karten) und
+ungerade Trials je Bedingung gemeinsam modelliert, Korrelation der beta-Karten) und
 kontralaterale Vorhersage (Tapping/Left ueber C4, Tapping/Right ueber C3; im Kanalraum
 als Lateralisierungsindex, im Bildraum als Abstand des rekonstruierten Maximums zur
 Landmarke). Der Datensatz hat echte kurze Kanaele, daher ist die Systemik-Achse
@@ -15,8 +15,9 @@ Aufruf:
 
 from __future__ import annotations
 
+import argparse
 import importlib
-import sys
+import json
 import time
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from drift_glm.core import imagespace as ims
 from drift_glm.data import multisubject as ms
 from drift_glm.core import pipeline as pl
 from drift_glm.core import shortchannel as sc
+from drift_glm.core.filtering import apply_filter
 from drift_glm.analysis.sweep import drift_dm
 from drift_glm import paths
 
@@ -44,6 +46,11 @@ ALPHA = 0.05
 
 FAMILIES = ["none", "poly:1", "poly:3", "poly:5", "dct:0.005", "dct:0.01", "dct:0.02",
             "legendre:1", "legendre:3", "bspline:5", "bspline:8", "butter:0.01"]
+SUPPLEMENTAL_FAMILIES = ["butterxy:0.01"]
+RELIABILITY_METHOD = "joint_even_odd_v1"
+CELL_COLUMNS = ["family", "systemic", "noise_model"]
+ROW_COLUMNS = CELL_COLUMNS + ["trial_type", "chromo"]
+RELIABILITY_COLUMNS = ["reliability_r", "n_half_pairs", "reliability_method"]
 
 #: Systemik-Achse: Suffix `_dm` = Regressor in der Designmatrix, `_sub` = vorab abgezogen
 #: (Variante aus Cedalion-Notebook 50b).
@@ -77,20 +84,60 @@ def _basis():
     return glm.Gamma(tau=0 * units.s, sigma=3 * units.s, T=0 * units.s)
 
 
+def joint_half_stimuli(stim: pd.DataFrame) -> pd.DataFrame:
+    """Label alternating trials within each condition; retain every event.
+
+    Alternation follows onset order, independently of the input index. The first
+    event has the historical name ``even`` (zero-based index). Conditions with
+    fewer than two events cannot provide both halves and are rejected.
+    """
+    result = stim.copy(deep=True).reset_index(drop=True)
+    if result.empty:
+        raise ValueError("Split-half reliability requires stimulus events")
+    for condition, events in result.groupby("trial_type", sort=False):
+        if len(events) < 2:
+            raise ValueError(f"Condition {condition!r} needs at least two trials")
+        if str(condition).endswith((" [even]", " [odd]")):
+            raise ValueError("Stimulus labels already contain split-half suffixes")
+        ordered = events.sort_values("onset", kind="stable").index
+        for half, indices in (("even", ordered[::2]), ("odd", ordered[1::2])):
+            result.loc[indices, "trial_type"] = f"{condition} [{half}]"
+    return result
+
+
+def split_joint_betas(beta: xr.DataArray) -> tuple[xr.DataArray, xr.DataArray]:
+    """Align the even and odd estimates by their original condition names."""
+    halves = []
+    for half in ("even", "odd"):
+        suffix = f" [{half}]"
+        names = [str(tt) for tt in beta.trial_type.values if str(tt).endswith(suffix)]
+        selected = beta.sel(trial_type=names)
+        selected = selected.assign_coords(trial_type=[s[:-len(suffix)] for s in names])
+        # ``regressor`` retains the suffixed labels, so discard this redundant
+        # coordinate before comparing corresponding even and odd maps.
+        if "regressor" in selected.coords:
+            selected = selected.drop_vars("regressor")
+        halves.append(selected.sortby("trial_type"))
+    if (not halves[0].sizes["trial_type"]
+            or not np.array_equal(halves[0].trial_type, halves[1].trial_type)):
+        raise ValueError("Every condition needs an even and an odd HRF estimate")
+    return tuple(halves)
+
+
 def first_level(conc, geo3d, stim, family: str, systemic: str, noise_model: str,
                 *, ar_order: int = 30, max_jobs: int = 1, half: str | None = None):
     """GLM einer Aufnahme -> beta je (channel, chromo, trial_type).
 
-    `half` ("even"/"odd") waehlt fuer die Halbierungs-Reproduzierbarkeit jeden zweiten
-    Trial aus, und zwar je Bedingung, damit beide Haelften gleich viele Trials je
-    Bedingung enthalten.
+    ``half=None`` is the unchanged full fit. ``half='joint'`` fits separate even
+    and odd HRFs for every condition in one model over the complete recording.
+    ``half='even'`` / ``'odd'`` select one half from that joint fit; they never
+    omit the other half's task regressors. The full fit is kept separate for
+    group tests, lateralisation and image reconstruction.
     """
+    if half not in (None, "joint", "even", "odd"):
+        raise ValueError(f"Unknown split-half selection: {half!r}")
     if half is not None:
-        keep = []
-        for _, g in stim.groupby("trial_type", sort=True):
-            idx = list(g.index)
-            keep += idx[0::2] if half == "even" else idx[1::2]
-        stim = stim.loc[sorted(keep)].reset_index(drop=True)
+        stim = joint_half_stimuli(stim)
 
     ts_long, ts_short = cedalion.nirs.split_long_short_channels(
         conc, geo3d, distance_threshold=ms.SHORT_THRESHOLD)
@@ -102,8 +149,12 @@ def first_level(conc, geo3d, stim, family: str, systemic: str, noise_model: str,
                                           variant=variant, geo3d=geo3d)
 
     dm_drift, filt = drift_dm(family, ts)
-    if filt is not None:
-        ts = ts.cd.freq_filter(filt[0] * units.Hz, filt[1] * units.Hz, 4)
+    consistent = family.startswith("butterxy:")
+    # Legacy arms formed global means and selected correlated short channels
+    # from filtered y. Preserve that ordering while applying the shared helper
+    # to the complete design below. The new control builds X before filtering.
+    nuisance_ts = (ts.cd.freq_filter(filt[0] * units.Hz, filt[1] * units.Hz, 4)
+                   if filt is not None and not consistent else ts)
 
     dm_hrf = glm.design_matrix.hrf_regressors(ts, stim, _basis())
     hrf_names = [r for r in dm_hrf.common.regressor.values if str(r).startswith("HRF")]
@@ -111,15 +162,20 @@ def first_level(conc, geo3d, stim, family: str, systemic: str, noise_model: str,
 
     dm = dm_hrf & dm_drift
     if systemic == "global_dm":
-        dm = dm & glm.design_matrix.global_mean_regressor(ts)
+        dm = dm & glm.design_matrix.global_mean_regressor(nuisance_ts)
     elif systemic.endswith("_dm"):
-        dm = dm & sc.short_dm(systemic[: -len("_dm")], ts, ts_short, geo3d)
+        dm = dm & sc.short_dm(systemic[: -len("_dm")], nuisance_ts, ts_short, geo3d)
+
+    ts, dm = apply_filter(ts, dm, filt, filter_design=consistent)
 
     res = glm.fit(ts, dm, noise_model=noise_model, ar_order=ar_order, max_jobs=max_jobs)
     beta = res.sm.params.sel(regressor=hrf_names)
-    return beta.assign_coords(
+    beta = beta.assign_coords(
         trial_type=("regressor", [str(r).removeprefix("HRF ").strip()
                                   for r in hrf_names])).swap_dims(regressor="trial_type")
+    if half in ("even", "odd"):
+        return split_joint_betas(beta)[0 if half == "even" else 1]
+    return beta
 
 
 def group_test(betas: dict[str, xr.DataArray]):
@@ -140,9 +196,16 @@ def group_test(betas: dict[str, xr.DataArray]):
 
 def half_reliability(pairs: list[tuple[xr.DataArray, xr.DataArray]], chromo="HbO"
                      ) -> tuple[float, int]:
-    """Median-Korrelation der beta-Karten zwischen den beiden Trial-Haelften."""
+    """Median of subject-wise Pearson correlations between the two HbO maps.
+
+    The three condition maps are concatenated over long channels within each
+    subject, as in the original summary; subjects receive equal weight. This
+    is within-recording split-half reliability, not test-retest reliability.
+    """
     rs = []
     for a, b in pairs:
+        a, b = xr.align(a, b, join="exact")
+        b = b.transpose(*a.dims)
         x = np.asarray(a.sel(chromo=chromo).values, float).ravel()
         y = np.asarray(b.sel(chromo=chromo).values, float).ravel()
         m = np.isfinite(x) & np.isfinite(y)
@@ -197,24 +260,147 @@ def _fit_one(conc, geo3d, stim, family, systemic, noise_model, half, max_jobs=1)
 
 
 def _out_path(mode: str) -> Path:
-    return RESULTS / ("msglm_summary_test.csv" if mode == "test"
-                      else "msglm_summary.csv")
+    suffix = {"test": "_test", "butterxy": "_butterxy"}.get(mode, "")
+    return RESULTS / f"msglm_summary{suffix}.csv"
+
+
+def complete_cells(frame: pd.DataFrame, *, with_halves: bool, with_image: bool,
+                   n_subjects: int, require_joint: bool = True) -> set[tuple]:
+    """Only a complete, unique six-row cell can be resumed or reused."""
+    required = set(ROW_COLUMNS + ["n_subjects", "beta_mean", "n_significant"])
+    if with_halves:
+        required.update(["reliability_r", "n_half_pairs"])
+        if require_joint:
+            required.add("reliability_method")
+    image_columns = ["loc_err_mm", "loc_err_wrong_mm", "peak_uM"]
+    if with_image:
+        required.update(image_columns)
+    if not required <= set(frame.columns):
+        return set()
+    expected = {(tt, chromo) for tt in ms.CONDITIONS for chromo in ("HbO", "HbR")}
+    done = set()
+    for key, cell in frame.groupby(CELL_COLUMNS, sort=False):
+        if len(cell) != len(expected) or cell.duplicated(ROW_COLUMNS).any():
+            continue
+        if set(zip(cell.trial_type, cell.chromo)) != expected:
+            continue
+        if not (cell.n_subjects == n_subjects).all():
+            continue
+        if with_halves:
+            if (not np.isfinite(cell.reliability_r).all()
+                    or not (cell.n_half_pairs == n_subjects).all()):
+                continue
+            if require_joint and not (cell.reliability_method == RELIABILITY_METHOD).all():
+                continue
+        if with_image:
+            tapping = cell.trial_type.isin(ms.TAPPING)
+            if not np.isfinite(cell.loc[tapping, image_columns].to_numpy(float)).all():
+                continue
+        done.add(key)
+    return done
+
+
+def assert_full_metrics_unchanged(updated: pd.DataFrame, reference: pd.DataFrame):
+    """A reliability-only refresh may change no stored full-fit/image metric."""
+    columns = [c for c in reference.columns if c not in RELIABILITY_COLUMNS]
+    if not set(columns) <= set(updated.columns):
+        raise AssertionError("Reliability refresh removed full-fit columns")
+    if updated.duplicated(ROW_COLUMNS).any() or reference.duplicated(ROW_COLUMNS).any():
+        raise AssertionError("Duplicate summary rows prevent an unambiguous comparison")
+    original = reference[columns].set_index(ROW_COLUMNS).sort_index()
+    new = updated[columns].set_index(ROW_COLUMNS).sort_index()
+    if not new.index.isin(original.index).all():
+        raise AssertionError("Reliability refresh introduced a cell absent from its archive")
+    pd.testing.assert_frame_equal(new, original.loc[new.index], check_dtype=False,
+                                  check_exact=True)
 
 
 def main(mode: str = "full", *, motion_method: str = "wavelet",
-         with_halves: bool = True, with_image: bool = True):
+         with_halves: bool = True, with_image: bool = True,
+         families=None, systemic=None, noise_models=None,
+         output_path: str | Path | None = None,
+         reuse_full_from: str | Path | None = None, resume: bool = True):
+    """Run the primary grid or the separate OLS consistent-filter control.
+
+    ``reuse_full_from`` explicitly identifies an archived, complete full-fit
+    summary. Only the new joint half fits are computed; all group, channel and
+    image results are retained byte-for-value in memory and asserted unchanged.
+    ``with_image=True`` requires complete image results in that archive. This
+    avoids repeating mathematically unchanged full fits and reconstructions.
+    A fresh full run still computes and checks its own full-fit results.
+    """
+    from drift_glm.core.provenance import (
+        archive_file, build_run_metadata, write_csv_atomic, write_metadata_atomic,
+    )
+
+    if mode not in ("full", "test", "reliability", "butterxy"):
+        raise ValueError(f"Unknown mode: {mode!r}")
+    if mode == "reliability" and reuse_full_from is None:
+        raise ValueError("Reliability refresh requires --reuse-full-from ARCHIVED.csv")
+    if reuse_full_from is not None and not with_halves:
+        raise ValueError("Reusing full results is only useful with joint half fits")
     paths.ensure()
     files = ms.paths()
-    families, systemic, noise_models = FAMILIES, SYSTEMIC, NOISE_MODELS
+    families = list(FAMILIES if families is None else families)
+    systemic = list(SYSTEMIC if systemic is None else systemic)
+    noise_models = list(NOISE_MODELS if noise_models is None else noise_models)
     if mode == "test":
         files = files[:2]
         families = ["poly:3", "dct:0.02"]
         systemic = ["none", "short_avg_dm", "short_avg_sub"]
         noise_models = ["ols"]
+    elif mode == "butterxy":
+        families, noise_models = SUPPLEMENTAL_FAMILIES, ["ols"]
 
     # Raster je Rauschmodell -- AR-IRLS reduziert, s. AR_IRLS_FAMILIES.
     grids = {nm: grid_for(nm, families, systemic) for nm in noise_models}
     total = sum(len(f) * len(s) for f, s in grids.values())
+    if total == 0:
+        raise ValueError("Requested grid has no permitted cells")
+    target_cells = {(family, sysm, nm) for nm, (fams, sysms) in grids.items()
+                    for family in fams for sysm in sysms}
+    reference = None
+    if reuse_full_from is not None:
+        reuse_full_from = Path(reuse_full_from).resolve()
+        reference = pd.read_csv(reuse_full_from)
+        valid = complete_cells(reference, with_halves=False, with_image=with_image,
+                               n_subjects=len(files))
+        if not target_cells <= valid:
+            raise ValueError(f"Archive lacks complete full-fit cells: {target_cells - valid}")
+
+    out = Path(output_path) if output_path is not None else _out_path(mode)
+    if reuse_full_from is not None and out.resolve() == reuse_full_from:
+        raise ValueError("The archived reference must not be overwritten")
+    metadata_path = out.with_suffix(".meta.json")
+    config = dict(analysis="msglm", mode=mode, motion_method=motion_method,
+                  with_halves=with_halves, with_image=with_image,
+                  cells=sorted(target_cells), reliability_method=RELIABILITY_METHOD,
+                  ar_order=30, reuse_full_from=str(reuse_full_from))
+    metadata = build_run_metadata(config, [*files, *([reuse_full_from]
+                                                   if reuse_full_from else [])])
+    done_cells, recs = set(), []
+    if out.exists():
+        if resume:
+            if not metadata_path.exists():
+                raise ValueError("Existing CSV has no run metadata; use an archived "
+                                 "reference and a fresh output, or --no-resume")
+            saved_metadata = json.loads(metadata_path.read_text())
+            if saved_metadata["config_fingerprint"] != metadata["config_fingerprint"]:
+                raise ValueError("Resume refused: code, data or configuration changed")
+            previous = pd.read_csv(out)
+            done_cells = complete_cells(previous, with_halves=with_halves,
+                                        with_image=with_image, n_subjects=len(files))
+            done_cells &= target_cells
+            recs = [r for r in previous.to_dict("records")
+                    if tuple(r[c] for c in CELL_COLUMNS) in done_cells]
+            if reference is not None and recs:
+                assert_full_metrics_unchanged(pd.DataFrame(recs), reference)
+        else:
+            archive_file(out, "before-msglm-rerun")
+            if metadata_path.exists():
+                archive_file(metadata_path, "before-msglm-rerun")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_metadata_atomic(metadata, metadata_path)
     print(f"msglm [{mode}]: {len(files)} Probanden, {total} Zellen", flush=True)
     for nm, (f, s) in grids.items():
         print(f"  {nm:8s}: {len(f)} Familien x {len(s)} Systemik-Stufen "
@@ -239,9 +425,11 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
     long0, _ = cedalion.nirs.split_long_short_channels(
         conc0, geo0, distance_threshold=ms.SHORT_THRESHOLD)
     chans = [str(c) for c in long0.channel.values]
+    if reference is not None and not (reference.n_channels == len(chans)).all():
+        raise ValueError("Archived and current full fits have different channel counts")
 
     recon = c_meas_ref = sens = xyz = seeds = None
-    if with_image:
+    if with_image and reference is None:
         adot_long = ims.adot(ms.DATASET).sel(channel=chans)
         recon, c_meas_ref = ims.recon_operator(adot_long, od0.sel(channel=chans))
         sens = ims.sensitivity_mask(adot_long)
@@ -252,22 +440,8 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
               f"Vertices, alpha_meas={recon.alpha_meas:.3g}, "
               f"alpha_spatial={recon.alpha_spatial}", flush=True)
 
-    # Wiederaufnahme: bereits gerechnete Zellen aus einer frueheren Summary-CSV (z.B. nach
-    # einem Abbruch) uebernehmen. Neu rechnen erzwingen: die CSV loeschen oder umbenennen.
-    out = _out_path(mode)
-    done_cells, recs = set(), []
-    if out.exists():
-        prev = pd.read_csv(out)
-        if {"family", "systemic", "noise_model"} <= set(prev.columns):
-            done_cells = {(r.family, r.systemic, r.noise_model) for r in
-                          prev[["family", "systemic", "noise_model"]]
-                          .drop_duplicates().itertuples(index=False)}
-            recs = prev.to_dict("records")
-            print(f"Resume: {len(done_cells)} Zellen aus {out.name} uebernommen "
-                  f"(neu rechnen: Datei loeschen)", flush=True)
-
     done = 0
-    halves_wanted = ("even", "odd") if with_halves else ()
+    halves_wanted = ("joint",) if with_halves else ()
     # Rauschmodell aussen: OLS zuerst, damit bei einem Abbruch die vollstaendige
     # OLS-Tabelle schon geschrieben ist und nicht die teure AR-IRLS-Haelfte fehlt.
     for nm in sorted(noise_models, key=lambda x: x != "ols"):
@@ -280,9 +454,11 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                           f"uebernommen (Resume)", flush=True)
                     continue
                 tc = time.time()
-                # Vollfit und beide Haelften in einem Parallel-Aufruf, damit loky die
-                # Prozesse nur einmal startet.
-                jobs = [(f, h) for f in files for h in (None, *halves_wanted)]
+                # The six-HRF model represents all trials in one fit. Keep the
+                # three-HRF full fit separate, or explicitly reuse its archived
+                # summary (including the complete image columns).
+                fit_modes = (() if reference is not None else (None,)) + halves_wanted
+                jobs = [(f, h) for f in files for h in fit_modes]
                 # AR-IRLS strikt sequenziell (1 Prozess, 1 Kanal-Thread): ein einzelner
                 # Kanal-Fit auf der dct:0.02-Designmatrix (122 Spalten x 23 239 Samples)
                 # belegt ~2,9 GB Peak-RSS; auf der 7,8-GB-Maschine ist nur ein Fit
@@ -292,13 +468,30 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                     delayed(worker)(prepped[f][0], prepped[f][1], prepped[f][2],
                                     fam, sysm, nm, h, mj) for f, h in jobs)
                 got = dict(zip(jobs, res))
-                by_sub = {ms.subject_of(f): got[(f, None)] for f in files}
-                t, rej, mean = group_test(by_sub)
 
                 rel, n_pairs = float("nan"), 0
                 if with_halves:
                     rel, n_pairs = half_reliability(
-                        [(got[(f, "even")], got[(f, "odd")]) for f in files])
+                        [split_joint_betas(got[(f, "joint")]) for f in files])
+
+                if reference is not None:
+                    selected = reference[(reference.family == fam)
+                                         & (reference.systemic == sysm)
+                                         & (reference.noise_model == nm)].copy()
+                    selected["reliability_r"], selected["n_half_pairs"] = rel, n_pairs
+                    selected["reliability_method"] = RELIABILITY_METHOD
+                    assert_full_metrics_unchanged(selected, reference)
+                    recs.extend(selected.to_dict("records"))
+                    done += 1
+                    dt = time.time() - tc
+                    print(f"  [{done}/{total}] {fam:14s} {sysm:16s} {nm:7s} "
+                          f"joint rel={rel:+.3f}; full/image preserved ({dt:.1f}s)",
+                          flush=True)
+                    write_csv_atomic(pd.DataFrame(recs), out)
+                    continue
+
+                by_sub = {ms.subject_of(f): got[(f, None)] for f in files}
+                t, rej, mean = group_test(by_sub)
 
                 lat = lateralisation(mean, geo0)
 
@@ -335,7 +528,10 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                                    beta_max=float(np.nanmax(np.abs(mv))),
                                    t_max=float(np.nanmax(np.abs(
                                        t.sel(trial_type=tt, chromo=ch).values))),
-                                   reliability_r=rel, n_half_pairs=n_pairs, **lat)
+                                   reliability_r=rel, n_half_pairs=n_pairs,
+                                   reliability_method=(RELIABILITY_METHOD
+                                                       if with_halves else "disabled"),
+                                   **lat)
                         row.update(img_rows.get((tt, ch), {}))
                         recs.append(row)
 
@@ -362,11 +558,12 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
                     f"ETA: {(time.time() - t0) / done * (total - done) / 60:.1f} min\n"
                     f"letzte Zelle: {fam} {sysm} {nm}\n")
                 # Nach jeder Zelle schreiben; der Lauf dauert Stunden.
-                pd.DataFrame(recs).to_csv(_out_path(mode), index=False)
+                write_csv_atomic(pd.DataFrame(recs), out)
 
     df = pd.DataFrame(recs)
-    out = _out_path(mode)
-    df.to_csv(out, index=False)
+    if reference is not None:
+        assert_full_metrics_unchanged(df, reference)
+    write_csv_atomic(df, out)
     print(f"\n[OK] {total} Zellen in {(time.time() - t0) / 60:.1f} min -> {out}")
     d = df[(df.chromo == "HbO") & (df.trial_type == "Tapping/Right")]
     print("\nHbO, Tapping/Right -- Reproduzierbarkeit und Lateralisierung:")
@@ -377,4 +574,18 @@ def main(mode: str = "full", *, motion_method: str = "wavelet",
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "full")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", nargs="?", default="full",
+                        choices=["full", "test", "reliability", "butterxy"])
+    parser.add_argument("--families", nargs="+")
+    parser.add_argument("--systemic", nargs="+")
+    parser.add_argument("--noise-models", nargs="+", choices=NOISE_MODELS)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--reuse-full-from", type=Path)
+    parser.add_argument("--motion-method", default="wavelet")
+    parser.add_argument("--no-resume", action="store_true")
+    args = parser.parse_args()
+    main(args.mode, motion_method=args.motion_method, families=args.families,
+         systemic=args.systemic, noise_models=args.noise_models,
+         output_path=args.output, reuse_full_from=args.reuse_full_from,
+         resume=not args.no_resume)
