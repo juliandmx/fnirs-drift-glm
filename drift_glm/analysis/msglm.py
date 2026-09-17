@@ -56,7 +56,7 @@ NOISE_MODELS = ["ar_irls", "ols"]
 #: 23 240 Samples je Kanal) kostet ein Fit ueber alle Kanaele mit AR-IRLS (Ordnung 30,
 #: ~4 x Abtastrate) rund das Zweihundertfache von OLS (poly:3: 145 s gegen 0,7 s). OLS
 #: laeuft ueber das volle Raster.
-AR_IRLS_FAMILIES = ["none", "poly:3", "dct:0.02", "butter:0.01"]
+AR_IRLS_FAMILIES = ["none", "poly:3", "butter:0.01"]
 AR_IRLS_SYSTEMIC = ["none", "short_avg_dm", "short_avg_sub"]
 
 
