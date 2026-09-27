@@ -135,6 +135,8 @@ $M drift_glm.reports.demo_figures            # Abb. 1-5, 24
 $M drift_glm.reports.sweep_report            # Abb. 6-10, 25, 26 und results/tables.md
 $M drift_glm.reports.realglm_report          # Abb. 15-18 (Abb. 17 ~13 min; "quick" lässt sie weg)
 $M drift_glm.reports.imagespace_report       # Abb. 19-23 (~1 h; Unterbefehle hrf, cortex, tables)
+#   Abb. 20 nur mit Software-Rasterizer, sonst weisses Bild ohne Fehlermeldung:
+#   LIBGL_ALWAYS_SOFTWARE=1 $M drift_glm.reports.imagespace_report cortex
 ```
 
 ### Kette

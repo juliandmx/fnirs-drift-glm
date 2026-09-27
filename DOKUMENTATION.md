@@ -484,10 +484,10 @@ Laufzeiten und Reproduzierbarkeitshinweise stehen in der [`README`](README.md).
   das |beta|-Maximum von HbO liegt in allen geprüften Konfigurationen links (C1-FC1), der
   Lateralisierungsindex links minus rechts ist positiv (+0,017 bis +0,049 µM), die
   signifikanten Kanäle sind aber nahezu bilateral (15/14 bei dct:0.02/AR-IRLS).
-- Abb. 20 (`20_cortex_truth_vs_recon.png`) enthält nur leere Achsenrahmen: das
-  Offscreen-Rendering der Kortexoberfläche (pyvista) liefert unter WSL keine Pixel. Die
-  Datei muss auf einem System mit funktionierendem OpenGL neu erzeugt werden
-  (`imagespace_report cortex`).
+- Abb. 20 (`20_cortex_truth_vs_recon.png`) braucht einen Software-Rasterizer: Das
+  Offscreen-Rendering der Kortexoberfläche (pyvista/VTK) liefert unter WSL ein weißes Bild,
+  ohne Fehlermeldung, weil der Treiber eine OpenGL-Fähigkeit meldet, die er nicht hat.
+  Erzeugen mit `LIBGL_ALWAYS_SOFTWARE=1 python -m drift_glm.reports.imagespace_report cortex`.
 - Simulation auf einer einzelnen Person (nn22), Auswertung über die 20 stärksten Kanäle je
   Zelle; `dct:0.005`/`dct:0.01` bei 90 s und `dct:0.005` bei 180 s sind mit `none`
   identisch und `poly:n` mit `legendre:n`, sodass das 15-Familien-Raster bei kurzen
@@ -562,7 +562,7 @@ blieben unangetastet (Filter-Arm nur Daten, 50b-Subtraktion, TDDR-Achse, alpha_s
   aus den CSVs. Abb. 00, 06-11, 14-18, 21-23, 25, 26 aus gespeicherten Ergebnissen, Abb. 01-05,
   19, 24, 27-30 aus Neuläufen von demo_figures, imagespace_report hrf, residuals und mshrf
   (`residuals_summary.csv`, `mshrf_summary.csv` dabei mit einer DCT-Konstante neu geschrieben,
-  Vorgänger archiviert). Nicht neu: Abb. 12/13 (flex_basis, ~1 h) und Abb. 20 (Kortex-Rendering
-  unter WSL leer).
+  Vorgänger archiviert). Abb. 20 am 28.09. mit `LIBGL_ALWAYS_SOFTWARE=1` erzeugt. Nicht neu:
+  Abb. 12/13 (flex_basis, ~1 h).
 - **Nicht neu gerechnet:** voller Sweep, `realglm` voll, `imageglm`, `detection`;
   `hrf_retention.csv` (10.09.) ist der gültige Stand (Wavelet 100,00 %, TDDR 51-60 %).
